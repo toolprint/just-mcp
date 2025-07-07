@@ -41,6 +41,9 @@ pub enum Error {
     #[error("Timeout error: {0}")]
     Timeout(String),
 
+    #[error("Internal error: {0}")]
+    Internal(String),
+
     #[error("Other error: {0}")]
     Other(String),
 }

@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use crate::notification::{Notification, NotificationSender};
 use crate::parser::JustfileParser;
 use crate::registry::ToolRegistry;
 use crate::types::{JustTask, Parameter, ToolDefinition};
@@ -17,6 +18,7 @@ pub struct JustfileWatcher {
     parser: JustfileParser,
     watched_paths: Arc<Mutex<HashSet<PathBuf>>>,
     debounce_duration: Duration,
+    notification_sender: Option<NotificationSender>,
 }
 
 impl JustfileWatcher {
@@ -26,7 +28,13 @@ impl JustfileWatcher {
             parser: JustfileParser::new().expect("Failed to create parser"),
             watched_paths: Arc::new(Mutex::new(HashSet::new())),
             debounce_duration: Duration::from_millis(500),
+            notification_sender: None,
         }
+    }
+
+    pub fn with_notification_sender(mut self, sender: NotificationSender) -> Self {
+        self.notification_sender = Some(sender);
+        self
     }
 
     pub async fn watch_paths(&self, paths: Vec<PathBuf>) -> Result<()> {
@@ -143,16 +151,26 @@ impl JustfileWatcher {
         }
 
         // Remove tools that are no longer in the justfile
-        let prefix = format!("just_{}_", path.display());
+        // Tool names are in format: just_taskname_/path/to/justfile
+        // So we need to match the prefix: just_*_/path/to/justfile
+        let path_suffix = format!("_{}", path.display());
         let tools_to_remove: Vec<String> = registry
             .list_tools()
             .iter()
-            .filter(|tool| tool.name.starts_with(&prefix) && !seen_tools.contains(&tool.name))
+            .filter(|tool| tool.name.starts_with("just_") && tool.name.ends_with(&path_suffix) && !seen_tools.contains(&tool.name))
             .map(|tool| tool.name.clone())
             .collect();
 
+        let had_removals = !tools_to_remove.is_empty();
         for tool_name in tools_to_remove {
             registry.remove_tool(&tool_name)?;
+        }
+
+        // Send notification if we made any changes
+        if !seen_tools.is_empty() || had_removals {
+            if let Some(ref sender) = self.notification_sender {
+                let _ = sender.send(Notification::ToolsListChanged);
+            }
         }
 
         Ok(())
@@ -160,17 +178,26 @@ impl JustfileWatcher {
 
     async fn remove_justfile_tools(&self, path: &Path) -> Result<()> {
         let mut registry = self.registry.lock().await;
-        let prefix = format!("just_{}_", path.display());
+        // Tool names are in format: just_taskname_/path/to/justfile
+        let path_suffix = format!("_{}", path.display());
 
         let tools_to_remove: Vec<String> = registry
             .list_tools()
             .iter()
-            .filter(|tool| tool.name.starts_with(&prefix))
+            .filter(|tool| tool.name.starts_with("just_") && tool.name.ends_with(&path_suffix))
             .map(|tool| tool.name.clone())
             .collect();
 
+        let had_removals = !tools_to_remove.is_empty();
         for tool_name in tools_to_remove {
             registry.remove_tool(&tool_name)?;
+        }
+
+        // Send notification if we removed tools
+        if had_removals {
+            if let Some(ref sender) = self.notification_sender {
+                let _ = sender.send(Notification::ToolsListChanged);
+            }
         }
 
         Ok(())

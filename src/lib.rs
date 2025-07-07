@@ -1,5 +1,6 @@
 pub mod error;
 pub mod executor;
+mod notification;
 pub mod parser;
 pub mod registry;
 pub mod server;

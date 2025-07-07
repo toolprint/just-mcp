@@ -1,4 +1,5 @@
 use crate::error::Result;
+use crate::notification::{NotificationReceiver, NotificationSender};
 use crate::registry::ToolRegistry;
 use crate::watcher::JustfileWatcher;
 // use serde::{Deserialize, Serialize};
@@ -17,14 +18,19 @@ pub struct Server {
     registry: Arc<Mutex<ToolRegistry>>,
     transport: Box<dyn transport::Transport>,
     watch_paths: Vec<PathBuf>,
+    notification_sender: Option<NotificationSender>,
+    notification_receiver: Option<NotificationReceiver>,
 }
 
 impl Server {
     pub fn new(transport: Box<dyn transport::Transport>) -> Self {
+        let (sender, receiver) = crate::notification::channel();
         Self {
             registry: Arc::new(Mutex::new(ToolRegistry::new())),
             transport,
             watch_paths: vec![PathBuf::from(".")], // Default to current directory
+            notification_sender: Some(sender),
+            notification_receiver: Some(receiver),
         }
     }
 
@@ -37,7 +43,13 @@ impl Server {
         tracing::info!("Starting just-mcp server");
 
         // Start filesystem watcher in background
-        let watcher = JustfileWatcher::new(self.registry.clone());
+        let mut watcher = JustfileWatcher::new(self.registry.clone());
+        
+        // Add notification sender to watcher
+        if let Some(sender) = self.notification_sender.clone() {
+            watcher = watcher.with_notification_sender(sender);
+        }
+        
         let watch_paths = self.watch_paths.clone();
 
         let watcher_handle = tokio::spawn(async move {
@@ -46,21 +58,43 @@ impl Server {
             }
         });
 
+        // Take the notification receiver out of self
+        let mut notification_rx = self.notification_receiver.take();
+        
         // Main message loop
         loop {
-            match self.transport.receive().await {
-                Ok(Some(message)) => {
-                    if let Err(e) = self.handle_message(message).await {
-                        tracing::error!("Error handling message: {}", e);
+            tokio::select! {
+                // Handle incoming messages
+                result = self.transport.receive() => {
+                    match result {
+                        Ok(Some(message)) => {
+                            if let Err(e) = self.handle_message(message).await {
+                                tracing::error!("Error handling message: {}", e);
+                            }
+                        }
+                        Ok(None) => {
+                            tracing::info!("Transport closed, shutting down");
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::error!("Transport error: {}", e);
+                            return Err(e);
+                        }
                     }
                 }
-                Ok(None) => {
-                    tracing::info!("Transport closed, shutting down");
-                    break;
-                }
-                Err(e) => {
-                    tracing::error!("Transport error: {}", e);
-                    return Err(e);
+                
+                // Handle notifications
+                Some(notification) = async {
+                    if let Some(ref mut rx) = notification_rx {
+                        rx.recv().await
+                    } else {
+                        None
+                    }
+                } => {
+                    let json_rpc = notification.to_json_rpc();
+                    if let Err(e) = self.transport.send(serde_json::to_value(json_rpc)?).await {
+                        tracing::error!("Failed to send notification: {}", e);
+                    }
                 }
             }
         }
