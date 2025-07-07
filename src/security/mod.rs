@@ -123,8 +123,7 @@ impl SecurityValidator {
         for pattern in &self.config.forbidden_patterns {
             if pattern.is_match(name) {
                 return Err(Error::InvalidParameter(format!(
-                    "Task name contains forbidden pattern: {}",
-                    name
+                    "Task name contains forbidden pattern: {name}"
                 )));
             }
         }
@@ -154,8 +153,7 @@ impl SecurityValidator {
             for pattern in &self.config.forbidden_patterns {
                 if pattern.is_match(value) {
                     return Err(Error::InvalidParameter(format!(
-                        "Parameter '{}' contains forbidden pattern",
-                        name
+                        "Parameter '{name}' contains forbidden pattern"
                     )));
                 }
             }
@@ -194,8 +192,7 @@ impl SecurityValidator {
                 serde_json::Value::Bool(b) => b.to_string(),
                 _ => {
                     return Err(Error::InvalidParameter(format!(
-                        "Parameter '{}' must be a string, number, or boolean",
-                        name
+                        "Parameter '{name}' must be a string, number, or boolean"
                     )));
                 }
             };
@@ -226,8 +223,7 @@ impl SecurityValidator {
                 warn!("Potentially dangerous command pattern detected: {}", pattern);
                 if self.config.strict_mode {
                     return Err(Error::Other(format!(
-                        "Command contains potentially dangerous pattern: {}",
-                        pattern
+                        "Command contains potentially dangerous pattern: {pattern}"
                     )));
                 }
             }
