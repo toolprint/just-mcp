@@ -201,6 +201,9 @@ impl AdminTools {
             errors.len()
         );
 
+        // Send a single notification after all tools are registered
+        self.watcher.send_tools_changed_notification();
+
         Ok(SyncResult {
             scanned_files,
             found_tasks,
@@ -212,18 +215,8 @@ impl AdminTools {
     async fn scan_justfile(&self, path: &std::path::Path) -> Result<usize> {
         info!("Scanning justfile: {}", path.display());
 
-        // Use the watcher's parse_and_update_justfile method
-        self.watcher.parse_and_update_justfile(path).await?;
-
-        // Count the tasks added for this justfile
-        let registry = self.registry.lock().await;
-        let task_count = registry
-            .list_tools()
-            .iter()
-            .filter(|tool| {
-                tool.name.starts_with("just_") && !tool.name.starts_with("admin_")
-            })
-            .count();
+        // Use the watcher's parse method without sending notifications
+        let task_count = self.watcher.parse_and_update_justfile_without_notification(path).await?;
 
         Ok(task_count)
     }

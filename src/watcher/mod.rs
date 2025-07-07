@@ -163,6 +163,17 @@ impl JustfileWatcher {
     }
 
     pub async fn parse_and_update_justfile(&self, path: &Path) -> Result<()> {
+        self.parse_and_update_justfile_internal(path, true).await?;
+        Ok(())
+    }
+
+    /// Parse and update justfile, optionally sending notifications
+    /// Returns the number of tasks added from this justfile
+    pub async fn parse_and_update_justfile_without_notification(&self, path: &Path) -> Result<usize> {
+        self.parse_and_update_justfile_internal(path, false).await
+    }
+
+    async fn parse_and_update_justfile_internal(&self, path: &Path, send_notification: bool) -> Result<usize> {
         let content = std::fs::read_to_string(path)?;
         let hash = ToolRegistry::compute_hash(&content);
         let tasks = self.parser.parse_file(path)?;
@@ -197,14 +208,21 @@ impl JustfileWatcher {
             registry.add_tool(tool)?;
         }
 
-        // Send notification if we made any changes
-        if !seen_tools.is_empty() || !tools_to_remove.is_empty() {
+        // Send notification if we made any changes and notifications are enabled
+        if send_notification && (!seen_tools.is_empty() || !tools_to_remove.is_empty()) {
             if let Some(ref sender) = self.notification_sender {
                 let _ = sender.send(Notification::ToolsListChanged);
             }
         }
 
-        Ok(())
+        Ok(seen_tools.len())
+    }
+
+    /// Send a tools list changed notification
+    pub fn send_tools_changed_notification(&self) {
+        if let Some(ref sender) = self.notification_sender {
+            let _ = sender.send(Notification::ToolsListChanged);
+        }
     }
 
     async fn remove_justfile_tools(&self, path: &Path) -> Result<()> {
