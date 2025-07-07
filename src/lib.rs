@@ -4,6 +4,7 @@ pub mod parser;
 pub mod registry;
 pub mod server;
 pub mod types;
+pub mod watcher;
 
 pub use error::{Error, Result};
 pub use server::Server;

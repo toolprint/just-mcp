@@ -1,9 +1,11 @@
 use crate::error::Result;
 use crate::registry::ToolRegistry;
+use crate::watcher::JustfileWatcher;
 // use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 
 pub mod handler;
 pub mod protocol;
@@ -12,22 +14,39 @@ pub mod transport;
 pub use transport::StdioTransport;
 
 pub struct Server {
-    #[allow(dead_code)]
-    registry: Arc<RwLock<ToolRegistry>>,
+    registry: Arc<Mutex<ToolRegistry>>,
     transport: Box<dyn transport::Transport>,
+    watch_paths: Vec<PathBuf>,
 }
 
 impl Server {
     pub fn new(transport: Box<dyn transport::Transport>) -> Self {
         Self {
-            registry: Arc::new(RwLock::new(ToolRegistry::new())),
+            registry: Arc::new(Mutex::new(ToolRegistry::new())),
             transport,
+            watch_paths: vec![PathBuf::from(".")], // Default to current directory
         }
+    }
+
+    pub fn with_watch_paths(mut self, paths: Vec<PathBuf>) -> Self {
+        self.watch_paths = paths;
+        self
     }
 
     pub async fn run(&mut self) -> Result<()> {
         tracing::info!("Starting just-mcp server");
 
+        // Start filesystem watcher in background
+        let watcher = JustfileWatcher::new(self.registry.clone());
+        let watch_paths = self.watch_paths.clone();
+
+        let watcher_handle = tokio::spawn(async move {
+            if let Err(e) = watcher.watch_paths(watch_paths).await {
+                tracing::error!("Watcher error: {}", e);
+            }
+        });
+
+        // Main message loop
         loop {
             match self.transport.receive().await {
                 Ok(Some(message)) => {
@@ -46,12 +65,15 @@ impl Server {
             }
         }
 
+        // Cancel watcher
+        watcher_handle.abort();
+
         Ok(())
     }
 
     async fn handle_message(&mut self, message: Value) -> Result<()> {
         let handler = handler::MessageHandler::new(self.registry.clone());
-        
+
         match handler.handle(message).await? {
             Some(response) => {
                 self.transport.send(response).await?;
@@ -60,7 +82,7 @@ impl Server {
                 // No response needed (e.g., for notifications)
             }
         }
-        
+
         Ok(())
     }
 }
@@ -70,13 +92,13 @@ mod tests {
     use super::*;
     use crate::types::ToolDefinition;
     use serde_json::json;
-    
+
     #[tokio::test]
     async fn test_mcp_protocol_flow() {
         // Test the MCP protocol handler directly
-        let registry = Arc::new(RwLock::new(ToolRegistry::new()));
+        let registry = Arc::new(Mutex::new(ToolRegistry::new()));
         let handler = handler::MessageHandler::new(registry.clone());
-        
+
         // Test initialize
         let init_request = json!({
             "jsonrpc": "2.0",
@@ -91,16 +113,16 @@ mod tests {
                 }
             }
         });
-        
+
         let response = handler.handle(init_request).await.unwrap().unwrap();
         let response_obj = response.as_object().unwrap();
-        
+
         assert_eq!(response_obj.get("jsonrpc").unwrap(), "2.0");
         assert_eq!(response_obj.get("id").unwrap(), 1);
-        
+
         let result = response_obj.get("result").unwrap();
         assert_eq!(result.get("protocolVersion").unwrap(), "2024-11-05");
-        
+
         // Test tools/list with empty registry
         let list_request = json!({
             "jsonrpc": "2.0",
@@ -108,12 +130,12 @@ mod tests {
             "method": "tools/list",
             "params": {}
         });
-        
+
         let response = handler.handle(list_request).await.unwrap().unwrap();
         let result = response.get("result").unwrap();
         let tools = result.get("tools").unwrap().as_array().unwrap();
         assert_eq!(tools.len(), 0);
-        
+
         // Add a tool and test again
         let test_tool = ToolDefinition {
             name: "just_test".to_string(),
@@ -127,16 +149,16 @@ mod tests {
             source_hash: "test_hash".to_string(),
             last_modified: std::time::SystemTime::now(),
         };
-        
-        registry.write().await.add_tool(test_tool).unwrap();
-        
+
+        registry.lock().await.add_tool(test_tool).unwrap();
+
         let list_request2 = json!({
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/list",
             "params": {}
         });
-        
+
         let response = handler.handle(list_request2).await.unwrap().unwrap();
         let result = response.get("result").unwrap();
         let tools = result.get("tools").unwrap().as_array().unwrap();
