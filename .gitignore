@@ -44,3 +44,7 @@ cobertura.xml
 
 # Test files
 test-temp/
+
+# Claude
+notes/
+scripts/

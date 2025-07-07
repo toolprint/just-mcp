@@ -61,9 +61,9 @@ impl AdminTools {
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object",
                 "properties": {
-                    "justfile_path": {
+                    "watch_name": {
                         "type": "string",
-                        "description": "Path or name of the justfile to modify. If omitted, uses the default/only justfile. For multiple watch directories, specify the configured name (e.g., 'frontend' not the full path)"
+                        "description": "Name of the watch directory to create task in (e.g., 'frontend', 'backend'). If omitted, uses the main/default justfile"
                     },
                     "task_name": {
                         "type": "string",
@@ -217,14 +217,11 @@ impl AdminTools {
 
         // Count the tasks added for this justfile
         let registry = self.registry.lock().await;
-        let path_suffix = format!("_{}", path.display());
         let task_count = registry
             .list_tools()
             .iter()
             .filter(|tool| {
-                tool.name.starts_with("just_")
-                    && !tool.name.starts_with("admin_")
-                    && tool.name.ends_with(&path_suffix)
+                tool.name.starts_with("just_") && !tool.name.starts_with("admin_")
             })
             .count();
 
@@ -236,20 +233,19 @@ impl AdminTools {
             "Creating new task: {} in {}",
             params.task_name,
             params
-                .justfile_path
+                .watch_name
                 .as_deref()
                 .unwrap_or("default justfile")
         );
 
         // Determine which justfile to use
-        let justfile_path = if let Some(path_or_name) = params.justfile_path {
-            // Check if this is a configured name
+        let justfile_path = if let Some(watch_name) = params.watch_name {
+            // Find the watch directory by name
             let mut found_path = None;
             
-            // First, try to match by configured name
             for (path, name) in &self.watch_configs {
                 if let Some(n) = name {
-                    if n == &path_or_name {
+                    if n == &watch_name {
                         // Found by name
                         if path.is_dir() {
                             let justfile = path.join("justfile");
@@ -270,51 +266,50 @@ impl AdminTools {
                 }
             }
             
-            // If not found by name, treat it as a path
-            if found_path.is_none() {
-                let path_buf = PathBuf::from(&path_or_name);
-                if path_buf.exists() {
-                    found_path = Some(path_buf);
-                }
-            }
-            
             found_path.ok_or_else(|| crate::error::Error::Other(
-                format!("Justfile not found for: {}", path_or_name)
+                format!("Watch directory '{}' not found. Available: {}", 
+                    watch_name,
+                    self.watch_configs.iter()
+                        .filter_map(|(_, name)| name.as_ref())
+                        .map(|n| format!("'{}'", n))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             ))?
         } else {
-            // No path specified - use default logic
-            if self.watch_configs.len() == 1 {
-                // Single watch directory - use it
-                let (path, _) = &self.watch_configs[0];
-                if path.is_dir() {
-                    let justfile = path.join("justfile");
-                    if justfile.exists() {
-                        justfile
-                    } else {
-                        let justfile_cap = path.join("Justfile");
-                        if justfile_cap.exists() {
-                            justfile_cap
-                        } else {
-                            return Err(crate::error::Error::Other("No justfile found in watch directory".to_string()));
-                        }
-                    }
+            // No name specified - use the main/first justfile
+            let (path, _) = &self.watch_configs.get(0)
+                .ok_or_else(|| crate::error::Error::Other("No watch directories configured".to_string()))?;
+            
+            if path.is_dir() {
+                let justfile = path.join("justfile");
+                if justfile.exists() {
+                    justfile
                 } else {
-                    path.clone()
+                    let justfile_cap = path.join("Justfile");
+                    if justfile_cap.exists() {
+                        justfile_cap
+                    } else {
+                        return Err(crate::error::Error::Other("No justfile found in main watch directory".to_string()));
+                    }
                 }
             } else {
-                // Multiple directories - require explicit specification
-                return Err(crate::error::Error::Other(
-                    "Multiple watch directories configured. Please specify which justfile to modify using the configured name.".to_string()
-                ));
+                path.clone()
             }
         };
 
         // Validate task name doesn't conflict with existing tasks
         {
             let registry = self.registry.lock().await;
-            let tool_name = format!("just_{}_{}", params.task_name, justfile_path.display());
-
-            if registry.get_tool(&tool_name).is_some() {
+            
+            // Check for any tool that starts with "just_{task_name}"
+            // This handles both single directory (just_taskname) and multi-directory (just_taskname@name) cases
+            let task_prefix = format!("just_{}", params.task_name);
+            let existing_task = registry.list_tools().iter().any(|tool| {
+                tool.name == task_prefix || tool.name.starts_with(&format!("{}@", task_prefix))
+            });
+            
+            if existing_task {
                 return Err(crate::error::Error::Other(format!(
                     "Task '{}' already exists in {}",
                     params.task_name,
@@ -412,7 +407,7 @@ pub struct SyncResult {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateTaskParams {
-    pub justfile_path: Option<String>,
+    pub watch_name: Option<String>,
     pub task_name: String,
     pub description: Option<String>,
     pub recipe: String,
@@ -486,7 +481,7 @@ build:
         // We might find more than one justfile if there are parent directories
         // with justfiles, so just check that we found at least our test justfile
         assert!(result.scanned_files >= 1);
-        assert!(result.found_tasks >= 2);
+        assert!(result.found_tasks >= 2, "Expected at least 2 tasks, found {}", result.found_tasks);
         assert_eq!(result.errors.len(), 0);
 
         // Check registry has the tools
@@ -496,13 +491,10 @@ build:
         let our_justfile_tools: Vec<_> = tools
             .iter()
             .filter(|t| {
-                t.name.starts_with("just_")
-                    && !t.name.starts_with("admin_")
-                    && t.name
-                        .contains(&justfile_path.to_string_lossy().to_string())
+                t.name.starts_with("just_") && !t.name.starts_with("admin_")
             })
             .collect();
-        assert_eq!(our_justfile_tools.len(), 2);
+        assert!(our_justfile_tools.len() >= 2, "Expected at least 2 tools, found {}", our_justfile_tools.len());
     }
 
     #[tokio::test]
@@ -529,7 +521,7 @@ existing:
 
         // Create a new task
         let params = CreateTaskParams {
-            justfile_path: Some(justfile_path.to_string_lossy().to_string()),
+            watch_name: None,  // Use default
             task_name: "new_task".to_string(),
             description: Some("A new test task".to_string()),
             recipe: "echo \"hello world\"\necho \"second line\"".to_string(),
@@ -596,7 +588,7 @@ existing:
 
         // Try to create a task with existing name
         let params = CreateTaskParams {
-            justfile_path: Some(justfile_path.to_string_lossy().to_string()),
+            watch_name: None,  // Use default
             task_name: "existing".to_string(),
             description: None,
             recipe: "echo \"duplicate\"".to_string(),
@@ -610,7 +602,7 @@ existing:
 
         // Try to create a task with admin_ prefix
         let params = CreateTaskParams {
-            justfile_path: Some(justfile_path.to_string_lossy().to_string()),
+            watch_name: None,  // Use default
             task_name: "admin_task".to_string(),
             description: None,
             recipe: "echo \"admin\"".to_string(),
@@ -648,7 +640,7 @@ existing:
 
         // Test creating task with name
         let params = CreateTaskParams {
-            justfile_path: Some("frontend".to_string()),
+            watch_name: Some("frontend".to_string()),
             task_name: "build".to_string(),
             description: Some("Build frontend".to_string()),
             recipe: "npm run build".to_string(),

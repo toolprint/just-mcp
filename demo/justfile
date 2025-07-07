@@ -205,5 +205,3 @@ docs format="markdown":
     @echo "# Project Documentation" > docs/README.{{format}}
     @echo "Generated on: $(date)" >> docs/README.{{format}}
     @echo "✓ Documentation generated in docs/"
-test-single:
-    echo test
