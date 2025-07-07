@@ -157,7 +157,11 @@ impl JustfileWatcher {
         let tools_to_remove: Vec<String> = registry
             .list_tools()
             .iter()
-            .filter(|tool| tool.name.starts_with("just_") && tool.name.ends_with(&path_suffix) && !seen_tools.contains(&tool.name))
+            .filter(|tool| {
+                tool.name.starts_with("just_")
+                    && tool.name.ends_with(&path_suffix)
+                    && !seen_tools.contains(&tool.name)
+            })
             .map(|tool| tool.name.clone())
             .collect();
 

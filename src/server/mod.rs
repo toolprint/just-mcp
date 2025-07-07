@@ -1,3 +1,4 @@
+use crate::admin::AdminTools;
 use crate::error::Result;
 use crate::notification::{NotificationReceiver, NotificationSender};
 use crate::registry::ToolRegistry;
@@ -20,6 +21,7 @@ pub struct Server {
     watch_paths: Vec<PathBuf>,
     notification_sender: Option<NotificationSender>,
     notification_receiver: Option<NotificationReceiver>,
+    admin_tools: Option<Arc<AdminTools>>,
 }
 
 impl Server {
@@ -31,6 +33,7 @@ impl Server {
             watch_paths: vec![PathBuf::from(".")], // Default to current directory
             notification_sender: Some(sender),
             notification_receiver: Some(receiver),
+            admin_tools: None,
         }
     }
 
@@ -44,23 +47,37 @@ impl Server {
 
         // Start filesystem watcher in background
         let mut watcher = JustfileWatcher::new(self.registry.clone());
-        
+
         // Add notification sender to watcher
         if let Some(sender) = self.notification_sender.clone() {
             watcher = watcher.with_notification_sender(sender);
         }
-        
-        let watch_paths = self.watch_paths.clone();
 
+        let watch_paths = self.watch_paths.clone();
+        let watcher_arc = Arc::new(watcher);
+
+        // Initialize admin tools
+        let admin_tools = Arc::new(AdminTools::new(
+            self.registry.clone(),
+            watcher_arc.clone(),
+            self.watch_paths.clone(),
+        ));
+
+        // Register admin tools in the registry
+        admin_tools.register_admin_tools().await?;
+
+        self.admin_tools = Some(admin_tools.clone());
+
+        let watcher_for_task = watcher_arc.clone();
         let watcher_handle = tokio::spawn(async move {
-            if let Err(e) = watcher.watch_paths(watch_paths).await {
+            if let Err(e) = watcher_for_task.watch_paths(watch_paths).await {
                 tracing::error!("Watcher error: {}", e);
             }
         });
 
         // Take the notification receiver out of self
         let mut notification_rx = self.notification_receiver.take();
-        
+
         // Main message loop
         loop {
             tokio::select! {
@@ -82,7 +99,7 @@ impl Server {
                         }
                     }
                 }
-                
+
                 // Handle notifications
                 Some(notification) = async {
                     if let Some(ref mut rx) = notification_rx {
@@ -106,7 +123,11 @@ impl Server {
     }
 
     async fn handle_message(&mut self, message: Value) -> Result<()> {
-        let handler = handler::MessageHandler::new(self.registry.clone());
+        let mut handler = handler::MessageHandler::new(self.registry.clone());
+
+        if let Some(ref admin_tools) = self.admin_tools {
+            handler = handler.with_admin_tools(admin_tools.clone());
+        }
 
         match handler.handle(message).await? {
             Some(response) => {

@@ -10,11 +10,20 @@ use tokio::sync::Mutex;
 
 pub struct MessageHandler {
     registry: Arc<Mutex<ToolRegistry>>,
+    admin_tools: Option<Arc<crate::admin::AdminTools>>,
 }
 
 impl MessageHandler {
     pub fn new(registry: Arc<Mutex<ToolRegistry>>) -> Self {
-        Self { registry }
+        Self {
+            registry,
+            admin_tools: None,
+        }
+    }
+
+    pub fn with_admin_tools(mut self, admin_tools: Arc<crate::admin::AdminTools>) -> Self {
+        self.admin_tools = Some(admin_tools);
+        self
     }
 
     pub async fn handle(&self, message: Value) -> Result<Option<Value>> {
@@ -123,6 +132,13 @@ impl MessageHandler {
         let params: CallToolParams = serde_json::from_value(request.params.clone())
             .map_err(|_| Error::InvalidParameter("Invalid tool call parameters".to_string()))?;
 
+        // Check if this is an admin tool
+        if params.name.starts_with("just_admin_") {
+            return self
+                .handle_admin_tool(&params.name, &params.arguments, &request.id)
+                .await;
+        }
+
         // Check if tool exists
         let registry = self.registry.lock().await;
         let _tool = registry
@@ -175,6 +191,80 @@ impl MessageHandler {
 
                 let response =
                     JsonRpcResponse::error(request.id.clone(), error.code, error.message);
+                Ok(Some(serde_json::to_value(response)?))
+            }
+        }
+    }
+
+    async fn handle_admin_tool(
+        &self,
+        tool_name: &str,
+        _arguments: &HashMap<String, Value>,
+        request_id: &Option<Value>,
+    ) -> Result<Option<Value>> {
+        match tool_name {
+            "just_admin_sync" => {
+                if let Some(ref admin_tools) = self.admin_tools {
+                    match admin_tools.sync().await {
+                        Ok(result) => {
+                            let tool_result = json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": format!(
+                                        "Sync completed successfully:\n- Scanned files: {}\n- Found tasks: {}\n- Duration: {}ms\n{}",
+                                        result.scanned_files,
+                                        result.found_tasks,
+                                        result.duration_ms,
+                                        if result.errors.is_empty() {
+                                            String::new()
+                                        } else {
+                                            format!("\nErrors:\n{}", result.errors.join("\n"))
+                                        }
+                                    )
+                                }],
+                                "isError": false
+                            });
+
+                            let response =
+                                JsonRpcResponse::success(request_id.clone(), tool_result);
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                        Err(e) => {
+                            let error = JsonRpcError {
+                                code: -32603,
+                                message: format!("Sync failed: {e}"),
+                                data: None,
+                            };
+
+                            let response = JsonRpcResponse::error(
+                                request_id.clone(),
+                                error.code,
+                                error.message,
+                            );
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                    }
+                } else {
+                    let error = JsonRpcError {
+                        code: -32603,
+                        message: "Admin tools not available".to_string(),
+                        data: None,
+                    };
+
+                    let response =
+                        JsonRpcResponse::error(request_id.clone(), error.code, error.message);
+                    Ok(Some(serde_json::to_value(response)?))
+                }
+            }
+            _ => {
+                let error = JsonRpcError {
+                    code: -32602,
+                    message: format!("Unknown admin tool: {tool_name}"),
+                    data: None,
+                };
+
+                let response =
+                    JsonRpcResponse::error(request_id.clone(), error.code, error.message);
                 Ok(Some(serde_json::to_value(response)?))
             }
         }
