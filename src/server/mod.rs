@@ -97,6 +97,7 @@ impl Server {
             self.registry.clone(),
             watcher_arc.clone(),
             self.watch_paths.clone(),
+            self.watch_configs.clone(),
         ));
 
         // Register admin tools in the registry

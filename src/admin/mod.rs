@@ -13,6 +13,7 @@ pub struct AdminTools {
     registry: Arc<Mutex<ToolRegistry>>,
     watcher: Arc<JustfileWatcher>,
     watch_paths: Vec<PathBuf>,
+    watch_configs: Vec<(PathBuf, Option<String>)>,
 }
 
 impl AdminTools {
@@ -20,11 +21,13 @@ impl AdminTools {
         registry: Arc<Mutex<ToolRegistry>>,
         watcher: Arc<JustfileWatcher>,
         watch_paths: Vec<PathBuf>,
+        watch_configs: Vec<(PathBuf, Option<String>)>,
     ) -> Self {
         Self {
             registry,
             watcher,
             watch_paths,
+            watch_configs,
         }
     }
 
@@ -60,7 +63,7 @@ impl AdminTools {
                 "properties": {
                     "justfile_path": {
                         "type": "string",
-                        "description": "Path to the justfile to modify"
+                        "description": "Path or name of the justfile to modify. If omitted, uses the default/only justfile. For multiple watch directories, specify the configured name (e.g., 'frontend' not the full path)"
                     },
                     "task_name": {
                         "type": "string",
@@ -239,31 +242,71 @@ impl AdminTools {
         );
 
         // Determine which justfile to use
-        let justfile_path = if let Some(path) = params.justfile_path {
-            PathBuf::from(path)
-        } else {
-            // Default to the first justfile we can find
+        let justfile_path = if let Some(path_or_name) = params.justfile_path {
+            // Check if this is a configured name
             let mut found_path = None;
-            for watch_path in &self.watch_paths {
-                if watch_path.is_dir() {
-                    let justfile = watch_path.join("justfile");
-                    if justfile.exists() {
-                        found_path = Some(justfile);
-                        break;
+            
+            // First, try to match by configured name
+            for (path, name) in &self.watch_configs {
+                if let Some(n) = name {
+                    if n == &path_or_name {
+                        // Found by name
+                        if path.is_dir() {
+                            let justfile = path.join("justfile");
+                            if justfile.exists() {
+                                found_path = Some(justfile);
+                                break;
+                            }
+                            let justfile_cap = path.join("Justfile");
+                            if justfile_cap.exists() {
+                                found_path = Some(justfile_cap);
+                                break;
+                            }
+                        } else {
+                            found_path = Some(path.clone());
+                            break;
+                        }
                     }
-                    let justfile_cap = watch_path.join("Justfile");
-                    if justfile_cap.exists() {
-                        found_path = Some(justfile_cap);
-                        break;
-                    }
-                } else if watch_path.file_name() == Some(std::ffi::OsStr::new("justfile"))
-                    || watch_path.file_name() == Some(std::ffi::OsStr::new("Justfile"))
-                {
-                    found_path = Some(watch_path.clone());
-                    break;
                 }
             }
-            found_path.ok_or_else(|| crate::error::Error::Other("No justfile found".to_string()))?
+            
+            // If not found by name, treat it as a path
+            if found_path.is_none() {
+                let path_buf = PathBuf::from(&path_or_name);
+                if path_buf.exists() {
+                    found_path = Some(path_buf);
+                }
+            }
+            
+            found_path.ok_or_else(|| crate::error::Error::Other(
+                format!("Justfile not found for: {}", path_or_name)
+            ))?
+        } else {
+            // No path specified - use default logic
+            if self.watch_configs.len() == 1 {
+                // Single watch directory - use it
+                let (path, _) = &self.watch_configs[0];
+                if path.is_dir() {
+                    let justfile = path.join("justfile");
+                    if justfile.exists() {
+                        justfile
+                    } else {
+                        let justfile_cap = path.join("Justfile");
+                        if justfile_cap.exists() {
+                            justfile_cap
+                        } else {
+                            return Err(crate::error::Error::Other("No justfile found in watch directory".to_string()));
+                        }
+                    }
+                } else {
+                    path.clone()
+                }
+            } else {
+                // Multiple directories - require explicit specification
+                return Err(crate::error::Error::Other(
+                    "Multiple watch directories configured. Please specify which justfile to modify using the configured name.".to_string()
+                ));
+            }
         };
 
         // Validate task name doesn't conflict with existing tasks
@@ -280,9 +323,9 @@ impl AdminTools {
             }
 
             // Check for admin tool conflicts
-            if params.task_name == "admin_sync" || params.task_name == "admin_create_task" {
+            if params.task_name.starts_with("admin_") {
                 return Err(crate::error::Error::Other(
-                    "Task name conflicts with admin tools".to_string(),
+                    "Task names starting with 'admin_' are reserved".to_string(),
                 ));
             }
         }
@@ -400,7 +443,7 @@ mod tests {
     async fn test_admin_tools_creation() {
         let registry = Arc::new(Mutex::new(ToolRegistry::new()));
         let watcher = Arc::new(JustfileWatcher::new(registry.clone()));
-        let admin_tools = AdminTools::new(registry.clone(), watcher, vec![]);
+        let admin_tools = AdminTools::new(registry.clone(), watcher, vec![], vec![]);
 
         // Register admin tools
         admin_tools.register_admin_tools().await.unwrap();
@@ -434,6 +477,7 @@ build:
             registry.clone(),
             watcher,
             vec![temp_dir.path().to_path_buf()],
+            vec![(temp_dir.path().to_path_buf(), None)],
         );
 
         // Perform sync
@@ -480,6 +524,7 @@ existing:
             registry.clone(),
             watcher,
             vec![temp_dir.path().to_path_buf()],
+            vec![(temp_dir.path().to_path_buf(), None)],
         );
 
         // Create a new task
@@ -540,6 +585,7 @@ existing:
             registry.clone(),
             watcher.clone(),
             vec![temp_dir.path().to_path_buf()],
+            vec![(temp_dir.path().to_path_buf(), None)],
         );
 
         // Parse initial justfile to populate registry
@@ -575,5 +621,49 @@ existing:
         let result = admin_tools.create_task(params).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("reserved"));
+    }
+
+    #[tokio::test]
+    async fn test_create_task_with_named_dirs() {
+        let temp_dir1 = TempDir::new().unwrap();
+        let temp_dir2 = TempDir::new().unwrap();
+        let justfile_path1 = temp_dir1.path().join("justfile");
+        let justfile_path2 = temp_dir2.path().join("justfile");
+
+        // Create justfiles
+        fs::write(&justfile_path1, "# Frontend tasks\n").unwrap();
+        fs::write(&justfile_path2, "# Backend tasks\n").unwrap();
+
+        let registry = Arc::new(Mutex::new(ToolRegistry::new()));
+        let watcher = Arc::new(JustfileWatcher::new(registry.clone()));
+        let admin_tools = AdminTools::new(
+            registry.clone(),
+            watcher,
+            vec![temp_dir1.path().to_path_buf(), temp_dir2.path().to_path_buf()],
+            vec![
+                (temp_dir1.path().to_path_buf(), Some("frontend".to_string())),
+                (temp_dir2.path().to_path_buf(), Some("backend".to_string())),
+            ],
+        );
+
+        // Test creating task with name
+        let params = CreateTaskParams {
+            justfile_path: Some("frontend".to_string()),
+            task_name: "build".to_string(),
+            description: Some("Build frontend".to_string()),
+            recipe: "npm run build".to_string(),
+            parameters: None,
+            dependencies: None,
+        };
+
+        let result = admin_tools.create_task(params).await.unwrap();
+        assert_eq!(result.task_name, "build");
+        assert!(result.justfile_path.contains("justfile"));
+
+        // Verify the task was added
+        let content = fs::read_to_string(&justfile_path1).unwrap();
+        assert!(content.contains("# Build frontend"));
+        assert!(content.contains("build:"));
+        assert!(content.contains("npm run build"));
     }
 }
