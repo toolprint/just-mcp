@@ -4,7 +4,9 @@
     "debug": false,
     "defaultSubtasks": 5,
     "defaultPriority": "medium",
-    "defaultTag": "main"
+    "defaultTag": "master",
+    "projectName": "just-mcp",
+    "responseLanguage": "English"
   },
   "models": {
     "main": {
