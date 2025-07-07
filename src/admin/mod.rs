@@ -318,8 +318,10 @@ impl AdminTools {
             }
         }
 
-        // Create backup
-        let backup_path = justfile_path.with_extension("justfile.bak");
+        // Create backup with dotfile naming
+        let backup_path = justfile_path.parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join(format!(".{}.bak", justfile_path.file_name().unwrap().to_string_lossy()));
         std::fs::copy(&justfile_path, &backup_path)?;
 
         // Read existing content
@@ -543,7 +545,9 @@ existing:
         assert!(new_content.contains("    echo \"second line\""));
 
         // Verify backup was created
-        let backup_path = justfile_path.with_extension("justfile.bak");
+        let backup_path = justfile_path.parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join(format!(".{}.bak", justfile_path.file_name().unwrap().to_string_lossy()));
         assert!(backup_path.exists());
 
         // Verify registry was updated
