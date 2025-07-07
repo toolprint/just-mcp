@@ -29,12 +29,12 @@ impl MessageHandler {
         self.admin_tools = Some(admin_tools);
         self
     }
-    
+
     pub fn with_security_config(mut self, config: crate::security::SecurityConfig) -> Self {
         self.security_config = Some(config);
         self
     }
-    
+
     pub fn with_resource_limits(mut self, limits: crate::resource_limits::ResourceLimits) -> Self {
         self.resource_limits = Some(limits);
         self
@@ -147,21 +147,24 @@ impl MessageHandler {
             .map_err(|_| Error::InvalidParameter("Invalid tool call parameters".to_string()))?;
 
         // Check if this is an admin tool
-        if params.name.starts_with("just_admin_") {
+        if params.name.starts_with("admin_") {
             return self
                 .handle_admin_tool(&params.name, &params.arguments, &request.id)
                 .await;
         }
 
-        // Check if tool exists
+        // Check if tool exists and get its internal name
         let registry = self.registry.lock().await;
-        let _tool = registry
+        let tool = registry
             .get_tool(&params.name)
             .ok_or_else(|| Error::ToolNotFound(params.name.clone()))?;
+        
+        // Use the internal name for execution if available, otherwise use the display name
+        let execution_name = tool.internal_name.as_ref().unwrap_or(&params.name).clone();
 
         // Create execution request
         let exec_request = crate::types::ExecutionRequest {
-            tool_name: params.name.clone(),
+            tool_name: execution_name,
             parameters: params.arguments,
             context: crate::types::ExecutionContext {
                 working_directory: None,
@@ -175,15 +178,15 @@ impl MessageHandler {
 
         // Execute the tool
         let mut executor = crate::executor::TaskExecutor::new();
-        
+
         if let Some(ref config) = self.security_config {
             executor = executor.with_security_config(config.clone());
         }
-        
+
         if let Some(ref limits) = self.resource_limits {
             executor = executor.with_resource_limits(limits.clone());
         }
-        
+
         match executor.execute(exec_request).await {
             Ok(result) => {
                 // Format the result for MCP
@@ -226,7 +229,7 @@ impl MessageHandler {
         request_id: &Option<Value>,
     ) -> Result<Option<Value>> {
         match tool_name {
-            "just_admin_sync" => {
+            "admin_sync" => {
                 if let Some(ref admin_tools) = self.admin_tools {
                     match admin_tools.sync().await {
                         Ok(result) => {
@@ -279,12 +282,14 @@ impl MessageHandler {
                     Ok(Some(serde_json::to_value(response)?))
                 }
             }
-            "just_admin_create_task" => {
+            "admin_create_task" => {
                 if let Some(ref admin_tools) = self.admin_tools {
                     // Parse the arguments into CreateTaskParams
-                    let params: crate::admin::CreateTaskParams = serde_json::from_value(serde_json::to_value(arguments)?)
-                        .map_err(|e| Error::InvalidParameter(format!("Invalid create_task parameters: {e}")))?;
-                    
+                    let params: crate::admin::CreateTaskParams =
+                        serde_json::from_value(serde_json::to_value(arguments)?).map_err(|e| {
+                            Error::InvalidParameter(format!("Invalid create_task parameters: {e}"))
+                        })?;
+
                     match admin_tools.create_task(params).await {
                         Ok(result) => {
                             let tool_result = json!({
@@ -299,8 +304,9 @@ impl MessageHandler {
                                 }],
                                 "isError": false
                             });
-                            
-                            let response = JsonRpcResponse::success(request_id.clone(), tool_result);
+
+                            let response =
+                                JsonRpcResponse::success(request_id.clone(), tool_result);
                             Ok(Some(serde_json::to_value(response)?))
                         }
                         Err(e) => {
@@ -309,8 +315,12 @@ impl MessageHandler {
                                 message: format!("Failed to create task: {e}"),
                                 data: None,
                             };
-                            
-                            let response = JsonRpcResponse::error(request_id.clone(), error.code, error.message);
+
+                            let response = JsonRpcResponse::error(
+                                request_id.clone(),
+                                error.code,
+                                error.message,
+                            );
                             Ok(Some(serde_json::to_value(response)?))
                         }
                     }
@@ -320,8 +330,9 @@ impl MessageHandler {
                         message: "Admin tools not available".to_string(),
                         data: None,
                     };
-                    
-                    let response = JsonRpcResponse::error(request_id.clone(), error.code, error.message);
+
+                    let response =
+                        JsonRpcResponse::error(request_id.clone(), error.code, error.message);
                     Ok(Some(serde_json::to_value(response)?))
                 }
             }

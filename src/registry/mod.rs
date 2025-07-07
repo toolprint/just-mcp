@@ -20,15 +20,15 @@ impl ToolRegistry {
     }
 
     pub fn add_tool(&mut self, tool: ToolDefinition) -> Result<()> {
-        let name = tool.name.clone();
-        let is_new = !self.tools.contains_key(&name);
+        let display_name = tool.name.clone();
+        let is_new = !self.tools.contains_key(&display_name);
 
-        self.tools.insert(name.clone(), tool);
+        self.tools.insert(display_name.clone(), tool);
 
         if is_new {
-            self.notify_change(ChangeType::Added, name)?;
+            self.notify_change(ChangeType::Added, display_name)?;
         } else {
-            self.notify_change(ChangeType::Modified, name)?;
+            self.notify_change(ChangeType::Modified, display_name)?;
         }
 
         Ok(())

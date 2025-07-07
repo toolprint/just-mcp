@@ -19,6 +19,7 @@ pub struct Server {
     registry: Arc<Mutex<ToolRegistry>>,
     transport: Box<dyn transport::Transport>,
     watch_paths: Vec<PathBuf>,
+    watch_configs: Vec<(PathBuf, Option<String>)>,
     notification_sender: Option<NotificationSender>,
     notification_receiver: Option<NotificationReceiver>,
     admin_tools: Option<Arc<AdminTools>>,
@@ -31,6 +32,7 @@ impl Server {
             registry: Arc::new(Mutex::new(ToolRegistry::new())),
             transport,
             watch_paths: vec![PathBuf::from(".")], // Default to current directory
+            watch_configs: vec![(PathBuf::from("."), None)],
             notification_sender: Some(sender),
             notification_receiver: Some(receiver),
             admin_tools: None,
@@ -39,6 +41,11 @@ impl Server {
 
     pub fn with_watch_paths(mut self, paths: Vec<PathBuf>) -> Self {
         self.watch_paths = paths;
+        self
+    }
+    
+    pub fn with_watch_names(mut self, configs: Vec<(PathBuf, Option<String>)>) -> Self {
+        self.watch_configs = configs;
         self
     }
 
@@ -52,9 +59,38 @@ impl Server {
         if let Some(sender) = self.notification_sender.clone() {
             watcher = watcher.with_notification_sender(sender);
         }
+        
+        // Configure the watcher with names and multiple dirs flag
+        watcher.configure_names(&self.watch_configs).await;
+        watcher.set_multiple_dirs(self.watch_configs.len() > 1);
 
         let watch_paths = self.watch_paths.clone();
         let watcher_arc = Arc::new(watcher);
+
+        // Do an initial scan of justfiles before starting the watcher
+        for path in &watch_paths {
+            if path.exists() {
+                if path.is_dir() {
+                    // Scan for existing justfiles in directory
+                    let justfile_path = path.join("justfile");
+                    if justfile_path.exists() {
+                        tracing::info!("Found justfile: {}", justfile_path.display());
+                        if let Err(e) = watcher_arc.parse_and_update_justfile(&justfile_path).await {
+                            tracing::warn!("Error parsing justfile: {}", e);
+                        }
+                    }
+                    
+                    // Also check for capitalized Justfile
+                    let justfile_cap = path.join("Justfile");
+                    if justfile_cap.exists() {
+                        tracing::info!("Found Justfile: {}", justfile_cap.display());
+                        if let Err(e) = watcher_arc.parse_and_update_justfile(&justfile_cap).await {
+                            tracing::warn!("Error parsing Justfile: {}", e);
+                        }
+                    }
+                }
+            }
+        }
 
         // Initialize admin tools
         let admin_tools = Arc::new(AdminTools::new(

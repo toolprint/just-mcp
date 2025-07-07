@@ -59,9 +59,9 @@ impl SecurityValidator {
                 .map_err(|e| Error::Other(format!("Invalid path {}: {}", path.display(), e)))?
         } else if let Some(parent) = path.parent() {
             // For files that don't exist yet, validate the parent directory
-            let canonical_parent = parent
-                .canonicalize()
-                .map_err(|e| Error::Other(format!("Invalid parent path {}: {}", parent.display(), e)))?;
+            let canonical_parent = parent.canonicalize().map_err(|e| {
+                Error::Other(format!("Invalid parent path {}: {}", parent.display(), e))
+            })?;
             // Reconstruct the full path with canonical parent
             canonical_parent.join(path.file_name().unwrap_or_default())
         } else {
@@ -220,7 +220,10 @@ impl SecurityValidator {
         let command_lower = command.to_lowercase();
         for pattern in dangerous_patterns {
             if command_lower.contains(pattern) {
-                warn!("Potentially dangerous command pattern detected: {}", pattern);
+                warn!(
+                    "Potentially dangerous command pattern detected: {}",
+                    pattern
+                );
                 if self.config.strict_mode {
                     return Err(Error::Other(format!(
                         "Command contains potentially dangerous pattern: {pattern}"
@@ -243,7 +246,7 @@ mod tests {
     fn test_path_validation() {
         let temp_dir = TempDir::new().unwrap();
         let allowed_path = temp_dir.path().to_path_buf();
-        
+
         let config = SecurityConfig {
             allowed_paths: vec![allowed_path.clone()],
             ..Default::default()
@@ -350,9 +353,6 @@ mod tests {
             validator.sanitize_parameter("hello; rm -rf /"),
             "'hello; rm -rf /'"
         );
-        assert_eq!(
-            validator.sanitize_parameter("$(whoami)"),
-            "'$(whoami)'"
-        );
+        assert_eq!(validator.sanitize_parameter("$(whoami)"), "'$(whoami)'");
     }
 }

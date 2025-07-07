@@ -23,8 +23,8 @@ impl Default for ResourceLimits {
     fn default() -> Self {
         Self {
             max_execution_time: Duration::from_secs(300), // 5 minutes
-            max_memory_bytes: None, // Not enforced by default
-            max_cpu_percent: None, // Not enforced by default
+            max_memory_bytes: None,                       // Not enforced by default
+            max_cpu_percent: None,                        // Not enforced by default
             max_concurrent_executions: 10,
             max_output_size: 10 * 1024 * 1024, // 10MB
             enforce_hard_limits: true,
@@ -52,27 +52,31 @@ impl ResourceManager {
 
     /// Check if we can start a new execution
     pub fn can_execute(&self) -> Result<()> {
-        let current = self.current_executions.load(std::sync::atomic::Ordering::Relaxed);
-        
+        let current = self
+            .current_executions
+            .load(std::sync::atomic::Ordering::Relaxed);
+
         if current >= self.limits.max_concurrent_executions {
             return Err(Error::Other(format!(
                 "Maximum concurrent executions ({}) reached",
                 self.limits.max_concurrent_executions
             )));
         }
-        
+
         Ok(())
     }
 
     /// Register the start of an execution
     pub fn start_execution(&self) -> ExecutionGuard {
-        self.current_executions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        info!("Started execution. Current count: {}", 
-              self.current_executions.load(std::sync::atomic::Ordering::Relaxed));
-        
-        ExecutionGuard {
-            manager: self,
-        }
+        self.current_executions
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        info!(
+            "Started execution. Current count: {}",
+            self.current_executions
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
+
+        ExecutionGuard { manager: self }
     }
 
     /// Get the configured timeout for executions
@@ -83,26 +87,27 @@ impl ResourceManager {
     /// Check if output size is within limits
     pub fn check_output_size(&self, stdout_len: usize, stderr_len: usize) -> Result<()> {
         let total_size = stdout_len + stderr_len;
-        
+
         if total_size > self.limits.max_output_size {
             let msg = format!(
                 "Output size ({} bytes) exceeds limit ({} bytes)",
                 total_size, self.limits.max_output_size
             );
-            
+
             if self.limits.enforce_hard_limits {
                 return Err(Error::Other(msg));
             } else {
                 warn!("{}", msg);
             }
         }
-        
+
         Ok(())
     }
 
     /// Get current execution count
     pub fn current_execution_count(&self) -> usize {
-        self.current_executions.load(std::sync::atomic::Ordering::Relaxed)
+        self.current_executions
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -113,9 +118,15 @@ pub struct ExecutionGuard<'a> {
 
 impl<'a> Drop for ExecutionGuard<'a> {
     fn drop(&mut self) {
-        self.manager.current_executions.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-        info!("Finished execution. Current count: {}",
-              self.manager.current_executions.load(std::sync::atomic::Ordering::Relaxed));
+        self.manager
+            .current_executions
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        info!(
+            "Finished execution. Current count: {}",
+            self.manager
+                .current_executions
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
     }
 }
 
@@ -124,18 +135,18 @@ impl<'a> Drop for ExecutionGuard<'a> {
 pub mod platform {
     use super::*;
     use std::process::Command;
-    
+
     /// Apply resource limits to a command (Unix-specific)
     pub fn apply_limits(cmd: &mut Command, limits: &ResourceLimits) {
         // On Unix, we can use ulimit-style limits
         // This is a simplified version - in production, consider using cgroups
-        
+
         if let Some(memory_bytes) = limits.max_memory_bytes {
             // Set memory limit using ulimit (in KB)
             let memory_kb = memory_bytes / 1024;
             cmd.env("RLIMIT_AS", memory_kb.to_string());
         }
-        
+
         // CPU limits are harder to enforce directly
         // In production, consider using nice/renice or cgroups
         if let Some(cpu_percent) = limits.max_cpu_percent {
@@ -152,7 +163,7 @@ pub mod platform {
 pub mod platform {
     use super::*;
     use std::process::Command;
-    
+
     /// Apply resource limits to a command (Windows-specific)
     pub fn apply_limits(_cmd: &mut Command, _limits: &ResourceLimits) {
         // Windows resource limiting is more complex
@@ -167,7 +178,7 @@ pub mod platform {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_resource_limits_default() {
         let limits = ResourceLimits::default();
@@ -176,7 +187,7 @@ mod tests {
         assert_eq!(limits.max_output_size, 10 * 1024 * 1024);
         assert!(limits.enforce_hard_limits);
     }
-    
+
     #[test]
     fn test_resource_manager_concurrent_limit() {
         let limits = ResourceLimits {
@@ -184,27 +195,27 @@ mod tests {
             ..Default::default()
         };
         let manager = ResourceManager::new(limits);
-        
+
         // First two should succeed
         assert!(manager.can_execute().is_ok());
         let _guard1 = manager.start_execution();
         assert_eq!(manager.current_execution_count(), 1);
-        
+
         assert!(manager.can_execute().is_ok());
         let _guard2 = manager.start_execution();
         assert_eq!(manager.current_execution_count(), 2);
-        
+
         // Third should fail
         assert!(manager.can_execute().is_err());
-        
+
         // Drop one guard
         drop(_guard1);
         assert_eq!(manager.current_execution_count(), 1);
-        
+
         // Now we can execute again
         assert!(manager.can_execute().is_ok());
     }
-    
+
     #[test]
     fn test_output_size_limits() {
         let limits = ResourceLimits {
@@ -213,14 +224,14 @@ mod tests {
             ..Default::default()
         };
         let manager = ResourceManager::new(limits);
-        
+
         // Within limits
         assert!(manager.check_output_size(500, 500).is_ok());
-        
+
         // Exceeds limits
         assert!(manager.check_output_size(600, 600).is_err());
     }
-    
+
     #[test]
     fn test_soft_limits() {
         let limits = ResourceLimits {
@@ -229,7 +240,7 @@ mod tests {
             ..Default::default()
         };
         let manager = ResourceManager::new(limits);
-        
+
         // Exceeds limits but only warns
         assert!(manager.check_output_size(600, 600).is_ok());
     }

@@ -5,7 +5,7 @@ use crate::registry::ToolRegistry;
 use crate::types::{JustTask, Parameter, ToolDefinition};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -19,6 +19,12 @@ pub struct JustfileWatcher {
     watched_paths: Arc<Mutex<HashSet<PathBuf>>>,
     debounce_duration: Duration,
     notification_sender: Option<NotificationSender>,
+    // Maps tool names to their source justfile paths
+    tool_source_map: Arc<Mutex<HashMap<String, PathBuf>>>,
+    // Maps justfile paths to their assigned names
+    path_names: Arc<Mutex<HashMap<PathBuf, Option<String>>>>,
+    // Whether we have multiple watch directories
+    has_multiple_dirs: bool,
 }
 
 impl JustfileWatcher {
@@ -29,12 +35,35 @@ impl JustfileWatcher {
             watched_paths: Arc::new(Mutex::new(HashSet::new())),
             debounce_duration: Duration::from_millis(500),
             notification_sender: None,
+            tool_source_map: Arc::new(Mutex::new(HashMap::new())),
+            path_names: Arc::new(Mutex::new(HashMap::new())),
+            has_multiple_dirs: false,
         }
     }
 
     pub fn with_notification_sender(mut self, sender: NotificationSender) -> Self {
         self.notification_sender = Some(sender);
         self
+    }
+    
+    pub async fn configure_names(&self, configs: &[(PathBuf, Option<String>)]) {
+        let mut path_names = self.path_names.lock().await;
+        for (path, name) in configs {
+            // Store names for each watched directory
+            if path.is_dir() {
+                let justfile_path = path.join("justfile");
+                path_names.insert(justfile_path.clone(), name.clone());
+                
+                let justfile_cap = path.join("Justfile");
+                path_names.insert(justfile_cap, name.clone());
+            } else {
+                path_names.insert(path.clone(), name.clone());
+            }
+        }
+    }
+    
+    pub fn set_multiple_dirs(&mut self, multiple: bool) {
+        self.has_multiple_dirs = multiple;
     }
 
     pub async fn watch_paths(&self, paths: Vec<PathBuf>) -> Result<()> {
@@ -139,39 +168,37 @@ impl JustfileWatcher {
         let tasks = self.parser.parse_file(path)?;
 
         let mut registry = self.registry.lock().await;
+        let mut tool_map = self.tool_source_map.lock().await;
+
+        // First, remove all tools from this justfile
+        let tools_to_remove: Vec<String> = tool_map
+            .iter()
+            .filter(|(_, source_path)| source_path == &path)
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        for tool_name in &tools_to_remove {
+            registry.remove_tool(tool_name)?;
+            tool_map.remove(tool_name);
+        }
 
         // Track which tools we've seen
         let mut seen_tools = HashSet::new();
 
         // Add or update tools from parsed tasks
         for task in tasks {
-            let tool = self.task_to_tool(task, &hash, path)?;
-            seen_tools.insert(tool.name.clone());
+            let tool = self.task_to_tool(task, &hash, path).await?;
+            let tool_name = tool.name.clone();
+            seen_tools.insert(tool_name.clone());
+            
+            // Track the source path
+            tool_map.insert(tool_name.clone(), path.to_path_buf());
+            
             registry.add_tool(tool)?;
         }
 
-        // Remove tools that are no longer in the justfile
-        // Tool names are in format: just_taskname_/path/to/justfile
-        // So we need to match the prefix: just_*_/path/to/justfile
-        let path_suffix = format!("_{}", path.display());
-        let tools_to_remove: Vec<String> = registry
-            .list_tools()
-            .iter()
-            .filter(|tool| {
-                tool.name.starts_with("just_")
-                    && tool.name.ends_with(&path_suffix)
-                    && !seen_tools.contains(&tool.name)
-            })
-            .map(|tool| tool.name.clone())
-            .collect();
-
-        let had_removals = !tools_to_remove.is_empty();
-        for tool_name in tools_to_remove {
-            registry.remove_tool(&tool_name)?;
-        }
-
         // Send notification if we made any changes
-        if !seen_tools.is_empty() || had_removals {
+        if !seen_tools.is_empty() || !tools_to_remove.is_empty() {
             if let Some(ref sender) = self.notification_sender {
                 let _ = sender.send(Notification::ToolsListChanged);
             }
@@ -182,19 +209,19 @@ impl JustfileWatcher {
 
     async fn remove_justfile_tools(&self, path: &Path) -> Result<()> {
         let mut registry = self.registry.lock().await;
-        // Tool names are in format: just_taskname_/path/to/justfile
-        let path_suffix = format!("_{}", path.display());
+        let mut tool_map = self.tool_source_map.lock().await;
 
-        let tools_to_remove: Vec<String> = registry
-            .list_tools()
+        // Find tools from this justfile using our map
+        let tools_to_remove: Vec<String> = tool_map
             .iter()
-            .filter(|tool| tool.name.starts_with("just_") && tool.name.ends_with(&path_suffix))
-            .map(|tool| tool.name.clone())
+            .filter(|(_, source_path)| source_path == &path)
+            .map(|(name, _)| name.clone())
             .collect();
 
         let had_removals = !tools_to_remove.is_empty();
-        for tool_name in tools_to_remove {
-            registry.remove_tool(&tool_name)?;
+        for tool_name in &tools_to_remove {
+            registry.remove_tool(tool_name)?;
+            tool_map.remove(tool_name);
         }
 
         // Send notification if we removed tools
@@ -207,14 +234,39 @@ impl JustfileWatcher {
         Ok(())
     }
 
-    fn task_to_tool(&self, task: JustTask, hash: &str, path: &Path) -> Result<ToolDefinition> {
-        // Generate tool name with path prefix to avoid conflicts
-        // Format: just_taskname_/path/to/justfile
-        let name = format!("just_{}_{}", task.name, path.display());
+    async fn task_to_tool(&self, task: JustTask, hash: &str, path: &Path) -> Result<ToolDefinition> {
+        // Get the configured name for this path
+        let path_names = self.path_names.lock().await;
+        let configured_name = path_names.get(path).and_then(|n| n.as_ref());
+        
+        // Always create the internal name with full path for execution
+        let internal_name = format!("just_{}_{}", task.name, path.display());
+        
+        // Build the display name based on configuration
+        let display_name = if self.has_multiple_dirs {
+            // Multiple directories: add @name suffix if we have a name
+            if let Some(name) = configured_name {
+                format!("just_{}@{}", task.name, name)
+            } else {
+                // Fall back to full path if no name configured
+                format!("just_{}_{}", task.name, path.display())
+            }
+        } else {
+            // Single directory: no suffix in the display name
+            format!("just_{}", task.name)
+        };
 
         // Generate description from comments or use default
         let description = if task.comments.is_empty() {
-            format!("Execute {} task from {}", task.name, path.display())
+            if self.has_multiple_dirs {
+                if let Some(name) = configured_name {
+                    format!("Execute '{}' task from {}", task.name, name)
+                } else {
+                    format!("Execute '{}' task", task.name)
+                }
+            } else {
+                format!("Execute '{}' task", task.name)
+            }
         } else {
             task.comments.join(". ")
         };
@@ -223,12 +275,13 @@ impl JustfileWatcher {
         let input_schema = self.generate_input_schema(&task.parameters);
 
         Ok(ToolDefinition {
-            name,
+            name: display_name,
             description,
             input_schema,
             dependencies: task.dependencies,
             source_hash: hash.to_string(),
             last_modified: SystemTime::now(),
+            internal_name: Some(internal_name),
         })
     }
 

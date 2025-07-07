@@ -33,12 +33,12 @@ impl TaskExecutor {
             resource_manager,
         }
     }
-    
+
     pub fn with_security_config(mut self, config: SecurityConfig) -> Self {
         self.security_validator = SecurityValidator::new(config);
         self
     }
-    
+
     pub fn with_resource_limits(mut self, limits: ResourceLimits) -> Self {
         self.resource_manager = Arc::new(ResourceManager::new(limits));
         self.default_timeout = self.resource_manager.get_timeout();
@@ -52,7 +52,7 @@ impl TaskExecutor {
 
     pub async fn execute(&mut self, request: ExecutionRequest) -> Result<ExecutionResult> {
         info!("Executing task: {}", request.tool_name);
-        
+
         // Check resource limits before starting
         self.resource_manager.can_execute()?;
 
@@ -63,16 +63,17 @@ impl TaskExecutor {
             "Parsed task name: {}, justfile path: {}",
             task_name, justfile_path
         );
-        
+
         // Validate task name
         self.security_validator.validate_task_name(&task_name)?;
-        
+
         // Validate justfile path
         let justfile_path_buf = PathBuf::from(&justfile_path);
         self.security_validator.validate_path(&justfile_path_buf)?;
-        
+
         // Validate parameters
-        self.security_validator.validate_parameters(&request.parameters)?;
+        self.security_validator
+            .validate_parameters(&request.parameters)?;
 
         // Verify task exists
         {
@@ -101,7 +102,7 @@ impl TaskExecutor {
 
         // Start tracking this execution
         let _execution_guard = self.resource_manager.start_execution();
-        
+
         self.execute_just_command(&task_name, &request.parameters, &context)
             .await
     }
@@ -236,11 +237,9 @@ impl TaskExecutor {
         match timeout(timeout_duration, cmd.output()).await {
             Ok(Ok(output)) => {
                 // Check output size limits
-                self.resource_manager.check_output_size(
-                    output.stdout.len(),
-                    output.stderr.len()
-                )?;
-                
+                self.resource_manager
+                    .check_output_size(output.stdout.len(), output.stderr.len())?;
+
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let exit_code = output.status.code();
@@ -316,11 +315,9 @@ impl TaskExecutor {
         match timeout(timeout_duration, cmd.output()).await {
             Ok(Ok(output)) => {
                 // Check output size limits
-                self.resource_manager.check_output_size(
-                    output.stdout.len(),
-                    output.stderr.len()
-                )?;
-                
+                self.resource_manager
+                    .check_output_size(output.stdout.len(), output.stderr.len())?;
+
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let exit_code = output.status.code();

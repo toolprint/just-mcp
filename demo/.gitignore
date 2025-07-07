@@ -1,0 +1,8 @@
+# Demo project generated files
+configs/
+target/
+backups/
+*.json
+*.conf
+*.tmp
+docs/README.*

@@ -14,6 +14,9 @@ pub struct ToolDefinition {
     pub source_hash: String,
     #[serde(skip, default = "std::time::SystemTime::now")]
     pub last_modified: std::time::SystemTime,
+    // Internal name used for execution (includes full path)
+    #[serde(skip)]
+    pub internal_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
