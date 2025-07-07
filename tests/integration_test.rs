@@ -1,7 +1,7 @@
 #[test]
 fn test_project_structure() {
     // Ensure all modules are accessible
-    use just_mcp::{Error, Result, Server, PKG_NAME, VERSION};
+    use just_mcp::{PKG_NAME, VERSION};
 
     assert_eq!(PKG_NAME, "just-mcp");
     assert!(!VERSION.is_empty());
