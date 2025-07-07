@@ -335,8 +335,13 @@ impl AdminTools {
         // Build the new task content
         let mut task_content = String::new();
 
-        // Add newlines if file doesn't end with one
-        if !existing_content.ends_with('\n') {
+        // Ensure proper spacing: always add a blank line before the new task
+        if !existing_content.is_empty() {
+            // If file doesn't end with newline, add one
+            if !existing_content.ends_with('\n') {
+                task_content.push('\n');
+            }
+            // Always add a blank line for visual separation
             task_content.push('\n');
         }
 
