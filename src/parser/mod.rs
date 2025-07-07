@@ -1,12 +1,14 @@
 use crate::error::Result;
 use crate::types::{JustTask, Parameter};
 use regex::Regex;
+use std::collections::HashMap;
 use std::path::Path;
 
 pub struct JustfileParser {
     recipe_regex: Regex,
     parameter_regex: Regex,
     attribute_regex: Regex,
+    param_desc_regex: Regex,
 }
 
 impl JustfileParser {
@@ -20,6 +22,8 @@ impl JustfileParser {
             )?,
             // Matches attributes like [private], [group('name')], etc.
             attribute_regex: Regex::new(r"^\s*\[([^\]]+)\]")?,
+            // Matches parameter descriptions in comments: # {{param}}: description
+            param_desc_regex: Regex::new(r"^\s*\{\{(\w+)\}\}\s*:\s*(.+)$")?,
         })
     }
 
@@ -52,6 +56,8 @@ impl JustfileParser {
         let mut current_index = *index;
         let mut comments = Vec::new();
         let mut attributes = Vec::new();
+        let mut param_descriptions = HashMap::new();
+        let mut doc_string: Option<String> = None;
 
         // Collect comments and attributes before the recipe
         while current_index < lines.len() {
@@ -75,12 +81,27 @@ impl JustfileParser {
             }
 
             if let Some(comment) = line.strip_prefix('#') {
-                // Comment line - potential description
-                comments.push(comment.trim().to_string());
+                // Check if this is a parameter description
+                if let Some(captures) = self.param_desc_regex.captures(comment) {
+                    let param_name = captures[1].to_string();
+                    let param_desc = captures[2].trim().to_string();
+                    param_descriptions.insert(param_name, param_desc);
+                } else {
+                    // Regular comment line - potential task description
+                    comments.push(comment.trim().to_string());
+                }
                 current_index += 1;
             } else if let Some(captures) = self.attribute_regex.captures(line) {
                 // Attribute line like [private] or [group('test')]
-                attributes.push(captures[1].to_string());
+                let attr = &captures[1];
+                attributes.push(attr.to_string());
+                
+                // Check if this is a doc attribute
+                if attr.starts_with("doc(") && attr.ends_with(")") {
+                    let doc_content = &attr[4..attr.len()-1];
+                    // Remove quotes if present
+                    doc_string = Some(doc_content.trim_matches('"').trim_matches('\'').to_string());
+                }
                 current_index += 1;
             } else if self.recipe_regex.is_match(line) {
                 // Found a recipe definition
@@ -104,7 +125,7 @@ impl JustfileParser {
             let params_str = captures.get(2).map(|m| m.as_str());
 
             // Parse parameters
-            let parameters = if let Some(params) = params_str {
+            let mut parameters = if let Some(params) = params_str {
                 let params = params.trim();
                 if params.starts_with('(') && params.ends_with(')') {
                     // Parameters with parentheses
@@ -117,6 +138,16 @@ impl JustfileParser {
             } else {
                 Vec::new()
             };
+
+            // Apply parameter descriptions
+            for param in &mut parameters {
+                if let Some(desc) = param_descriptions.get(&param.name) {
+                    param.description = Some(desc.clone());
+                } else if let Some(default) = &param.default {
+                    // If no description provided but has default, mention it
+                    param.description = Some(format!("(default: {})", default));
+                }
+            }
 
             // Parse dependencies (on the same line after the colon)
             let dependencies = self.parse_dependencies(&recipe_line[captures[0].len()..])?;
@@ -152,12 +183,19 @@ impl JustfileParser {
 
             *index = current_index;
 
+            // Use doc string if available, otherwise use the last comment as description
+            let final_comments = if let Some(doc) = doc_string {
+                vec![doc]
+            } else {
+                comments
+            };
+
             Ok(Some(JustTask {
                 name: name.to_string(), // Task name without prefix
                 body: body.trim().to_string(),
                 parameters,
                 dependencies,
-                comments,
+                comments: final_comments,
                 line_number: *index,
             }))
         } else {
@@ -393,5 +431,68 @@ build:
         assert!(tasks[0].body.contains("Building..."));
         assert!(tasks[0].body.contains("cargo build"));
         assert!(tasks[0].body.contains("Build complete!"));
+    }
+
+    #[test]
+    fn test_parse_parameter_descriptions() {
+        let parser = JustfileParser::new().unwrap();
+        let content = r#"
+# {{target}}: the target to build (debug, release, etc.)
+# {{features}}: comma-separated list of features to enable
+# Build the project with different targets
+build target="debug" features="":
+    cargo build --{{target}} {{features}}
+"#;
+
+        let tasks = parser.parse_content(content).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "build");
+        assert_eq!(tasks[0].parameters.len(), 2);
+        
+        // Check first parameter
+        assert_eq!(tasks[0].parameters[0].name, "target");
+        assert_eq!(tasks[0].parameters[0].default, Some("debug".to_string()));
+        assert_eq!(
+            tasks[0].parameters[0].description,
+            Some("the target to build (debug, release, etc.)".to_string())
+        );
+        
+        // Check second parameter
+        assert_eq!(tasks[0].parameters[1].name, "features");
+        assert_eq!(tasks[0].parameters[1].default, Some("".to_string()));
+        assert_eq!(
+            tasks[0].parameters[1].description,
+            Some("comma-separated list of features to enable".to_string())
+        );
+        
+        // Task description should be the last comment before the task
+        assert_eq!(tasks[0].comments, vec!["Build the project with different targets"]);
+    }
+
+    #[test]
+    fn test_parse_doc_attribute() {
+        let parser = JustfileParser::new().unwrap();
+        let content = r#"
+# {{count}}: number of records to seed
+[doc("Seed the database with sample data")]
+db-seed count="10":
+    echo "Seeding {{count}} records"
+"#;
+
+        let tasks = parser.parse_content(content).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "db-seed");
+        assert_eq!(tasks[0].parameters.len(), 1);
+        
+        // Check parameter description
+        assert_eq!(tasks[0].parameters[0].name, "count");
+        assert_eq!(tasks[0].parameters[0].default, Some("10".to_string()));
+        assert_eq!(
+            tasks[0].parameters[0].description,
+            Some("number of records to seed".to_string())
+        );
+        
+        // Task description should come from doc attribute
+        assert_eq!(tasks[0].comments, vec!["Seed the database with sample data"]);
     }
 }

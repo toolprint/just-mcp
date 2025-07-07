@@ -382,6 +382,7 @@ test:
 
         let tool = watcher
             .task_to_tool(task, "hash123", Path::new("justfile"))
+            .await
             .unwrap();
 
         assert_eq!(tool.description, "Test task");

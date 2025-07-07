@@ -239,6 +239,7 @@ mod tests {
             dependencies: vec![],
             source_hash: "test_hash".to_string(),
             last_modified: std::time::SystemTime::now(),
+            internal_name: None,
         };
 
         registry.lock().await.add_tool(test_tool).unwrap();
