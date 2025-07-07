@@ -84,7 +84,7 @@ format:
     @echo "Formatting JSON files..."
     @prettier --write "**/*.json" --ignore-path .gitignore || true
     @echo "Formatting Markdown files..."
-    @markdownlint-cli2 --fix "**/*.md" "#node_modules" "#.git" || true
+    @markdownlint-cli2 --fix "**/*.md" "#node_modules" "#.git" "#target" || true
     @echo "Formatting complete!"
 
 # Lint code
@@ -97,7 +97,7 @@ lint:
     @echo "Linting JSON files..."
     @prettier --check "**/*.json" --ignore-path .gitignore || exit 1
     @echo "Linting Markdown files..."
-    @markdownlint-cli2 "**/*.md" "#node_modules" "#.git" || exit 1
+    @markdownlint-cli2 "**/*.md" "#node_modules" "#.git" "#target" || exit 1
     @echo "Linting complete!"
 
 # Check code (format + lint + test)

@@ -7,6 +7,7 @@ This demo project showcases how Just-MCP exposes justfile tasks as MCP tools tha
 ### Prerequisites
 
 1. Install `just` command runner:
+
    ```bash
    # macOS
    brew install just
@@ -16,6 +17,7 @@ This demo project showcases how Just-MCP exposes justfile tasks as MCP tools tha
    ```
 
 2. Build and run the Just-MCP server:
+
    ```bash
    # From the project root
    cargo build --release
@@ -24,6 +26,7 @@ This demo project showcases how Just-MCP exposes justfile tasks as MCP tools tha
 ### Running the Demo
 
 1. Start the Just-MCP server with this demo directory:
+
    ```bash
    # From the just-mcp root directory
    ./target/release/just-mcp --watch-dir ./demo
@@ -32,6 +35,7 @@ This demo project showcases how Just-MCP exposes justfile tasks as MCP tools tha
 2. The server will automatically discover and expose all tasks from the `justfile` as MCP tools.
 
 3. In another terminal, you can test the MCP protocol:
+
    ```bash
    # Example: List available tools
    echo '{"jsonrpc": "2.0", "method": "tools/list", "id": 1}' | nc localhost 3000
@@ -42,38 +46,45 @@ This demo project showcases how Just-MCP exposes justfile tasks as MCP tools tha
 The demo justfile includes various task types to demonstrate Just-MCP capabilities:
 
 #### Basic Tasks
+
 - `hello [name]` - Simple greeting with optional parameter
 - `system-info` - Display system information
 - `clean` - Cleanup temporary files
 
 #### Build & Deploy
+
 - `build [target]` - Simulate building with different targets (debug/release)
 - `test [filter]` - Run tests with optional filter
 - `deploy [environment]` - Deploy to different environments
 - `full-deploy` - Complex task with dependencies
 
 #### Database Operations
+
 - `db-migrate [direction]` - Run database migrations up/down
 - `db-seed [count]` - Seed database with sample data
 
 #### File Operations
+
 - `create-config <name> [template]` - Create configuration files
 - `process-data <input> [output]` - Process data files
 - `backup [destination]` - Create backups
 
 #### Docker & DevOps
+
 - `docker-build [tag]` - Build Docker images
 - `docker-push [registry]` - Push to registries
 - `monitor [service] [interval]` - Monitor services
 - `health-check` - Perform health checks
 
 #### Development Tools
+
 - `api-test <endpoint> [method] [data]` - Test API endpoints
 - `benchmark [iterations]` - Run performance tests
 - `analyze-logs [level] [limit]` - Analyze log files
 - `docs [format]` - Generate documentation
 
 #### Advanced Features
+
 - `version [action]` - Version management (show/bump)
 - `secrets [action]` - Secret management (list/rotate)
 - `interactive-setup` - Multi-step setup process
@@ -83,12 +94,14 @@ The demo justfile includes various task types to demonstrate Just-MCP capabiliti
 Each task becomes an MCP tool with the naming pattern: `just_<taskname>_<justfile_path>`
 
 For example, if the justfile is at `/home/user/demo/justfile`:
+
 - `hello` becomes `just_hello_/home/user/demo/justfile`
 - `build` becomes `just_build_/home/user/demo/justfile`
 
 ### Example MCP Requests
 
 1. **Initialize connection:**
+
    ```json
    {
      "jsonrpc": "2.0",
@@ -102,6 +115,7 @@ For example, if the justfile is at `/home/user/demo/justfile`:
    ```
 
 2. **List available tools:**
+
    ```json
    {
      "jsonrpc": "2.0",
@@ -112,6 +126,7 @@ For example, if the justfile is at `/home/user/demo/justfile`:
    ```
 
 3. **Call a tool (example: hello):**
+
    ```json
    {
      "jsonrpc": "2.0",
@@ -127,6 +142,7 @@ For example, if the justfile is at `/home/user/demo/justfile`:
    ```
 
 4. **Call a complex tool (example: deploy):**
+
    ```json
    {
      "jsonrpc": "2.0",
@@ -160,6 +176,7 @@ Just-MCP also provides admin tools for managing justfiles:
 ### Real-time Updates
 
 If you modify the `justfile` while the server is running, Just-MCP will:
+
 1. Detect the changes automatically
 2. Re-parse the justfile
 3. Update the available tools

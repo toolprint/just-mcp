@@ -216,7 +216,10 @@ impl AdminTools {
         info!("Scanning justfile: {}", path.display());
 
         // Use the watcher's parse method without sending notifications
-        let task_count = self.watcher.parse_and_update_justfile_without_notification(path).await?;
+        let task_count = self
+            .watcher
+            .parse_and_update_justfile_without_notification(path)
+            .await?;
 
         Ok(task_count)
     }
@@ -225,17 +228,14 @@ impl AdminTools {
         info!(
             "Creating new task: {} in {}",
             params.task_name,
-            params
-                .watch_name
-                .as_deref()
-                .unwrap_or("default justfile")
+            params.watch_name.as_deref().unwrap_or("default justfile")
         );
 
         // Determine which justfile to use
         let justfile_path = if let Some(watch_name) = params.watch_name {
             // Find the watch directory by name
             let mut found_path = None;
-            
+
             for (path, name) in &self.watch_configs {
                 if let Some(n) = name {
                     if n == &watch_name {
@@ -258,22 +258,25 @@ impl AdminTools {
                     }
                 }
             }
-            
-            found_path.ok_or_else(|| crate::error::Error::Other(
-                format!("Watch directory '{}' not found. Available: {}", 
+
+            found_path.ok_or_else(|| {
+                crate::error::Error::Other(format!(
+                    "Watch directory '{}' not found. Available: {}",
                     watch_name,
-                    self.watch_configs.iter()
+                    self.watch_configs
+                        .iter()
                         .filter_map(|(_, name)| name.as_ref())
-                        .map(|n| format!("'{}'", n))
+                        .map(|n| format!("'{n}'"))
                         .collect::<Vec<_>>()
                         .join(", ")
-                )
-            ))?
+                ))
+            })?
         } else {
             // No name specified - use the main/first justfile
-            let (path, _) = &self.watch_configs.get(0)
-                .ok_or_else(|| crate::error::Error::Other("No watch directories configured".to_string()))?;
-            
+            let (path, _) = &self.watch_configs.first().ok_or_else(|| {
+                crate::error::Error::Other("No watch directories configured".to_string())
+            })?;
+
             if path.is_dir() {
                 let justfile = path.join("justfile");
                 if justfile.exists() {
@@ -283,7 +286,9 @@ impl AdminTools {
                     if justfile_cap.exists() {
                         justfile_cap
                     } else {
-                        return Err(crate::error::Error::Other("No justfile found in main watch directory".to_string()));
+                        return Err(crate::error::Error::Other(
+                            "No justfile found in main watch directory".to_string(),
+                        ));
                     }
                 }
             } else {
@@ -294,14 +299,14 @@ impl AdminTools {
         // Validate task name doesn't conflict with existing tasks
         {
             let registry = self.registry.lock().await;
-            
+
             // Check for any tool that starts with "just_{task_name}"
             // This handles both single directory (just_taskname) and multi-directory (just_taskname@name) cases
             let task_prefix = format!("just_{}", params.task_name);
             let existing_task = registry.list_tools().iter().any(|tool| {
-                tool.name == task_prefix || tool.name.starts_with(&format!("{}@", task_prefix))
+                tool.name == task_prefix || tool.name.starts_with(&format!("{task_prefix}@"))
             });
-            
+
             if existing_task {
                 return Err(crate::error::Error::Other(format!(
                     "Task '{}' already exists in {}",
@@ -319,9 +324,13 @@ impl AdminTools {
         }
 
         // Create backup with dotfile naming
-        let backup_path = justfile_path.parent()
+        let backup_path = justfile_path
+            .parent()
             .unwrap_or_else(|| std::path::Path::new("."))
-            .join(format!(".{}.bak", justfile_path.file_name().unwrap().to_string_lossy()));
+            .join(format!(
+                ".{}.bak",
+                justfile_path.file_name().unwrap().to_string_lossy()
+            ));
         std::fs::copy(&justfile_path, &backup_path)?;
 
         // Read existing content
@@ -481,7 +490,11 @@ build:
         // We might find more than one justfile if there are parent directories
         // with justfiles, so just check that we found at least our test justfile
         assert!(result.scanned_files >= 1);
-        assert!(result.found_tasks >= 2, "Expected at least 2 tasks, found {}", result.found_tasks);
+        assert!(
+            result.found_tasks >= 2,
+            "Expected at least 2 tasks, found {}",
+            result.found_tasks
+        );
         assert_eq!(result.errors.len(), 0);
 
         // Check registry has the tools
@@ -490,11 +503,13 @@ build:
         // Should have at least 2 tools from our test justfile
         let our_justfile_tools: Vec<_> = tools
             .iter()
-            .filter(|t| {
-                t.name.starts_with("just_") && !t.name.starts_with("admin_")
-            })
+            .filter(|t| t.name.starts_with("just_") && !t.name.starts_with("admin_"))
             .collect();
-        assert!(our_justfile_tools.len() >= 2, "Expected at least 2 tools, found {}", our_justfile_tools.len());
+        assert!(
+            our_justfile_tools.len() >= 2,
+            "Expected at least 2 tools, found {}",
+            our_justfile_tools.len()
+        );
     }
 
     #[tokio::test]
@@ -521,7 +536,7 @@ existing:
 
         // Create a new task
         let params = CreateTaskParams {
-            watch_name: None,  // Use default
+            watch_name: None, // Use default
             task_name: "new_task".to_string(),
             description: Some("A new test task".to_string()),
             recipe: "echo \"hello world\"\necho \"second line\"".to_string(),
@@ -545,9 +560,13 @@ existing:
         assert!(new_content.contains("    echo \"second line\""));
 
         // Verify backup was created
-        let backup_path = justfile_path.parent()
+        let backup_path = justfile_path
+            .parent()
             .unwrap_or_else(|| std::path::Path::new("."))
-            .join(format!(".{}.bak", justfile_path.file_name().unwrap().to_string_lossy()));
+            .join(format!(
+                ".{}.bak",
+                justfile_path.file_name().unwrap().to_string_lossy()
+            ));
         assert!(backup_path.exists());
 
         // Verify registry was updated
@@ -590,7 +609,7 @@ existing:
 
         // Try to create a task with existing name
         let params = CreateTaskParams {
-            watch_name: None,  // Use default
+            watch_name: None, // Use default
             task_name: "existing".to_string(),
             description: None,
             recipe: "echo \"duplicate\"".to_string(),
@@ -604,7 +623,7 @@ existing:
 
         // Try to create a task with admin_ prefix
         let params = CreateTaskParams {
-            watch_name: None,  // Use default
+            watch_name: None, // Use default
             task_name: "admin_task".to_string(),
             description: None,
             recipe: "echo \"admin\"".to_string(),
@@ -633,7 +652,10 @@ existing:
         let admin_tools = AdminTools::new(
             registry.clone(),
             watcher,
-            vec![temp_dir1.path().to_path_buf(), temp_dir2.path().to_path_buf()],
+            vec![
+                temp_dir1.path().to_path_buf(),
+                temp_dir2.path().to_path_buf(),
+            ],
             vec![
                 (temp_dir1.path().to_path_buf(), Some("frontend".to_string())),
                 (temp_dir2.path().to_path_buf(), Some("backend".to_string())),

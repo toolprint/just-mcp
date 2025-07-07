@@ -95,10 +95,10 @@ impl JustfileParser {
                 // Attribute line like [private] or [group('test')]
                 let attr = &captures[1];
                 attributes.push(attr.to_string());
-                
+
                 // Check if this is a doc attribute
                 if attr.starts_with("doc(") && attr.ends_with(")") {
-                    let doc_content = &attr[4..attr.len()-1];
+                    let doc_content = &attr[4..attr.len() - 1];
                     // Remove quotes if present
                     doc_string = Some(doc_content.trim_matches('"').trim_matches('\'').to_string());
                 }
@@ -145,7 +145,7 @@ impl JustfileParser {
                     param.description = Some(desc.clone());
                 } else if let Some(default) = &param.default {
                     // If no description provided but has default, mention it
-                    param.description = Some(format!("(default: {})", default));
+                    param.description = Some(format!("(default: {default})"));
                 }
             }
 
@@ -448,7 +448,7 @@ build target="debug" features="":
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "build");
         assert_eq!(tasks[0].parameters.len(), 2);
-        
+
         // Check first parameter
         assert_eq!(tasks[0].parameters[0].name, "target");
         assert_eq!(tasks[0].parameters[0].default, Some("debug".to_string()));
@@ -456,7 +456,7 @@ build target="debug" features="":
             tasks[0].parameters[0].description,
             Some("the target to build (debug, release, etc.)".to_string())
         );
-        
+
         // Check second parameter
         assert_eq!(tasks[0].parameters[1].name, "features");
         assert_eq!(tasks[0].parameters[1].default, Some("".to_string()));
@@ -464,9 +464,12 @@ build target="debug" features="":
             tasks[0].parameters[1].description,
             Some("comma-separated list of features to enable".to_string())
         );
-        
+
         // Task description should be the last comment before the task
-        assert_eq!(tasks[0].comments, vec!["Build the project with different targets"]);
+        assert_eq!(
+            tasks[0].comments,
+            vec!["Build the project with different targets"]
+        );
     }
 
     #[test]
@@ -483,7 +486,7 @@ db-seed count="10":
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "db-seed");
         assert_eq!(tasks[0].parameters.len(), 1);
-        
+
         // Check parameter description
         assert_eq!(tasks[0].parameters[0].name, "count");
         assert_eq!(tasks[0].parameters[0].default, Some("10".to_string()));
@@ -491,8 +494,11 @@ db-seed count="10":
             tasks[0].parameters[0].description,
             Some("number of records to seed".to_string())
         );
-        
+
         // Task description should come from doc attribute
-        assert_eq!(tasks[0].comments, vec!["Seed the database with sample data"]);
+        assert_eq!(
+            tasks[0].comments,
+            vec!["Seed the database with sample data"]
+        );
     }
 }

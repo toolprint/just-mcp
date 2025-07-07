@@ -94,7 +94,10 @@ test:
 #[tokio::test]
 async fn test_tool_name_conflict_resolution() {
     let registry = Arc::new(Mutex::new(ToolRegistry::new()));
-    let watcher = JustfileWatcher::new(registry.clone());
+    let mut watcher = JustfileWatcher::new(registry.clone());
+
+    // Set multiple dirs mode to enable conflict resolution
+    watcher.set_multiple_dirs(true);
 
     let temp_dir = TempDir::new().unwrap();
     let justfile1 = temp_dir.path().join("justfile");

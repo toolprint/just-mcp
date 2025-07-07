@@ -45,7 +45,7 @@ impl JustfileWatcher {
         self.notification_sender = Some(sender);
         self
     }
-    
+
     pub async fn configure_names(&self, configs: &[(PathBuf, Option<String>)]) {
         let mut path_names = self.path_names.lock().await;
         for (path, name) in configs {
@@ -53,7 +53,7 @@ impl JustfileWatcher {
             if path.is_dir() {
                 let justfile_path = path.join("justfile");
                 path_names.insert(justfile_path.clone(), name.clone());
-                
+
                 let justfile_cap = path.join("Justfile");
                 path_names.insert(justfile_cap, name.clone());
             } else {
@@ -61,7 +61,7 @@ impl JustfileWatcher {
             }
         }
     }
-    
+
     pub fn set_multiple_dirs(&mut self, multiple: bool) {
         self.has_multiple_dirs = multiple;
     }
@@ -169,11 +169,18 @@ impl JustfileWatcher {
 
     /// Parse and update justfile, optionally sending notifications
     /// Returns the number of tasks added from this justfile
-    pub async fn parse_and_update_justfile_without_notification(&self, path: &Path) -> Result<usize> {
+    pub async fn parse_and_update_justfile_without_notification(
+        &self,
+        path: &Path,
+    ) -> Result<usize> {
         self.parse_and_update_justfile_internal(path, false).await
     }
 
-    async fn parse_and_update_justfile_internal(&self, path: &Path, send_notification: bool) -> Result<usize> {
+    async fn parse_and_update_justfile_internal(
+        &self,
+        path: &Path,
+        send_notification: bool,
+    ) -> Result<usize> {
         let content = std::fs::read_to_string(path)?;
         let hash = ToolRegistry::compute_hash(&content);
         let tasks = self.parser.parse_file(path)?;
@@ -201,10 +208,10 @@ impl JustfileWatcher {
             let tool = self.task_to_tool(task, &hash, path).await?;
             let tool_name = tool.name.clone();
             seen_tools.insert(tool_name.clone());
-            
+
             // Track the source path
             tool_map.insert(tool_name.clone(), path.to_path_buf());
-            
+
             registry.add_tool(tool)?;
         }
 
@@ -252,14 +259,19 @@ impl JustfileWatcher {
         Ok(())
     }
 
-    async fn task_to_tool(&self, task: JustTask, hash: &str, path: &Path) -> Result<ToolDefinition> {
+    async fn task_to_tool(
+        &self,
+        task: JustTask,
+        hash: &str,
+        path: &Path,
+    ) -> Result<ToolDefinition> {
         // Get the configured name for this path
         let path_names = self.path_names.lock().await;
         let configured_name = path_names.get(path).and_then(|n| n.as_ref());
-        
+
         // Always create the internal name with full path for execution
         let internal_name = format!("just_{}_{}", task.name, path.display());
-        
+
         // Build the display name based on configuration
         let display_name = if self.has_multiple_dirs {
             // Multiple directories: add @name suffix if we have a name

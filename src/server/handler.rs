@@ -158,7 +158,7 @@ impl MessageHandler {
         let tool = registry
             .get_tool(&params.name)
             .ok_or_else(|| Error::ToolNotFound(params.name.clone()))?;
-        
+
         // Use the internal name for execution if available, otherwise use the display name
         let execution_name = tool.internal_name.as_ref().unwrap_or(&params.name).clone();
 
