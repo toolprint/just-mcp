@@ -19,13 +19,13 @@ fn test_parse_actual_justfile() {
     }
 
     // Verify we found some expected tasks
-    assert!(tasks.iter().any(|t| t.name == "just_brew"));
-    assert!(tasks.iter().any(|t| t.name == "just_test"));
-    assert!(tasks.iter().any(|t| t.name == "just_format"));
-    assert!(tasks.iter().any(|t| t.name == "just_lint"));
+    assert!(tasks.iter().any(|t| t.name == "brew"));
+    assert!(tasks.iter().any(|t| t.name == "test"));
+    assert!(tasks.iter().any(|t| t.name == "format"));
+    assert!(tasks.iter().any(|t| t.name == "lint"));
 
     // Check that git-branch has a parameter
-    let git_branch = tasks.iter().find(|t| t.name == "just_git-branch").unwrap();
+    let git_branch = tasks.iter().find(|t| t.name == "git-branch").unwrap();
     assert_eq!(git_branch.parameters.len(), 1);
     assert_eq!(git_branch.parameters[0].name, "name");
 }
@@ -75,7 +75,7 @@ _check-env:
     assert_eq!(tasks.len(), 5);
 
     // Check _default
-    let default = tasks.iter().find(|t| t.name == "just__default").unwrap();
+    let default = tasks.iter().find(|t| t.name == "_default").unwrap();
     // Should have comments including "Default recipe to display help"
     assert!(default
         .comments
@@ -83,7 +83,7 @@ _check-env:
         .any(|c| c.contains("Default recipe to display help")));
 
     // Check run recipe with parameters
-    let run = tasks.iter().find(|t| t.name == "just_run").unwrap();
+    let run = tasks.iter().find(|t| t.name == "run").unwrap();
     assert_eq!(run.parameters.len(), 2);
     assert_eq!(run.parameters[0].name, "port");
     assert_eq!(run.parameters[0].default, Some("8080".to_string()));
@@ -91,13 +91,10 @@ _check-env:
     assert_eq!(run.parameters[1].default, Some("localhost".to_string()));
 
     // Check test-coverage with dependencies
-    let test_cov = tasks
-        .iter()
-        .find(|t| t.name == "just_test-coverage")
-        .unwrap();
+    let test_cov = tasks.iter().find(|t| t.name == "test-coverage").unwrap();
     assert_eq!(test_cov.dependencies, vec!["test"]);
 
     // Check private recipe
-    let check_env = tasks.iter().find(|t| t.name == "just__check-env").unwrap();
+    let check_env = tasks.iter().find(|t| t.name == "_check-env").unwrap();
     assert!(check_env.body.contains("#!/usr/bin/env bash"));
 }

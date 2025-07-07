@@ -35,6 +35,9 @@ pub enum Error {
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 
+    #[error("Task not found: {0}")]
+    TaskNotFound(String),
+
     #[error("Timeout error: {0}")]
     Timeout(String),
 

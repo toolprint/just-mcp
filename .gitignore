@@ -41,3 +41,6 @@ cobertura.xml
 
 # Task Master
 .taskmaster/
+
+# Test files
+test-temp/

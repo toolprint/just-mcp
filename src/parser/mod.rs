@@ -153,7 +153,7 @@ impl JustfileParser {
             *index = current_index;
 
             Ok(Some(JustTask {
-                name: format!("just_{name}"), // Prefix with just_
+                name: name.to_string(), // Task name without prefix
                 body: body.trim().to_string(),
                 parameters,
                 dependencies,
@@ -321,7 +321,7 @@ build:
 
         let tasks = parser.parse_content(content).unwrap();
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].name, "just_build");
+        assert_eq!(tasks[0].name, "build");
         assert_eq!(tasks[0].comments, vec!["Build the project"]);
         assert_eq!(tasks[0].body, "cargo build --release");
     }
@@ -337,7 +337,7 @@ test filter="":
 
         let tasks = parser.parse_content(content).unwrap();
         assert_eq!(tasks.len(), 1);
-        assert_eq!(tasks[0].name, "just_test");
+        assert_eq!(tasks[0].name, "test");
         assert_eq!(tasks[0].parameters.len(), 1);
         assert_eq!(tasks[0].parameters[0].name, "filter");
         assert_eq!(tasks[0].parameters[0].default, Some("".to_string()));
@@ -373,8 +373,8 @@ test-unit:
 
         let tasks = parser.parse_content(content).unwrap();
         assert_eq!(tasks.len(), 2);
-        assert_eq!(tasks[0].name, "just__helper");
-        assert_eq!(tasks[1].name, "just_test-unit");
+        assert_eq!(tasks[0].name, "_helper");
+        assert_eq!(tasks[1].name, "test-unit");
     }
 
     #[test]

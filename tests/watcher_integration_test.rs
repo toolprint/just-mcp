@@ -12,10 +12,10 @@ use tokio::time::sleep;
 async fn test_filesystem_monitoring() {
     let registry = Arc::new(Mutex::new(ToolRegistry::new()));
     let watcher = JustfileWatcher::new(registry.clone());
-    
+
     let temp_dir = TempDir::new().unwrap();
     let justfile_path = temp_dir.path().join("justfile");
-    
+
     // Create initial justfile
     let initial_content = r#"
 # Build the project
@@ -23,16 +23,16 @@ build:
     cargo build
 "#;
     fs::write(&justfile_path, initial_content).unwrap();
-    
+
     // Start watcher in background
     let watch_paths = vec![temp_dir.path().to_path_buf()];
     let watcher_handle = tokio::spawn(async move {
         let _ = watcher.watch_paths(watch_paths).await;
     });
-    
+
     // Give watcher time to initialize and parse initial file
     sleep(Duration::from_millis(100)).await;
-    
+
     // Check initial state
     {
         let reg = registry.lock().await;
@@ -40,7 +40,7 @@ build:
         assert_eq!(tools.len(), 1);
         assert!(tools.iter().any(|t| t.name.contains("just_build")));
     }
-    
+
     // Modify justfile
     let updated_content = r#"
 # Build the project
@@ -52,10 +52,10 @@ test:
     cargo test
 "#;
     fs::write(&justfile_path, updated_content).unwrap();
-    
+
     // Give watcher time to detect and process change
     sleep(Duration::from_millis(600)).await;
-    
+
     // Check updated state
     {
         let reg = registry.lock().await;
@@ -65,13 +65,13 @@ test:
         assert!(tools.iter().any(|t| t.name.contains("just_build")));
         assert!(tools.iter().any(|t| t.name.contains("just_test")));
     }
-    
+
     // Remove justfile
     fs::remove_file(&justfile_path).unwrap();
-    
+
     // Give watcher time to detect removal
     sleep(Duration::from_millis(600)).await;
-    
+
     // Check final state
     {
         let reg = registry.lock().await;
@@ -82,9 +82,11 @@ test:
         }
         // Since tool names include full path, removal might not work as expected
         // For now, just verify tools were removed from this specific justfile
-        assert!(!tools.iter().any(|t| t.name.contains(&justfile_path.display().to_string())));
+        assert!(!tools
+            .iter()
+            .any(|t| t.name.contains(&justfile_path.display().to_string())));
     }
-    
+
     // Cleanup
     watcher_handle.abort();
 }
@@ -93,32 +95,32 @@ test:
 async fn test_tool_name_conflict_resolution() {
     let registry = Arc::new(Mutex::new(ToolRegistry::new()));
     let watcher = JustfileWatcher::new(registry.clone());
-    
+
     let temp_dir = TempDir::new().unwrap();
     let justfile1 = temp_dir.path().join("justfile");
     let subdir = temp_dir.path().join("subdir");
     fs::create_dir(&subdir).unwrap();
     let justfile2 = subdir.join("justfile");
-    
+
     // Create two justfiles with same task names
     let content = r#"
 # Test task
 test:
     echo "test"
 "#;
-    
+
     fs::write(&justfile1, content).unwrap();
     fs::write(&justfile2, content).unwrap();
-    
+
     // Parse both files
     watcher.parse_and_update_justfile(&justfile1).await.unwrap();
     watcher.parse_and_update_justfile(&justfile2).await.unwrap();
-    
+
     // Check that both tools exist with different names
     let reg = registry.lock().await;
     let tools = reg.list_tools();
     assert_eq!(tools.len(), 2);
-    
+
     // Tool names should include path to differentiate them
     let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
     assert!(tool_names.iter().any(|n| n.contains("justfile")));

@@ -41,11 +41,11 @@ pub struct ExecutionRequest {
     pub context: ExecutionContext,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExecutionContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_directory: Option<String>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     pub environment: HashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,

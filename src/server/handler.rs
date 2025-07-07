@@ -4,6 +4,7 @@ use crate::server::protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 use crate::types::ToolDefinition;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -113,24 +114,69 @@ impl MessageHandler {
 
     async fn handle_call_tool(&self, request: &JsonRpcRequest) -> Result<Option<Value>> {
         #[derive(Deserialize)]
-        #[allow(dead_code)]
         struct CallToolParams {
             name: String,
-            arguments: Option<Value>,
+            #[serde(default)]
+            arguments: HashMap<String, Value>,
         }
 
-        let _params: CallToolParams = serde_json::from_value(request.params.clone())
+        let params: CallToolParams = serde_json::from_value(request.params.clone())
             .map_err(|_| Error::InvalidParameter("Invalid tool call parameters".to_string()))?;
 
-        // For now, return an error since execution is not implemented yet
-        let error = JsonRpcError {
-            code: -32603,
-            message: "Tool execution not implemented yet".to_string(),
-            data: None,
+        // Check if tool exists
+        let registry = self.registry.lock().await;
+        let _tool = registry
+            .get_tool(&params.name)
+            .ok_or_else(|| Error::ToolNotFound(params.name.clone()))?;
+
+        // Create execution request
+        let exec_request = crate::types::ExecutionRequest {
+            tool_name: params.name.clone(),
+            parameters: params.arguments,
+            context: crate::types::ExecutionContext {
+                working_directory: None,
+                environment: HashMap::new(),
+                timeout: Some(300), // Default 5 minute timeout
+            },
         };
 
-        let response = JsonRpcResponse::error(request.id.clone(), error.code, error.message);
+        // Drop the lock before executing
+        drop(registry);
 
-        Ok(Some(serde_json::to_value(response)?))
+        // Execute the tool
+        let mut executor = crate::executor::TaskExecutor::new();
+        match executor.execute(exec_request).await {
+            Ok(result) => {
+                // Format the result for MCP
+                let tool_result = json!({
+                    "content": [{
+                        "type": "text",
+                        "text": if result.success {
+                            result.stdout
+                        } else {
+                            format!("Error: {}\n{}",
+                                result.error.as_ref().unwrap_or(&"Unknown error".to_string()),
+                                result.stderr
+                            )
+                        }
+                    }],
+                    "isError": !result.success
+                });
+
+                let response = JsonRpcResponse::success(request.id.clone(), tool_result);
+                Ok(Some(serde_json::to_value(response)?))
+            }
+            Err(e) => {
+                let error = JsonRpcError {
+                    code: -32603,
+                    message: format!("Tool execution failed: {e}"),
+                    data: None,
+                };
+
+                let response =
+                    JsonRpcResponse::error(request.id.clone(), error.code, error.message);
+                Ok(Some(serde_json::to_value(response)?))
+            }
+        }
     }
 }

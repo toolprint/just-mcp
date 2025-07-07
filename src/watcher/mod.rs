@@ -49,11 +49,9 @@ impl JustfileWatcher {
                 if path.is_dir() {
                     watcher
                         .watch(&path, RecursiveMode::NonRecursive)
-                        .map_err(|e| {
-                            Error::Io(std::io::Error::other(e))
-                        })?;
+                        .map_err(|e| Error::Io(std::io::Error::other(e)))?;
                     info!("Watching directory: {}", path.display());
-                    
+
                     // Scan for existing justfiles in directory
                     let justfile_path = path.join("justfile");
                     if justfile_path.exists() {
@@ -63,11 +61,9 @@ impl JustfileWatcher {
                     let parent = path.parent().unwrap_or(Path::new("."));
                     watcher
                         .watch(parent, RecursiveMode::NonRecursive)
-                        .map_err(|e| {
-                            Error::Io(std::io::Error::other(e))
-                        })?;
+                        .map_err(|e| Error::Io(std::io::Error::other(e)))?;
                     info!("Watching justfile: {}", path.display());
-                    
+
                     // Parse the justfile
                     self.parse_and_update_justfile(&path).await?;
                 }
@@ -182,7 +178,8 @@ impl JustfileWatcher {
 
     fn task_to_tool(&self, task: JustTask, hash: &str, path: &Path) -> Result<ToolDefinition> {
         // Generate tool name with path prefix to avoid conflicts
-        let name = format!("{}_{}", task.name, path.display());
+        // Format: just_taskname_/path/to/justfile
+        let name = format!("just_{}_{}", task.name, path.display());
 
         // Generate description from comments or use default
         let description = if task.comments.is_empty() {
