@@ -199,7 +199,7 @@ impl MessageHandler {
     async fn handle_admin_tool(
         &self,
         tool_name: &str,
-        _arguments: &HashMap<String, Value>,
+        arguments: &HashMap<String, Value>,
         request_id: &Option<Value>,
     ) -> Result<Option<Value>> {
         match tool_name {
@@ -253,6 +253,52 @@ impl MessageHandler {
 
                     let response =
                         JsonRpcResponse::error(request_id.clone(), error.code, error.message);
+                    Ok(Some(serde_json::to_value(response)?))
+                }
+            }
+            "just_admin_create_task" => {
+                if let Some(ref admin_tools) = self.admin_tools {
+                    // Parse the arguments into CreateTaskParams
+                    let params: crate::admin::CreateTaskParams = serde_json::from_value(serde_json::to_value(arguments)?)
+                        .map_err(|e| Error::InvalidParameter(format!("Invalid create_task parameters: {e}")))?;
+                    
+                    match admin_tools.create_task(params).await {
+                        Ok(result) => {
+                            let tool_result = json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": format!(
+                                        "Task '{}' created successfully in {}.\nBackup saved to: {}",
+                                        result.task_name,
+                                        result.justfile_path,
+                                        result.backup_path
+                                    )
+                                }],
+                                "isError": false
+                            });
+                            
+                            let response = JsonRpcResponse::success(request_id.clone(), tool_result);
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                        Err(e) => {
+                            let error = JsonRpcError {
+                                code: -32603,
+                                message: format!("Failed to create task: {e}"),
+                                data: None,
+                            };
+                            
+                            let response = JsonRpcResponse::error(request_id.clone(), error.code, error.message);
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                    }
+                } else {
+                    let error = JsonRpcError {
+                        code: -32603,
+                        message: "Admin tools not available".to_string(),
+                        data: None,
+                    };
+                    
+                    let response = JsonRpcResponse::error(request_id.clone(), error.code, error.message);
                     Ok(Some(serde_json::to_value(response)?))
                 }
             }
