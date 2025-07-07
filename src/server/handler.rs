@@ -12,6 +12,7 @@ pub struct MessageHandler {
     registry: Arc<Mutex<ToolRegistry>>,
     admin_tools: Option<Arc<crate::admin::AdminTools>>,
     security_config: Option<crate::security::SecurityConfig>,
+    resource_limits: Option<crate::resource_limits::ResourceLimits>,
 }
 
 impl MessageHandler {
@@ -20,6 +21,7 @@ impl MessageHandler {
             registry,
             admin_tools: None,
             security_config: None,
+            resource_limits: None,
         }
     }
 
@@ -30,6 +32,11 @@ impl MessageHandler {
     
     pub fn with_security_config(mut self, config: crate::security::SecurityConfig) -> Self {
         self.security_config = Some(config);
+        self
+    }
+    
+    pub fn with_resource_limits(mut self, limits: crate::resource_limits::ResourceLimits) -> Self {
+        self.resource_limits = Some(limits);
         self
     }
 
@@ -167,12 +174,16 @@ impl MessageHandler {
         drop(registry);
 
         // Execute the tool
-        let mut executor = if let Some(ref config) = self.security_config {
-            crate::executor::TaskExecutor::new()
-                .with_security_config(config.clone())
-        } else {
-            crate::executor::TaskExecutor::new()
-        };
+        let mut executor = crate::executor::TaskExecutor::new();
+        
+        if let Some(ref config) = self.security_config {
+            executor = executor.with_security_config(config.clone());
+        }
+        
+        if let Some(ref limits) = self.resource_limits {
+            executor = executor.with_resource_limits(limits.clone());
+        }
+        
         match executor.execute(exec_request).await {
             Ok(result) => {
                 // Format the result for MCP

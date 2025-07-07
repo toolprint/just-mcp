@@ -1,10 +1,12 @@
 use crate::error::{Error, Result};
 use crate::parser::JustfileParser;
+use crate::resource_limits::{ResourceLimits, ResourceManager};
 use crate::security::{SecurityConfig, SecurityValidator};
 use crate::types::{ExecutionContext, ExecutionRequest, ExecutionResult, JustTask};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, warn};
@@ -17,20 +19,29 @@ pub struct TaskExecutor {
     parser: JustfileParser,
     justfile_cache: HashMap<PathBuf, Vec<JustTask>>,
     security_validator: SecurityValidator,
+    resource_manager: Arc<ResourceManager>,
 }
 
 impl TaskExecutor {
     pub fn new() -> Self {
+        let resource_manager = Arc::new(ResourceManager::with_default());
         Self {
-            default_timeout: Duration::from_secs(300), // 5 minutes
+            default_timeout: resource_manager.get_timeout(),
             parser: JustfileParser::new().expect("Failed to create parser"),
             justfile_cache: HashMap::new(),
             security_validator: SecurityValidator::with_default(),
+            resource_manager,
         }
     }
     
     pub fn with_security_config(mut self, config: SecurityConfig) -> Self {
         self.security_validator = SecurityValidator::new(config);
+        self
+    }
+    
+    pub fn with_resource_limits(mut self, limits: ResourceLimits) -> Self {
+        self.resource_manager = Arc::new(ResourceManager::new(limits));
+        self.default_timeout = self.resource_manager.get_timeout();
         self
     }
 
@@ -41,6 +52,9 @@ impl TaskExecutor {
 
     pub async fn execute(&mut self, request: ExecutionRequest) -> Result<ExecutionResult> {
         info!("Executing task: {}", request.tool_name);
+        
+        // Check resource limits before starting
+        self.resource_manager.can_execute()?;
 
         // Extract task name and justfile path from tool name
         // Tool names are in format: just_taskname_/path/to/justfile
@@ -85,6 +99,9 @@ impl TaskExecutor {
             timeout: request.context.timeout,
         };
 
+        // Start tracking this execution
+        let _execution_guard = self.resource_manager.start_execution();
+        
         self.execute_just_command(&task_name, &request.parameters, &context)
             .await
     }
@@ -218,6 +235,12 @@ impl TaskExecutor {
         // Execute with timeout
         match timeout(timeout_duration, cmd.output()).await {
             Ok(Ok(output)) => {
+                // Check output size limits
+                self.resource_manager.check_output_size(
+                    output.stdout.len(),
+                    output.stderr.len()
+                )?;
+                
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let exit_code = output.status.code();
@@ -292,6 +315,12 @@ impl TaskExecutor {
         // Execute with timeout
         match timeout(timeout_duration, cmd.output()).await {
             Ok(Ok(output)) => {
+                // Check output size limits
+                self.resource_manager.check_output_size(
+                    output.stdout.len(),
+                    output.stderr.len()
+                )?;
+                
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let exit_code = output.status.code();
