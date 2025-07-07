@@ -7,7 +7,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 #[command(name = "just-mcp")]
 #[command(about = "Model Context Protocol server for justfile integration", long_about = None)]
 struct Args {
-    #[arg(short = 'w', long = "watch-dir", help = "Directory to watch for justfiles, optionally with name (path or path:name)")]
+    #[arg(short = 'w', long = "watch-dir", help = "Directory to watch for justfiles, optionally with name (path or path:name). Defaults to current directory if not specified")]
     watch_dir: Vec<String>,
 
     #[arg(long, help = "Enable administrative tools")]
@@ -37,8 +37,10 @@ async fn main() -> Result<()> {
     let mut watch_configs = Vec::new();
     
     if args.watch_dir.is_empty() {
-        // Default to current directory with no name
-        watch_configs.push((std::path::PathBuf::from("."), None));
+        // Default to current working directory with no name
+        let cwd = std::env::current_dir()?;
+        tracing::info!("No --watch-dir specified, using current directory: {}", cwd.display());
+        watch_configs.push((cwd, None));
     } else {
         for dir_spec in args.watch_dir {
             if let Some(colon_pos) = dir_spec.find(':') {
@@ -53,23 +55,33 @@ async fn main() -> Result<()> {
         }
     }
     
+    // Convert all paths to absolute paths and extract for the server
+    let mut absolute_configs = Vec::new();
+    for (path, name) in watch_configs {
+        let abs_path = if path.is_absolute() {
+            path
+        } else {
+            std::env::current_dir()?.join(path)
+        };
+        absolute_configs.push((abs_path, name));
+    }
+    
     // Extract just the paths for the server
-    let watch_paths: Vec<std::path::PathBuf> = watch_configs.iter()
+    let watch_paths: Vec<std::path::PathBuf> = absolute_configs.iter()
         .map(|(path, _)| path.clone())
         .collect();
     
-    // Extract the names for logging
-    let watch_names: Vec<String> = watch_configs.iter()
-        .map(|(path, name)| {
-            if let Some(n) = name {
-                format!("{} ({})", path.display(), n)
-            } else {
-                path.display().to_string()
-            }
-        })
-        .collect();
+    // Log the absolute paths being watched
+    tracing::info!("Watch directories:");
+    for (path, name) in &absolute_configs {
+        if let Some(n) = name {
+            tracing::info!("  {} (name: {})", path.display(), n);
+        } else {
+            tracing::info!("  {}", path.display());
+        }
+    }
     
-    tracing::info!("Watching directories: {:?}", watch_names);
+    let watch_configs = absolute_configs;
 
     // Create and run the server
     let transport = Box::new(StdioTransport::new());
