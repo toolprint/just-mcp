@@ -49,21 +49,38 @@ dev:
 # Run tests
 [group('test')]
 test:
-    @echo "TODO: Add your test command here"
+    @echo "Running tests..."
+    cargo test
+
+# Run tests with coverage
+[group('test')]
+test-coverage:
+    @echo "Running tests with coverage..."
+    cargo tarpaulin --out Html
 
 # Build the project
 [group('build')]
 build:
-    @echo "TODO: Add your build command here"
+    @echo "Building project..."
+    cargo build --release
+
+# Build for development
+[group('build')]
+build-dev:
+    @echo "Building for development..."
+    cargo build
 
 # Clean build artifacts and dependencies
 [group('clean')]
 clean:
-    @echo "TODO: Add your clean command here"
+    @echo "Cleaning build artifacts..."
+    cargo clean
 
 # Format code
 [group('lint')]
 format:
+    @echo "Formatting Rust code..."
+    cargo fmt
     @echo "Formatting JSON files..."
     @prettier --write "**/*.json" --ignore-path .gitignore || true
     @echo "Formatting Markdown files..."
@@ -73,8 +90,16 @@ format:
 # Lint code
 [group('lint')]
 lint:
+    @echo "Checking Rust formatting..."
+    cargo fmt -- --check
+    @echo "Running clippy..."
+    cargo clippy -- -D warnings
     @echo "Linting JSON files..."
     @prettier --check "**/*.json" --ignore-path .gitignore || exit 1
     @echo "Linting Markdown files..."
     @markdownlint-cli2 "**/*.md" "#node_modules" "#.git" || exit 1
     @echo "Linting complete!"
+
+# Check code (format + lint + test)
+[group('lint')]
+check: format lint test

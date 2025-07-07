@@ -1,0 +1,12 @@
+pub mod error;
+pub mod executor;
+pub mod parser;
+pub mod registry;
+pub mod server;
+pub mod types;
+
+pub use error::{Error, Result};
+pub use server::Server;
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const PKG_NAME: &str = env!("CARGO_PKG_NAME");

@@ -1,0 +1,65 @@
+[package]
+name = "just-mcp"
+version = "0.1.0"
+edition = "2021"
+authors = ["just-mcp contributors"]
+description = "Model Context Protocol server for justfile integration"
+repository = "https://github.com/onegrep/just-mcp"
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.41", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Filesystem monitoring
+notify = "6.1"
+
+# Pattern matching for justfile parsing
+regex = "1.11"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Utilities
+uuid = { version = "1.11", features = ["v4", "serde"] }
+sha2 = "0.10"
+base64 = "0.22"
+
+# Async trait
+async-trait = "0.1"
+
+# HTTP and SSE (for optional HTTP transport)
+axum = { version = "0.7", optional = true }
+tower = { version = "0.5", optional = true }
+hyper = { version = "1.0", optional = true }
+
+# Testing utilities
+tempfile = "3.14"
+pretty_assertions = "1.4"
+
+[dev-dependencies]
+mockall = "0.13"
+insta = "1.41"
+
+[features]
+default = ["stdio"]
+stdio = []
+http = ["axum", "tower", "hyper"]
+all = ["stdio", "http"]
+
+[[bin]]
+name = "just-mcp"
+path = "src/main.rs"
