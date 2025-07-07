@@ -1,23 +1,25 @@
 use crate::error::Result;
-use crate::types::JustTask;
+use crate::types::{JustTask, Parameter};
 use regex::Regex;
 use std::path::Path;
 
 pub struct JustfileParser {
-    #[allow(dead_code)]
-    task_regex: Regex,
-    #[allow(dead_code)]
+    recipe_regex: Regex,
     parameter_regex: Regex,
-    #[allow(dead_code)]
-    dependency_regex: Regex,
+    attribute_regex: Regex,
 }
 
 impl JustfileParser {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            task_regex: Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)\s*(\([^)]*\))?\s*:")?,
-            parameter_regex: Regex::new(r#"(\w+)(?:\s*=\s*["']?([^"']*)["']?)?"#)?,
-            dependency_regex: Regex::new(r"^\s*@?(\w+)")?,
+            // Matches recipe definitions with optional parameters (with or without parentheses)
+            recipe_regex: Regex::new(r"^([a-zA-Z_][a-zA-Z0-9_-]*)(\s+[^:]+)?\s*:")?,
+            // Matches parameters with optional default values (including empty strings)
+            parameter_regex: Regex::new(
+                r#"(\w+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^"',\s\)]+)))?"#,
+            )?,
+            // Matches attributes like [private], [group('name')], etc.
+            attribute_regex: Regex::new(r"^\s*\[([^\]]+)\]")?,
         })
     }
 
@@ -42,10 +44,253 @@ impl JustfileParser {
         Ok(tasks)
     }
 
-    fn parse_task(&self, _lines: &[&str], _index: &mut usize) -> Result<Option<JustTask>> {
-        // TODO: Implement task parsing logic
-        // This is a placeholder that will be implemented in subtask 1.4
-        Ok(None)
+    fn parse_task(&self, lines: &[&str], index: &mut usize) -> Result<Option<JustTask>> {
+        if *index >= lines.len() {
+            return Ok(None);
+        }
+
+        let mut current_index = *index;
+        let mut comments = Vec::new();
+        let mut attributes = Vec::new();
+
+        // Collect comments and attributes before the recipe
+        while current_index < lines.len() {
+            let line = lines[current_index].trim();
+
+            if line.is_empty() {
+                current_index += 1;
+                continue;
+            }
+
+            // Skip shebang lines
+            if line.starts_with("#!") {
+                current_index += 1;
+                continue;
+            }
+
+            // Skip variable assignments (contains := but not at the end like a recipe)
+            if line.contains(":=") && !line.ends_with(':') {
+                current_index += 1;
+                continue;
+            }
+
+            if let Some(comment) = line.strip_prefix('#') {
+                // Comment line - potential description
+                comments.push(comment.trim().to_string());
+                current_index += 1;
+            } else if let Some(captures) = self.attribute_regex.captures(line) {
+                // Attribute line like [private] or [group('test')]
+                attributes.push(captures[1].to_string());
+                current_index += 1;
+            } else if self.recipe_regex.is_match(line) {
+                // Found a recipe definition
+                break;
+            } else {
+                // Not a recipe start, move on
+                *index = current_index + 1;
+                return Ok(None);
+            }
+        }
+
+        if current_index >= lines.len() {
+            *index = lines.len();
+            return Ok(None);
+        }
+
+        // Parse the recipe line
+        let recipe_line = lines[current_index];
+        if let Some(captures) = self.recipe_regex.captures(recipe_line) {
+            let name = captures[1].to_string();
+            let params_str = captures.get(2).map(|m| m.as_str());
+
+            // Parse parameters
+            let parameters = if let Some(params) = params_str {
+                let params = params.trim();
+                if params.starts_with('(') && params.ends_with(')') {
+                    // Parameters with parentheses
+                    let params_content = params.trim_start_matches('(').trim_end_matches(')');
+                    self.parse_parameters(params_content)?
+                } else {
+                    // Parameters without parentheses (space-separated)
+                    self.parse_space_separated_parameters(params)?
+                }
+            } else {
+                Vec::new()
+            };
+
+            // Parse dependencies (on the same line after the colon)
+            let dependencies = self.parse_dependencies(&recipe_line[captures[0].len()..])?;
+
+            // Collect recipe body
+            current_index += 1;
+            let mut body = String::new();
+            let mut first_line = true;
+
+            while current_index < lines.len() {
+                let line = lines[current_index];
+
+                // Check if line is indented (part of recipe body)
+                if line.starts_with(' ')
+                    || line.starts_with('\t')
+                    || (first_line && line.trim().is_empty())
+                {
+                    if !first_line {
+                        body.push('\n');
+                    }
+                    body.push_str(line);
+                    first_line = false;
+                    current_index += 1;
+                } else if line.trim().is_empty() && !body.is_empty() {
+                    // Empty line within recipe
+                    body.push('\n');
+                    current_index += 1;
+                } else {
+                    // Non-indented line, recipe ends
+                    break;
+                }
+            }
+
+            *index = current_index;
+
+            Ok(Some(JustTask {
+                name: format!("just_{name}"), // Prefix with just_
+                body: body.trim().to_string(),
+                parameters,
+                dependencies,
+                comments,
+                line_number: *index,
+            }))
+        } else {
+            *index = current_index + 1;
+            Ok(None)
+        }
+    }
+
+    fn parse_parameters(&self, params_str: &str) -> Result<Vec<Parameter>> {
+        let mut parameters = Vec::new();
+
+        if params_str.trim().is_empty() {
+            return Ok(parameters);
+        }
+
+        // Split by comma, but respect quotes
+        let param_parts = self.split_parameters(params_str);
+
+        for part in param_parts {
+            let part = part.trim();
+            if let Some(captures) = self.parameter_regex.captures(part) {
+                let name = captures[1].to_string();
+                // Check all possible capture groups for default value
+                let default = captures
+                    .get(2)
+                    .or(captures.get(3))
+                    .or(captures.get(4))
+                    .map(|m| m.as_str().to_string());
+
+                parameters.push(Parameter {
+                    name,
+                    default,
+                    description: None,
+                });
+            }
+        }
+
+        Ok(parameters)
+    }
+
+    fn parse_space_separated_parameters(&self, params_str: &str) -> Result<Vec<Parameter>> {
+        let mut parameters = Vec::new();
+
+        // Split by whitespace
+        for param in params_str.split_whitespace() {
+            if let Some(captures) = self.parameter_regex.captures(param) {
+                let name = captures[1].to_string();
+                // Check all possible capture groups for default value
+                let default = captures
+                    .get(2)
+                    .or(captures.get(3))
+                    .or(captures.get(4))
+                    .map(|m| m.as_str().to_string());
+
+                parameters.push(Parameter {
+                    name,
+                    default,
+                    description: None,
+                });
+            }
+        }
+
+        Ok(parameters)
+    }
+
+    fn split_parameters(&self, params_str: &str) -> Vec<String> {
+        let mut parts = Vec::new();
+        let mut current_start = 0;
+        let mut in_quotes = false;
+        let mut quote_char = ' ';
+
+        let chars: Vec<char> = params_str.chars().collect();
+
+        for (i, &ch) in chars.iter().enumerate() {
+            match ch {
+                '"' | '\'' if !in_quotes => {
+                    in_quotes = true;
+                    quote_char = ch;
+                }
+                '"' | '\'' if in_quotes && ch == quote_char => {
+                    in_quotes = false;
+                }
+                ',' if !in_quotes => {
+                    parts.push(params_str[current_start..i].to_string());
+                    current_start = i + 1;
+                }
+                _ => {}
+            }
+        }
+
+        // Don't forget the last part
+        if current_start < params_str.len() {
+            parts.push(params_str[current_start..].to_string());
+        }
+
+        parts
+    }
+
+    fn parse_dependencies(&self, after_colon: &str) -> Result<Vec<String>> {
+        let mut dependencies = Vec::new();
+        let trimmed = after_colon.trim();
+
+        if !trimmed.is_empty() {
+            // Split by whitespace, respecting parentheses
+            let mut current = String::new();
+            let mut paren_depth = 0;
+
+            for ch in trimmed.chars() {
+                match ch {
+                    '(' => {
+                        current.push(ch);
+                        paren_depth += 1;
+                    }
+                    ')' => {
+                        current.push(ch);
+                        paren_depth -= 1;
+                    }
+                    ' ' | '\t' if paren_depth == 0 => {
+                        if !current.is_empty() {
+                            dependencies.push(current.trim().to_string());
+                            current.clear();
+                        }
+                    }
+                    _ => current.push(ch),
+                }
+            }
+
+            if !current.is_empty() {
+                dependencies.push(current.trim().to_string());
+            }
+        }
+
+        Ok(dependencies)
     }
 }
 
@@ -63,5 +308,90 @@ mod tests {
     fn test_parser_creation() {
         let parser = JustfileParser::new();
         assert!(parser.is_ok());
+    }
+
+    #[test]
+    fn test_parse_simple_recipe() {
+        let parser = JustfileParser::new().unwrap();
+        let content = r#"
+# Build the project
+build:
+    cargo build --release
+"#;
+
+        let tasks = parser.parse_content(content).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "just_build");
+        assert_eq!(tasks[0].comments, vec!["Build the project"]);
+        assert_eq!(tasks[0].body, "cargo build --release");
+    }
+
+    #[test]
+    fn test_parse_recipe_with_parameters() {
+        let parser = JustfileParser::new().unwrap();
+        let content = r#"
+# Run tests with optional filter
+test filter="":
+    cargo test {{filter}}
+"#;
+
+        let tasks = parser.parse_content(content).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "just_test");
+        assert_eq!(tasks[0].parameters.len(), 1);
+        assert_eq!(tasks[0].parameters[0].name, "filter");
+        assert_eq!(tasks[0].parameters[0].default, Some("".to_string()));
+    }
+
+    #[test]
+    fn test_parse_recipe_with_dependencies() {
+        let parser = JustfileParser::new().unwrap();
+        let content = r#"
+# Deploy to production
+deploy: build test
+    echo "Deploying..."
+"#;
+
+        let tasks = parser.parse_content(content).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].dependencies, vec!["build", "test"]);
+    }
+
+    #[test]
+    fn test_parse_recipe_with_attributes() {
+        let parser = JustfileParser::new().unwrap();
+        let content = r#"
+# Private helper task
+[private]
+_helper:
+    echo "Helper task"
+
+[group('test')]
+test-unit:
+    cargo test --lib
+"#;
+
+        let tasks = parser.parse_content(content).unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].name, "just__helper");
+        assert_eq!(tasks[1].name, "just_test-unit");
+    }
+
+    #[test]
+    fn test_parse_multiline_recipe() {
+        let parser = JustfileParser::new().unwrap();
+        let content = r#"
+# Complex build process
+build:
+    echo "Building..."
+    cargo build --release
+    echo "Build complete!"
+"#;
+
+        let tasks = parser.parse_content(content).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert!(tasks[0].body.contains("Building..."));
+        assert!(tasks[0].body.contains("cargo build"));
+        assert!(tasks[0].body.contains("Build complete!"));
     }
 }
