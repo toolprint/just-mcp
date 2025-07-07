@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use crate::parser::JustfileParser;
+use crate::security::{SecurityConfig, SecurityValidator};
 use crate::types::{ExecutionContext, ExecutionRequest, ExecutionResult, JustTask};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -8,10 +9,14 @@ use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, warn};
 
+// Re-export for tests
+pub use crate::security::{SecurityConfig as SecConfig, SecurityValidator as SecValidator};
+
 pub struct TaskExecutor {
     default_timeout: Duration,
     parser: JustfileParser,
     justfile_cache: HashMap<PathBuf, Vec<JustTask>>,
+    security_validator: SecurityValidator,
 }
 
 impl TaskExecutor {
@@ -20,7 +25,13 @@ impl TaskExecutor {
             default_timeout: Duration::from_secs(300), // 5 minutes
             parser: JustfileParser::new().expect("Failed to create parser"),
             justfile_cache: HashMap::new(),
+            security_validator: SecurityValidator::with_default(),
         }
+    }
+    
+    pub fn with_security_config(mut self, config: SecurityConfig) -> Self {
+        self.security_validator = SecurityValidator::new(config);
+        self
     }
 
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
@@ -38,6 +49,16 @@ impl TaskExecutor {
             "Parsed task name: {}, justfile path: {}",
             task_name, justfile_path
         );
+        
+        // Validate task name
+        self.security_validator.validate_task_name(&task_name)?;
+        
+        // Validate justfile path
+        let justfile_path_buf = PathBuf::from(&justfile_path);
+        self.security_validator.validate_path(&justfile_path_buf)?;
+        
+        // Validate parameters
+        self.security_validator.validate_parameters(&request.parameters)?;
 
         // Verify task exists
         {
@@ -169,9 +190,13 @@ impl TaskExecutor {
                         serde_json::Value::String(s) => s.clone(),
                         other => other.to_string(),
                     };
-                    cmd.arg(value_str);
+                    // Sanitize parameter value before passing to command
+                    let sanitized_value = self.security_validator.sanitize_parameter(&value_str);
+                    cmd.arg(sanitized_value);
                 } else if let Some(default) = &param.default {
-                    cmd.arg(default);
+                    // Sanitize default value as well
+                    let sanitized_default = self.security_validator.sanitize_parameter(default);
+                    cmd.arg(sanitized_default);
                 }
             }
         }

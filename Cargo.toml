@@ -37,6 +37,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1.11", features = ["v4", "serde"] }
 sha2 = "0.10"
 base64 = "0.22"
+shell-escape = "0.1"
 
 # Async trait
 async-trait = "0.1"

@@ -4,6 +4,7 @@ pub mod executor;
 mod notification;
 pub mod parser;
 pub mod registry;
+pub mod security;
 pub mod server;
 pub mod types;
 pub mod watcher;

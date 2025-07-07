@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 pub struct MessageHandler {
     registry: Arc<Mutex<ToolRegistry>>,
     admin_tools: Option<Arc<crate::admin::AdminTools>>,
+    security_config: Option<crate::security::SecurityConfig>,
 }
 
 impl MessageHandler {
@@ -18,11 +19,17 @@ impl MessageHandler {
         Self {
             registry,
             admin_tools: None,
+            security_config: None,
         }
     }
 
     pub fn with_admin_tools(mut self, admin_tools: Arc<crate::admin::AdminTools>) -> Self {
         self.admin_tools = Some(admin_tools);
+        self
+    }
+    
+    pub fn with_security_config(mut self, config: crate::security::SecurityConfig) -> Self {
+        self.security_config = Some(config);
         self
     }
 
@@ -160,7 +167,12 @@ impl MessageHandler {
         drop(registry);
 
         // Execute the tool
-        let mut executor = crate::executor::TaskExecutor::new();
+        let mut executor = if let Some(ref config) = self.security_config {
+            crate::executor::TaskExecutor::new()
+                .with_security_config(config.clone())
+        } else {
+            crate::executor::TaskExecutor::new()
+        };
         match executor.execute(exec_request).await {
             Ok(result) => {
                 // Format the result for MCP
