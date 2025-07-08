@@ -177,7 +177,7 @@ Without names, tools include the full path for disambiguation.
 
 ## Project Structure
 
-```
+```text
 just-mcp/
 ├── src/
 │   ├── admin/          # Administrative tools (sync, create_task)
