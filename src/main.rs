@@ -5,6 +5,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser, Debug)]
 #[command(name = "just-mcp")]
+#[command(version = just_mcp::VERSION)]
 #[command(about = "Model Context Protocol server for justfile integration", long_about = None)]
 struct Args {
     #[arg(
