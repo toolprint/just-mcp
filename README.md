@@ -2,69 +2,86 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-1.70+-blue.svg)](https://www.rust-lang.org)
+[![MCP](https://img.shields.io/badge/MCP-1.0-green.svg)](https://modelcontextprotocol.io/)
 
-> A Model Context Protocol (MCP) server that transforms justfiles into AI-accessible automation tools
+> Transform justfiles into AI-accessible automation tools through the Model Context Protocol
 
-**just-mcp** bridges the gap between [justfiles](https://just.systems/) and AI assistants by exposing justfile tasks as dynamically discoverable MCP tools. This enables AI assistants to understand, explore, and execute project-specific automation tasks across single or multiple repositories.
+**just-mcp** bridges [justfiles](https://just.systems/) and AI assistants by exposing justfile tasks as dynamically discoverable MCP tools.
+
+This enables AI assistants to understand, explore, and execute a project's common development workflows similar to how a human would.
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
 ### 🔍 **Intelligent Justfile Discovery**
-
-- **Real-time monitoring**: Automatically detects justfile changes with filesystem watching
-- **Multi-project support**: Watch multiple directories with optional naming (`--watch-dir path:name`)
-- **Dynamic tool generation**: Each justfile task becomes an MCP tool with proper JSON schema
-- **Hot reloading**: Tools update automatically when justfiles are modified
+- Real-time monitoring with filesystem watching
+- Multi-project support with optional naming (`--watch-dir path:name`)
+- Dynamic tool generation from justfile tasks
+- Hot reloading on justfile modifications
 
 ### 📝 **Comprehensive Justfile Parsing**
-
-- **Full syntax support**: Handles parameters, defaults, dependencies, comments, and attributes
-- **Parameter documentation**: Extracts parameter descriptions from `# {{param}}: description` comments
-- **Multiple formats**: Supports both `task(param)` and `task param` parameter syntax
-- **Doc attributes**: Recognizes `[doc("description")]` attributes for enhanced documentation
+- Full syntax support: parameters, defaults, dependencies, comments, attributes
+- Parameter documentation from `# {{param}}: description` comments
+- Multiple parameter formats: `task(param)` and `task param`
+- Doc attributes: `[doc("description")]` for enhanced documentation
 
 ### 🛡️ **Security & Resource Management**
-
-- **Input validation**: Prevents command injection and path traversal attacks
-- **Resource limits**: Configurable timeouts, memory limits, and output size controls
-- **Access control**: Directory whitelisting and parameter sanitization
-- **Safe execution**: Shell escaping and strict validation modes
+- Input validation prevents command injection and path traversal
+- Configurable timeouts, memory limits, and output size controls
+- Directory whitelisting and parameter sanitization
+- Shell escaping and strict validation modes
 
 ### ⚙️ **Administrative Tools**
-
-- **`admin_sync`**: Manual justfile re-scanning and registry refresh
-- **`admin_create_task`**: AI-assisted task creation with automatic backup
-- **Conflict prevention**: Validates task names and prevents overwrites
-- **Multi-directory targeting**: Create tasks in specific named directories
+- `admin_sync`: Manual justfile re-scanning and registry refresh
+- `admin_create_task`: AI-assisted task creation with automatic backup
+- Conflict prevention and task name validation
+- Multi-directory targeting for task creation
 
 ### 🚀 **MCP Protocol Compliance**
+- Full JSON-RPC 2.0 MCP specification implementation
+- Real-time tool list updates via notifications
+- Standard capabilities: `tools/list`, `tools/call`, change notifications
+- Comprehensive error reporting and validation
 
-- **JSON-RPC 2.0**: Full MCP specification implementation
-- **Dynamic notifications**: Real-time tool list updates
-- **Standard capabilities**: `tools/list`, `tools/call`, and change notifications
-- **Error handling**: Comprehensive error reporting and validation
-
-## Quick Start
+## Installation
 
 ### Prerequisites
 
-- [Rust](https://rustlang.org/) 1.70+
-- [just](https://just.systems/) command runner (optional, for development)
+- Rust 1.70 or higher
+- `just` command runner ([installation guide](https://just.systems/man/en/chapter_4.html))
 
-#### Development Dependencies (macOS)
-
-For full development functionality, install additional tools using:
+### From Source
 
 ```bash
-just brew  # Installs from Brewfile
+git clone https://github.com/onegrep/just-mcp.git
+cd just-mcp
+cargo install --path .
 ```
 
-This includes:
+### Using Just
 
-- `tarpaulin` - Code coverage reporting
-- `prettier` - JSON formatting
-- `markdownlint-cli2` - Markdown linting
-- Other development utilities
+```bash
+just install  # Builds and installs to ~/.cargo/bin
+```
+
+### Development Dependencies
+
+Install development tools using the provided Brewfile (macOS):
+
+```bash
+just brew  # Installs prettier, markdownlint-cli2, and other tools
+```
 
 Or install manually:
 
@@ -73,75 +90,138 @@ cargo install cargo-tarpaulin  # Coverage testing
 npm install -g prettier markdownlint-cli2  # Formatting tools
 ```
 
-### Installation
-
-#### From Source
-
-```bash
-git clone https://github.com/onegrep/just-mcp.git
-cd just-mcp
-cargo install --path .
-```
-
-#### Using Just
-
-```bash
-just install  # Builds and installs to ~/.cargo/bin
-```
+## Quick Start
 
 ### Basic Usage
 
-#### Single Project
+Monitor current directory for justfiles:
 
 ```bash
-# Monitor current directory for justfiles
 just-mcp
+```
 
-# Monitor specific directory
+Monitor specific directory:
+
+```bash
 just-mcp --watch-dir /path/to/project
 ```
 
-#### Multiple Projects
+### Multi-Project Setup
+
+Monitor multiple projects with custom names:
 
 ```bash
-# Monitor multiple directories with names
 just-mcp \
-  --watch-dir /path/to/frontend:frontend \
-  --watch-dir /path/to/backend:backend \
-  --watch-dir /path/to/shared
+  --watch-dir ~/projects/api:backend \
+  --watch-dir ~/projects/web:frontend \
+  --watch-dir ~/projects/tools
 ```
 
-#### With Administrative Tools
+### MCP Configuration
 
-```bash
-# Enable admin tools for task creation
-just-mcp --admin --watch-dir /path/to/project
+Add to your MCP settings file (e.g., `~/.config/mcp/settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "just": {
+      "command": "just-mcp",
+      "args": ["--watch-dir", "/path/to/project"],
+      "env": {}
+    }
+  }
+}
 ```
 
-### Example Integration
+## Usage
+
+### Tool Naming Convention
+
+Tools are exposed with the format:
+- Single directory: `just_<task>`
+- Named directories: `just_<task>@<name>`
+- Multiple unnamed directories: `just_<task>_<full_path>`
+
+### Example Workflow
 
 Given a justfile:
 
 ```just
-# Build the application
-build target="debug":
-    cargo build --{{target}}
+# Deploy the application
+deploy env="prod":
+  echo "Deploying to {{env}}"
+  ./deploy.sh {{env}}
 
-# {{filter}}: test name pattern to run
-# Run tests with optional filter
-test filter="":
-    cargo test {{filter}}
-
-# Deploy to environment
-deploy env="staging": build test
-    ./scripts/deploy.sh {{env}}
+# Run tests with coverage
+test coverage="false":
+  cargo test {{if coverage == "true" { "--coverage" } else { "" }}}
 ```
 
-just-mcp exposes these as MCP tools:
+The AI assistant can:
 
-- `just_build` - Build the application (parameter: target="debug")
-- `just_test` - Run tests (parameter: filter="")  
-- `just_deploy` - Deploy to environment (parameter: env="staging", depends on build+test)
+1. **Discover available tools**:
+   ```json
+   {
+     "method": "tools/list",
+     "result": {
+       "tools": [
+         {
+           "name": "just_deploy",
+           "description": "Deploy the application",
+           "inputSchema": {
+             "type": "object",
+             "properties": {
+               "env": {
+                 "type": "string",
+                 "default": "prod"
+               }
+             }
+           }
+         }
+       ]
+     }
+   }
+   ```
+
+2. **Execute tasks**:
+   ```json
+   {
+     "method": "tools/call",
+     "params": {
+       "name": "just_deploy",
+       "arguments": {
+         "env": "staging"
+       }
+     }
+   }
+   ```
+
+### Administrative Commands
+
+**Sync justfiles** (refresh tool registry):
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "admin_sync"
+  }
+}
+```
+
+**Create new task** with AI assistance:
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "admin_create_task",
+    "arguments": {
+      "task_name": "lint",
+      "task_description": "Run code linting",
+      "directory_name": "backend"
+    }
+  }
+}
+```
 
 ## Configuration
 
@@ -151,194 +231,110 @@ just-mcp exposes these as MCP tools:
 just-mcp [OPTIONS]
 
 Options:
-  -w, --watch-dir <WATCH_DIR>  Directory to watch for justfiles, optionally with name 
-                               (path or path:name). Defaults to current directory if not specified
-      --admin                  Enable administrative tools
-      --json-logs              Enable JSON output for logs  
-      --log-level <LOG_LEVEL>  Log level (trace, debug, info, warn, error) [default: info]
-  -h, --help                   Print help
-  -V, --version                Print version
+  -w, --watch-dir <PATH[:NAME]>  Directory to watch (can be specified multiple times)
+  -t, --timeout <SECONDS>         Default task timeout (default: 300)
+  -o, --output-limit <BYTES>      Max output size per task (default: 1MB)
+  -v, --verbose                   Enable verbose logging
+  -h, --help                      Print help
+  -V, --version                   Print version
 ```
 
-### Multi-Directory Naming
+### Environment Variables
 
-When watching multiple directories, use the `path:name` syntax for better tool organization:
+- `RUST_LOG`: Set logging level (e.g., `debug`, `info`, `warn`, `error`)
+- `JUST_MCP_TIMEOUT`: Default timeout for task execution
+- `JUST_MCP_OUTPUT_LIMIT`: Maximum output size for tasks
 
-```bash
-just-mcp --watch-dir ./frontend:ui --watch-dir ./backend:api
+## Architecture
+
+### Core Components
+
+```
+     ┌───────────┐     ┌──────────┐
+   Watcher   │────▶│  Parser   │────▶│ Registry │
+     └───────────┘     └──────────┘
+       │                                     │
+       ▼                                     ▼
+     ┌───────────┐     ┌──────────┐
+   Server    │◀────│  Handler  │◀────│   MCP    │
+     └───────────┘     └──────────┘
+                            │
+                            ▼
+                    ┌───────────┐
+                    │ Executor  │
+                    └───────────┘
 ```
 
-This creates tools like:
+### Key Design Decisions
 
-- `just_build@ui` (from frontend/justfile)
-- `just_test@api` (from backend/justfile)
-
-Without names, tools include the full path for disambiguation.
-
-## Project Structure
-
-```text
-just-mcp/
-├── src/
-│   ├── admin/          # Administrative tools (sync, create_task)
-│   ├── executor/       # Secure task execution with resource limits
-│   ├── parser/         # Justfile parsing and task extraction
-│   ├── registry/       # Dynamic tool registration and management
-│   ├── resource_limits/ # Resource management and constraints
-│   ├── security/       # Input validation and injection prevention
-│   ├── server/         # MCP protocol implementation
-│   │   ├── handler.rs  # Request handling logic
-│   │   ├── protocol.rs # MCP protocol definitions
-│   │   └── transport.rs # Transport layer implementation
-│   ├── types/          # Common type definitions
-│   ├── watcher/        # Filesystem monitoring and change detection
-│   ├── notification/   # Change notification system
-│   ├── error.rs        # Error handling and definitions
-│   ├── lib.rs          # Library interface
-│   └── main.rs         # CLI entry point
-├── demo/               # Example justfile and usage demonstrations
-├── tests/              # Integration and unit tests
-├── scripts/            # Development and testing scripts
-├── notes/              # Development notes and documentation
-├── justfile            # Development automation tasks
-├── Brewfile            # macOS development dependencies
-└── Cargo.toml          # Rust project configuration
-```
+- **Async-first**: Built on Tokio for concurrent operations
+- **Channel-based**: Components communicate via broadcast channels
+- **Security-focused**: All inputs validated, paths restricted, resources limited
+- **Hot-reload**: File changes trigger automatic tool updates
 
 ## Development
 
-### Available Commands
+### Building
 
 ```bash
-# Development
-just build              # Build for development
-just build-release      # Build optimized release binary
-just test               # Run all tests
-just test-coverage      # Run tests with coverage report using tarpaulin
-
-# Code Quality  
-just lint               # Run clippy and formatting checks
-just format             # Format code with rustfmt, prettier, and markdownlint
-just check              # Run format + lint + test
-
-# Release Management
-just release-info       # Show release binary information
-just install            # Install locally built binary
-
-# Setup
-just brew               # Install macOS development dependencies
-just setup              # Initial project setup
-
-# Utilities
-just clean              # Clean build artifacts
+just build         # Debug build
+just build-release # Optimized release build
 ```
 
-### Running Tests
+### Testing
 
 ```bash
-# All tests
-just test  # or cargo test
-
-# Test coverage with HTML report
-just test-coverage  # uses cargo tarpaulin
-
-# Specific test suites
-cargo test --test mcp_protocol_test
-cargo test --test watcher_integration_test
-cargo test --test executor_integration_test
-cargo test --test security_test
-cargo test --test notification_test
-cargo test --test resource_limits_test
-
-# With output
-cargo test -- --nocapture
+just test          # Run all tests
+just test-coverage # Generate coverage report
+just check         # Format, lint, and test
 ```
 
-## Demo
-
-The `demo/` directory contains a comprehensive example showcasing just-mcp capabilities:
-
-- **Example justfile**: Demonstrates various task patterns, parameters, and dependencies
-- **Usage examples**: Step-by-step MCP protocol interactions
-- **Testing scenarios**: Real-world automation task examples
-
-See [demo/README.md](./demo/README.md) for detailed examples and usage instructions.
-
-## Examples
-
-### Basic MCP Interaction
+### Code Quality
 
 ```bash
-# Start the server
-just-mcp --watch-dir ./demo &
-
-# List available tools
-echo '{"jsonrpc": "2.0", "method": "tools/list", "id": 1}'
-
-# Call a tool  
-echo '{
-  "jsonrpc": "2.0", 
-  "method": "tools/call",
-  "params": {
-    "name": "just_hello",
-    "arguments": {"name": "World"}
-  },
-  "id": 2
-}'
+just format        # Auto-format code
+just lint          # Run clippy lints
+just pre-commit    # Full validation before committing
 ```
 
-### AI Assistant Integration
+### Project Structure
 
-just-mcp is designed to work with MCP-compatible AI assistants like:
-
-- **Claude Desktop**: Configure as an MCP server for project automation
-- **Custom AI tools**: Integrate via the standard MCP protocol
-- **Development workflows**: Enable AI-assisted project management
-
-## Security Considerations
-
-just-mcp includes several security features:
-
-- **Input validation**: All parameters are validated and sanitized
-- **Directory restrictions**: Only configured watch directories are accessible  
-- **Command injection prevention**: Shell escaping and parameter validation
-- **Resource limits**: Timeouts and memory limits prevent resource exhaustion
-- **Audit logging**: All executed commands are logged for security review
-
-For production use, consider:
-
-- Running in a sandboxed environment
-- Configuring strict resource limits
-- Regular security audits of justfiles
-- Using dedicated service accounts
-
-## Additional Tools
-
-The project includes several utility directories:
-
-- **`scripts/`**: Development and testing scripts for various scenarios
-- **`notes/`**: Development documentation and implementation notes  
-- **`test-temp/`**: Temporary test files (created during testing)
-- **`Brewfile`**: macOS development dependencies for easy setup
+```
+just-mcp/
+ src/
+   ├── main.rs           # Entry point and CLI
+   ├── server/           # MCP protocol implementation
+   ├── parser/           # Justfile parsing logic
+   ├── registry/         # Tool registry management
+   ├── watcher/          # File system monitoring
+   ├── executor/         # Task execution engine
+   ├── admin/            # Administrative tools
+   └── security/         # Security and validation
+ tests/                # Integration tests
+ demo/                 # Example justfiles
+ scripts/              # Development scripts
+```
 
 ## Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+### Quick Steps
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes and add tests
-4. Run the test suite (`just check`)
+4. Run `just check` to ensure code quality
 5. Commit your changes (`git commit -m 'Add amazing feature'`)
 6. Push to your branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
 
-### Code Standards
+### Development Notes
 
-- Follow Rust best practices and idioms
-- Add tests for new functionality (see `tests/` directory for examples)
+- Follow Rust idioms and best practices
+- Add tests for new functionality
 - Update documentation for API changes
 - Use `just format` and `just lint` before committing
-- Test scripts can be added to `scripts/` directory for development testing
-- Development notes should be placed in `notes/` directory
 
 ## License
 
@@ -346,10 +342,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- [just](https://just.systems/) - The excellent command runner that inspired this project
-- [MCP](https://modelcontextprotocol.io/) - The Model Context Protocol specification
+- [just](https://just.systems/) - The command runner that inspired this project
+- [Model Context Protocol](https://modelcontextprotocol.io/) - The MCP specification
 - [Anthropic](https://anthropic.com/) - For developing the MCP standard
 
 ---
 
-**Questions or need help?** Open an issue or check out the [demo](./demo/) directory for examples.
+**Need help?** Open an issue or check out the [demo](./demo/) directory for examples.
