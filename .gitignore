@@ -1,53 +1,127 @@
-# Rust
-/target/
-**/*.rs.bk
-*.pdb
+# Dependencies
+node_modules/
+.pnpm-store/
+vendor/
+venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
 
-# Cargo
-Cargo.lock
-
-# IDE
+# IDE and editor files
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# Environment
-.env
-.env.local
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
 
 # Testing
-*.profraw
-*.profdata
+coverage/
+.coverage
+.pytest_cache/
+.phpunit.result.cache
 
-# Coverage
-tarpaulin-report.html
-cobertura.xml
+# Production builds
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
 
-# Debug
-*.dSYM/
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Ruby
+*.gem
+.bundle/
+Gemfile.lock
+
+# Rust
+target/
+Cargo.lock
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Claude Code specific
+.claude/settings.local.json
+CLAUDE.local.md
 
 # Temporary files
 *.tmp
 *.temp
-
-# Logs
-*.log
-
-# Task Master
-.taskmaster/
-
-# Test files
-test-temp/
+.tmp/
+.temp/
 
 # Backup files
 *.bak
+*.backup
+*~
+
+logs
+dev-debug.log
+# Dependency directories
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+
+# Task files
+.taskmaster/
+# tasks.json
+# tasks/
 
 # Claude
 notes/
-scripts/
+
+# Test fixtures
+test-fixtures/

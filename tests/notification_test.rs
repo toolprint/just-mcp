@@ -1,16 +1,17 @@
 use just_mcp::registry::ToolRegistry;
 use just_mcp::watcher::JustfileWatcher;
 use std::fs;
-use std::path::Path;
+
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+mod common;
+use common::{cleanup_test_dir, create_test_dir_with_justfile};
+
 #[tokio::test]
 async fn test_watcher_updates_registry_on_change() {
-    // Use test-temp directory
-    let test_dir = Path::new("test-temp/watcher_notification_test");
-    fs::create_dir_all(test_dir).unwrap();
-    let justfile_path = test_dir.join("justfile");
+    // Use test fixtures directory
+    let (_test_dir, justfile_path) = create_test_dir_with_justfile("watcher_notification_test");
 
     // Create registry and watcher
     let registry = Arc::new(Mutex::new(ToolRegistry::new()));
@@ -92,6 +93,9 @@ build:
             "Expected empty registry after parsing empty justfile"
         );
     }
+
+    // Cleanup
+    cleanup_test_dir("watcher_notification_test");
 }
 
 #[tokio::test]

@@ -25,30 +25,35 @@ This enables AI assistants to understand, explore, and execute a project's commo
 ## Features
 
 ### 🔍 **Intelligent Justfile Discovery**
+
 - Real-time monitoring with filesystem watching
 - Multi-project support with optional naming (`--watch-dir path:name`)
 - Dynamic tool generation from justfile tasks
 - Hot reloading on justfile modifications
 
 ### 📝 **Comprehensive Justfile Parsing**
+
 - Full syntax support: parameters, defaults, dependencies, comments, attributes
 - Parameter documentation from `# {{param}}: description` comments
 - Multiple parameter formats: `task(param)` and `task param`
 - Doc attributes: `[doc("description")]` for enhanced documentation
 
 ### 🛡️ **Security & Resource Management**
+
 - Input validation prevents command injection and path traversal
 - Configurable timeouts, memory limits, and output size controls
 - Directory whitelisting and parameter sanitization
 - Shell escaping and strict validation modes
 
 ### ⚙️ **Administrative Tools**
+
 - `admin_sync`: Manual justfile re-scanning and registry refresh
 - `admin_create_task`: AI-assisted task creation with automatic backup
 - Conflict prevention and task name validation
 - Multi-directory targeting for task creation
 
 ### 🚀 **MCP Protocol Compliance**
+
 - Full JSON-RPC 2.0 MCP specification implementation
 - Real-time tool list updates via notifications
 - Standard capabilities: `tools/list`, `tools/call`, change notifications
@@ -138,6 +143,7 @@ Add to your MCP settings file (e.g., `~/.config/mcp/settings.json`):
 ### Tool Naming Convention
 
 Tools are exposed with the format:
+
 - Single directory: `just_<task>`
 - Named directories: `just_<task>@<name>`
 - Multiple unnamed directories: `just_<task>_<full_path>`
@@ -160,6 +166,7 @@ test coverage="false":
 The AI assistant can:
 
 1. **Discover available tools**:
+
    ```json
    {
      "method": "tools/list",
@@ -184,6 +191,7 @@ The AI assistant can:
    ```
 
 2. **Execute tasks**:
+
    ```json
    {
      "method": "tools/call",
@@ -199,6 +207,7 @@ The AI assistant can:
 ### Administrative Commands
 
 **Sync justfiles** (refresh tool registry):
+
 ```json
 {
   "method": "tools/call",
@@ -209,6 +218,7 @@ The AI assistant can:
 ```
 
 **Create new task** with AI assistance:
+
 ```json
 {
   "method": "tools/call",

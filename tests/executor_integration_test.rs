@@ -6,19 +6,20 @@ use just_mcp::watcher::JustfileWatcher;
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+mod common;
+use common::{cleanup_test_dir, create_test_dir_with_justfile};
 
 #[tokio::test]
 async fn test_executor_integration() {
     // Initialize tracing for tests
     let _ = tracing_subscriber::fmt::try_init();
 
-    // Use test-temp directory instead of system temp
-    let test_dir = Path::new("test-temp/executor_test");
-    fs::create_dir_all(test_dir).unwrap();
-    let justfile_path = test_dir.join("justfile");
+    // Use test fixtures directory
+    let (_test_dir, justfile_path) = create_test_dir_with_justfile("executor_test");
 
     // Create a test justfile
     let justfile_content = r#"
@@ -113,14 +114,15 @@ fail:
     let result = executor.execute(request).await.unwrap();
     assert!(!result.success);
     assert_eq!(result.exit_code, Some(1));
+
+    // Cleanup
+    cleanup_test_dir("executor_test");
 }
 
 #[tokio::test]
 async fn test_mcp_server_with_executor() {
-    // Use test-temp directory
-    let test_dir = Path::new("test-temp/mcp_server_test");
-    fs::create_dir_all(test_dir).unwrap();
-    let justfile_path = test_dir.join("justfile");
+    // Use test fixtures directory
+    let (_test_dir, justfile_path) = create_test_dir_with_justfile("mcp_server_test");
 
     // Create a test justfile
     let justfile_content = r#"
@@ -188,6 +190,9 @@ echo message:
     println!("Response text: {}", text);
     assert!(text.contains("Test message from MCP"));
     assert_eq!(result.get("isError").unwrap().as_bool().unwrap(), false);
+
+    // Cleanup
+    cleanup_test_dir("mcp_server_test");
 }
 
 #[tokio::test]

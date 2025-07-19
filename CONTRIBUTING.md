@@ -46,6 +46,7 @@ just build-release # Release build
 ### Branch Naming
 
 Use descriptive branch names:
+
 - `feature/add-xyz-support`
 - `fix/issue-123-description`
 - `docs/update-readme`
@@ -54,6 +55,7 @@ Use descriptive branch names:
 ### Development Workflow
 
 1. **Create a new branch**:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -61,11 +63,13 @@ Use descriptive branch names:
 2. **Make your changes** following the coding standards
 
 3. **Run tests and checks**:
+
    ```bash
    just check  # Runs format, lint, and test
    ```
 
 4. **Commit your changes**:
+
    ```bash
    git add .
    git commit -m "feat: add support for XYZ"
