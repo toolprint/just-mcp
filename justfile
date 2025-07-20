@@ -338,3 +338,133 @@ pre-commit:
     echo "=================================="
     echo "🎉 SUCCESS: All pre-commit checks passed!"
     echo "✅ Code is ready for commit"
+
+# =====================================
+# Dagger CI/CD Commands
+# =====================================
+
+# Run Dagger CI pipeline locally
+[group('dagger')]
+dagger-ci:
+    @echo "🚀 Running Dagger CI pipeline..."
+    dagger call ci --source .
+
+# Run Dagger format check
+[group('dagger')]
+dagger-format:
+    @echo "🔍 Checking code formatting with Dagger..."
+    dagger call format --source .
+
+# Run Dagger lint
+[group('dagger')]
+dagger-lint:
+    @echo "📋 Running clippy with Dagger..."
+    dagger call lint --source .
+
+# Run Dagger tests
+[group('dagger')]
+dagger-test platform="linux/amd64":
+    @echo "🧪 Running tests on {{ platform }} with Dagger..."
+    dagger call test --source . --platform {{ platform }}
+
+# Run Dagger coverage
+[group('dagger')]
+dagger-coverage:
+    @echo "📊 Generating coverage report with Dagger..."
+    dagger call coverage --source . export --path ./tarpaulin-report.html
+    @echo "✅ Coverage report saved to tarpaulin-report.html"
+
+# Build with Dagger
+[group('dagger')]
+dagger-build platform="linux/amd64":
+    @echo "🔨 Building for {{ platform }} with Dagger..."
+    @mkdir -p ./build
+    dagger call build --source . --platform {{ platform }} export --path ./build/just-mcp-debug-{{ replace(platform, "/", "-") }}
+
+# Build release with Dagger
+[group('dagger')]
+dagger-build-release platform="linux/amd64":
+    @echo "📦 Building release for {{ platform }} with Dagger..."
+    @mkdir -p ./build
+    dagger call build-release --source . --platform {{ platform }} export --path ./build/just-mcp-release-{{ replace(platform, "/", "-") }}
+
+# Build releases for all platforms using Dagger with zigbuild (parallel execution)
+[group('dagger')]
+dagger-release version="v0.1.0":
+    @echo "🚀 Building all platform releases in parallel with Dagger + zigbuild..."
+    @mkdir -p ./release-artifacts
+    dagger call release-zigbuild --source . --version {{ version }} export --path ./release-artifacts/
+    @echo "✅ All platform releases built successfully!"
+    @echo "📦 Release artifacts:"
+    @ls -la ./release-artifacts/
+
+
+# =====================================
+# Zigbuild Cross-Compilation Commands
+# =====================================
+
+# Build all platforms using cargo-zigbuild Docker image
+[group('zigbuild')]
+zigbuild-release version="v0.1.0":
+    #!/usr/bin/env bash
+    echo "🚀 Building releases for all platforms using cargo-zigbuild..."
+    mkdir -p ./release-artifacts
+    
+    # Build all platforms in a single container to maintain state
+    docker run --rm -v $(pwd):/io -w /io ghcr.io/rust-cross/cargo-zigbuild:latest \
+        sh -c '
+            echo "📦 Adding Rust targets..." && \
+            rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin && \
+            echo "🔨 Building Linux x86_64..." && \
+            cargo zigbuild --release --target x86_64-unknown-linux-gnu && \
+            echo "🔨 Building Linux ARM64..." && \
+            cargo zigbuild --release --target aarch64-unknown-linux-gnu && \
+            echo "🔨 Building macOS x86_64..." && \
+            cargo zigbuild --release --target x86_64-apple-darwin && \
+            echo "🔨 Building macOS ARM64..." && \
+            cargo zigbuild --release --target aarch64-apple-darwin && \
+            echo "🔨 Building macOS Universal Binary..." && \
+            cargo zigbuild --release --target universal2-apple-darwin
+        '
+    
+    # Package all builds
+    echo "📦 Packaging release artifacts..."
+    
+    # Linux x86_64
+    tar czf ./release-artifacts/just-mcp-{{ version }}-x86_64-unknown-linux-gnu.tar.gz \
+        -C target/x86_64-unknown-linux-gnu/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    # Linux ARM64
+    tar czf ./release-artifacts/just-mcp-{{ version }}-aarch64-unknown-linux-gnu.tar.gz \
+        -C target/aarch64-unknown-linux-gnu/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    # macOS x86_64
+    tar czf ./release-artifacts/just-mcp-{{ version }}-x86_64-apple-darwin.tar.gz \
+        -C target/x86_64-apple-darwin/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    # macOS ARM64
+    tar czf ./release-artifacts/just-mcp-{{ version }}-aarch64-apple-darwin.tar.gz \
+        -C target/aarch64-apple-darwin/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    # macOS Universal
+    tar czf ./release-artifacts/just-mcp-{{ version }}-universal2-apple-darwin.tar.gz \
+        -C target/universal2-apple-darwin/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    echo "✅ All platform releases built successfully!"
+    echo "📦 Release artifacts:"
+    ls -la ./release-artifacts/
+
+# Test zigbuild setup for a single platform
+[group('zigbuild')]
+zigbuild-test target="x86_64-apple-darwin":
+    #!/usr/bin/env bash
+    echo "🧪 Testing cargo-zigbuild for {{ target }}..."
+    docker run --rm -v $(pwd):/io -w /io ghcr.io/rust-cross/cargo-zigbuild:latest \
+        sh -c "rustup target add {{ target }} && cargo zigbuild --release --target {{ target }}"
+    echo "✅ Build successful! Binary at: target/{{ target }}/release/just-mcp"
+

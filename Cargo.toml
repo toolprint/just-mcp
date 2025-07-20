@@ -2,6 +2,7 @@
 name = "just-mcp"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88.0"
 authors = ["just-mcp contributors"]
 description = "Model Context Protocol server for justfile integration"
 repository = "https://github.com/onegrep/just-mcp"

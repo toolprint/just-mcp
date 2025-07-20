@@ -97,7 +97,7 @@ impl JustfileParser {
                 attributes.push(attr.to_string());
 
                 // Check if this is a doc attribute
-                if attr.starts_with("doc(") && attr.ends_with(")") {
+                if attr.starts_with("doc(") && attr.ends_with(')') {
                     let doc_content = &attr[4..attr.len() - 1];
                     // Remove quotes if present
                     doc_string = Some(doc_content.trim_matches('"').trim_matches('\'').to_string());

@@ -1,0 +1,42 @@
+name: Dagger CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Run CI Pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Dagger CLI
+        run: |
+          cd /usr/local
+          curl -L https://dl.dagger.io/dagger/install.sh | sudo sh
+          dagger version
+
+      - name: Run CI pipeline
+        run: |
+          dagger call ci --source .
+
+      - name: Export coverage report
+        if: always()
+        run: |
+          dagger call coverage --source . export --path ./tarpaulin-report.html || true
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: tarpaulin-report.html
+          if-no-files-found: ignore
