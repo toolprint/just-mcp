@@ -10,6 +10,8 @@ import (
 	"context"
 	"dagger/just-mcp/internal/dagger"
 	"fmt"
+	"strings"
+	"sync"
 )
 
 type JustMcp struct{}
@@ -56,7 +58,7 @@ func (m *JustMcp) Test(
 		WithExec([]string{"sh", "-c", "curl -qsSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin"})
 	
 	return container.
-		WithExec([]string{"cargo", "test", "--verbose"}).
+		WithExec([]string{"cargo", "test"}). // TODO: Add option for verbose output?
 		Stdout(ctx)
 }
 
@@ -351,7 +353,7 @@ func (m *JustMcp) ReleaseZigbuild(
 	// +optional
 	// +default="v0.1.0"
 	version string,
-) ([]*dagger.File, error) {
+) (*dagger.Directory, error) {
 	platforms := []string{
 		"x86_64-unknown-linux-gnu",
 		"aarch64-unknown-linux-gnu",
@@ -360,16 +362,50 @@ func (m *JustMcp) ReleaseZigbuild(
 		"universal2-apple-darwin",
 	}
 	
-	var releases []*dagger.File
-	
-	// Build each platform using ZigbuildSingle
-	for _, target := range platforms {
-		archive, err := m.ZigbuildSingle(ctx, source, target, version)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build %s: %w", target, err)
-		}
-		releases = append(releases, archive)
+	// Use goroutines to build all platforms in parallel
+	type result struct {
+		target  string
+		archive *dagger.File
+		err     error
 	}
 	
-	return releases, nil
+	results := make(chan result, len(platforms))
+	var wg sync.WaitGroup
+	
+	// Launch parallel builds
+	for _, target := range platforms {
+		wg.Add(1)
+		go func(t string) {
+			defer wg.Done()
+			archive, err := m.ZigbuildSingle(ctx, source, t, version)
+			results <- result{target: t, archive: archive, err: err}
+		}(target)
+	}
+	
+	// Wait for all builds to complete and close results channel
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	
+	// Collect results
+	releaseDir := dag.Directory()
+	var errors []string
+	
+	for res := range results {
+		if res.err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", res.target, res.err))
+		} else {
+			// Add each archive to the directory with its proper filename
+			archiveName := fmt.Sprintf("just-mcp-%s-%s.tar.gz", version, res.target)
+			releaseDir = releaseDir.WithFile(archiveName, res.archive)
+		}
+	}
+	
+	// Check for errors
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("build failures:\n%s", strings.Join(errors, "\n"))
+	}
+	
+	return releaseDir, nil
 }
