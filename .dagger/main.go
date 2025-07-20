@@ -65,18 +65,23 @@ func (m *JustMcp) Test(
 // Coverage generates code coverage report using tarpaulin
 func (m *JustMcp) Coverage(ctx context.Context, source *dagger.Directory) (*dagger.File, error) {
 	container := dag.Container().
-		From("rust:1.88.0").
+		From("xd009642/tarpaulin:0.27.3"). // Use official tarpaulin image
 		WithDirectory("/src", source).
 		WithWorkdir("/src").
-		WithExec([]string{"rustup", "component", "add", "rustfmt", "clippy"}).
 		// Install just for tests
-		WithExec([]string{"sh", "-c", "curl -qsSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin"}).
-		// Install tarpaulin
-		WithExec([]string{"cargo", "install", "cargo-tarpaulin"})
+		WithExec([]string{"sh", "-c", "curl -qsSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin"})
 	
 	return container.
-		// Generate coverage
-		WithExec([]string{"cargo", "tarpaulin", "--out", "Html", "--output-dir", "/coverage"}).
+		// Generate coverage with security options disabled for container environment
+		WithExec([]string{
+			"cargo", "tarpaulin",
+			"--out", "Html",
+			"--output-dir", "/coverage",
+			"--skip-clean",
+			"--target-dir", "/tmp/tarpaulin-target",
+		}, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		}).
 		File("/coverage/tarpaulin-report.html"), nil
 }
 
