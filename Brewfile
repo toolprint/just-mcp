@@ -6,3 +6,4 @@ brew "markdownlint-cli2"
 brew "prettier"
 
 brew "cargo-binstall"
+brew "dagger/tap/dagger"

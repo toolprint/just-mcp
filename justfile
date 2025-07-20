@@ -338,3 +338,204 @@ pre-commit:
     echo "=================================="
     echo "🎉 SUCCESS: All pre-commit checks passed!"
     echo "✅ Code is ready for commit"
+
+# =====================================
+# Dagger CI/CD Commands
+# =====================================
+
+# Run Dagger CI pipeline locally
+[group('dagger')]
+dagger-ci:
+    @echo "🚀 Running Dagger CI pipeline..."
+    dagger call ci --source .
+
+# Run Dagger format check
+[group('dagger')]
+dagger-format:
+    @echo "🔍 Checking code formatting with Dagger..."
+    dagger call format --source .
+
+# Run Dagger lint
+[group('dagger')]
+dagger-lint:
+    @echo "📋 Running clippy with Dagger..."
+    dagger call lint --source .
+
+# Run Dagger tests
+[group('dagger')]
+dagger-test platform="linux/amd64":
+    @echo "🧪 Running tests on {{ platform }} with Dagger..."
+    dagger call test --source . --platform {{ platform }}
+
+# Run Dagger coverage
+[group('dagger')]
+dagger-coverage:
+    @echo "📊 Generating coverage report with Dagger..."
+    dagger call coverage --source . export --path ./tarpaulin-report.html
+    @echo "✅ Coverage report saved to tarpaulin-report.html"
+
+# Build with Dagger
+[group('dagger')]
+dagger-build platform="linux/amd64":
+    @echo "🔨 Building for {{ platform }} with Dagger..."
+    @mkdir -p ./build
+    dagger call build --source . --platform {{ platform }} export --path ./build/just-mcp-debug-{{ replace(platform, "/", "-") }}
+
+# Build release with Dagger
+[group('dagger')]
+dagger-build-release platform="linux/amd64":
+    @echo "📦 Building release for {{ platform }} with Dagger..."
+    @mkdir -p ./build
+    dagger call build-release --source . --platform {{ platform }} export --path ./build/just-mcp-release-{{ replace(platform, "/", "-") }}
+
+# Create release package with Dagger
+[group('dagger')]
+dagger-package platform="linux/amd64" version="v0.1.0":
+    @echo "📦 Creating release package for {{ platform }} version {{ version }}..."
+    @mkdir -p ./release-artifacts
+    dagger call package --source . --platform {{ platform }} --version {{ version }} export --path ./release-artifacts/just-mcp-{{ version }}-{{ replace(platform, "/", "-") }}.tar.gz
+
+# Build releases for Linux platforms
+[group('dagger')]
+dagger-release version="v0.1.0":
+    #!/usr/bin/env bash
+    echo "🚀 Building releases for Linux platforms..."
+    mkdir -p ./release-artifacts
+    
+    # Build and export each platform separately
+    echo "📦 Building x86_64-unknown-linux-gnu..."
+    dagger call package --source . --platform linux/amd64 --version {{ version }} export --path ./release-artifacts/just-mcp-{{ version }}-x86_64-unknown-linux-gnu.tar.gz
+    
+    echo "📦 Building aarch64-unknown-linux-gnu..."
+    dagger call package --source . --platform linux/arm64 --version {{ version }} export --path ./release-artifacts/just-mcp-{{ version }}-aarch64-unknown-linux-gnu.tar.gz
+    
+    echo "✅ Linux releases built successfully!"
+
+# Build release for macOS (requires macOS host)
+[group('build')]
+release-darwin version="v0.1.0":
+    #!/usr/bin/env bash
+    echo "🍎 Building macOS universal binary (requires macOS)..."
+    
+    # Ensure we have the required targets
+    rustup target add x86_64-apple-darwin aarch64-apple-darwin
+    
+    # Build for both architectures
+    echo "Building for x86_64-apple-darwin..."
+    cargo build --release --target x86_64-apple-darwin
+    
+    echo "Building for aarch64-apple-darwin..."
+    cargo build --release --target aarch64-apple-darwin
+    
+    # Create universal binary
+    echo "Creating universal binary..."
+    mkdir -p target/universal-apple-darwin/release
+    lipo -create -output target/universal-apple-darwin/release/just-mcp \
+        target/x86_64-apple-darwin/release/just-mcp \
+        target/aarch64-apple-darwin/release/just-mcp
+    
+    # Package it
+    mkdir -p ./release-artifacts
+    tar czf ./release-artifacts/just-mcp-{{ version }}-darwin-universal.tar.gz \
+        -C target/universal-apple-darwin/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    echo "✅ macOS universal binary created!"
+
+# =====================================
+# Zigbuild Cross-Compilation Commands
+# =====================================
+
+# Build all platforms using cargo-zigbuild Docker image
+[group('zigbuild')]
+zigbuild-release version="v0.1.0":
+    #!/usr/bin/env bash
+    echo "🚀 Building releases for all platforms using cargo-zigbuild..."
+    mkdir -p ./release-artifacts
+    
+    # Build all platforms in a single container to maintain state
+    docker run --rm -v $(pwd):/io -w /io ghcr.io/rust-cross/cargo-zigbuild:latest \
+        sh -c '
+            echo "📦 Adding Rust targets..." && \
+            rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin && \
+            echo "🔨 Building Linux x86_64..." && \
+            cargo zigbuild --release --target x86_64-unknown-linux-gnu && \
+            echo "🔨 Building Linux ARM64..." && \
+            cargo zigbuild --release --target aarch64-unknown-linux-gnu && \
+            echo "🔨 Building macOS x86_64..." && \
+            cargo zigbuild --release --target x86_64-apple-darwin && \
+            echo "🔨 Building macOS ARM64..." && \
+            cargo zigbuild --release --target aarch64-apple-darwin && \
+            echo "🔨 Building macOS Universal Binary..." && \
+            cargo zigbuild --release --target universal2-apple-darwin
+        '
+    
+    # Package all builds
+    echo "📦 Packaging release artifacts..."
+    
+    # Linux x86_64
+    tar czf ./release-artifacts/just-mcp-{{ version }}-x86_64-unknown-linux-gnu.tar.gz \
+        -C target/x86_64-unknown-linux-gnu/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    # Linux ARM64
+    tar czf ./release-artifacts/just-mcp-{{ version }}-aarch64-unknown-linux-gnu.tar.gz \
+        -C target/aarch64-unknown-linux-gnu/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    # macOS x86_64
+    tar czf ./release-artifacts/just-mcp-{{ version }}-x86_64-apple-darwin.tar.gz \
+        -C target/x86_64-apple-darwin/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    # macOS ARM64
+    tar czf ./release-artifacts/just-mcp-{{ version }}-aarch64-apple-darwin.tar.gz \
+        -C target/aarch64-apple-darwin/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    # macOS Universal
+    tar czf ./release-artifacts/just-mcp-{{ version }}-universal2-apple-darwin.tar.gz \
+        -C target/universal2-apple-darwin/release just-mcp \
+        -C "$(pwd)" README.md LICENSE
+    
+    echo "✅ All platform releases built successfully!"
+    echo "📦 Release artifacts:"
+    ls -la ./release-artifacts/
+
+# Test zigbuild setup for a single platform
+[group('zigbuild')]
+zigbuild-test target="x86_64-apple-darwin":
+    #!/usr/bin/env bash
+    echo "🧪 Testing cargo-zigbuild for {{ target }}..."
+    docker run --rm -v $(pwd):/io -w /io ghcr.io/rust-cross/cargo-zigbuild:latest \
+        sh -c "rustup target add {{ target }} && cargo zigbuild --release --target {{ target }}"
+    echo "✅ Build successful! Binary at: target/{{ target }}/release/just-mcp"
+
+# Build releases using Dagger with zigbuild
+[group('zigbuild')]
+dagger-zigbuild-release version="v0.1.0":
+    #!/usr/bin/env bash
+    echo "🚀 Building all platform releases with Dagger + zigbuild..."
+    mkdir -p ./release-artifacts
+    
+    # Build all platforms and export each separately
+    echo "📦 Building and exporting all platforms..."
+    
+    # Get the release files and export them individually
+    # Note: We'll use a different approach - build each platform separately
+    echo "📦 Building x86_64-unknown-linux-gnu..."
+    dagger call zigbuild-single --source . --target x86_64-unknown-linux-gnu --version {{ version }} export --path ./release-artifacts/just-mcp-{{ version }}-x86_64-unknown-linux-gnu.tar.gz
+    
+    echo "📦 Building aarch64-unknown-linux-gnu..."
+    dagger call zigbuild-single --source . --target aarch64-unknown-linux-gnu --version {{ version }} export --path ./release-artifacts/just-mcp-{{ version }}-aarch64-unknown-linux-gnu.tar.gz
+    
+    echo "📦 Building x86_64-apple-darwin..."
+    dagger call zigbuild-single --source . --target x86_64-apple-darwin --version {{ version }} export --path ./release-artifacts/just-mcp-{{ version }}-x86_64-apple-darwin.tar.gz
+    
+    echo "📦 Building aarch64-apple-darwin..."
+    dagger call zigbuild-single --source . --target aarch64-apple-darwin --version {{ version }} export --path ./release-artifacts/just-mcp-{{ version }}-aarch64-apple-darwin.tar.gz
+    
+    echo "📦 Building universal2-apple-darwin..."
+    dagger call zigbuild-single --source . --target universal2-apple-darwin --version {{ version }} export --path ./release-artifacts/just-mcp-{{ version }}-universal2-apple-darwin.tar.gz
+    
+    echo "✅ All platform releases built successfully!"

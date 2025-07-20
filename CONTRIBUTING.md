@@ -16,7 +16,7 @@ Thank you for your interest in contributing to just-mcp! This document provides 
 
 ### Prerequisites
 
-- Rust 1.70 or higher
+- Rust 1.88.0 (automatically installed via `rust-toolchain.toml`)
 - Just command runner
 - Development tools (see below)
 

@@ -125,3 +125,16 @@ notes/
 
 # Test fixtures
 test-fixtures/
+
+# GitHub Actions artifacts
+.github/workflows/*.cue
+staging/
+checksums.txt
+cobertura.xml
+tarpaulin-report.html
+
+# Release artifacts directory
+release-artifacts/
+
+# Build output directory
+build/

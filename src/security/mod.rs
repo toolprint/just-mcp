@@ -74,7 +74,7 @@ impl SecurityValidator {
         // Check if path is within any allowed directory
         let is_allowed = self.config.allowed_paths.iter().any(|allowed| {
             if let Ok(canonical_allowed) = allowed.canonicalize() {
-                path_to_check.starts_with(&canonical_allowed)
+                path_to_check.starts_with(canonical_allowed)
             } else {
                 false
             }
@@ -89,7 +89,7 @@ impl SecurityValidator {
 
         // Additional checks for suspicious patterns
         let path_str = path.to_string_lossy();
-        if path_str.contains("..") || path_str.contains("~") {
+        if path_str.contains("..") || path_str.contains('~') {
             return Err(Error::Other(format!(
                 "Suspicious path pattern detected: {}",
                 path.display()
