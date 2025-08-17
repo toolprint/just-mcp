@@ -3,31 +3,8 @@ use clap::Parser;
 use just_mcp::server::{Server, StdioTransport};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-#[derive(Parser, Debug)]
-#[command(name = "just-mcp")]
-#[command(version = just_mcp::VERSION)]
-#[command(about = "Model Context Protocol server for justfile integration", long_about = None)]
-struct Args {
-    #[arg(
-        short = 'w',
-        long = "watch-dir",
-        help = "Directory to watch for justfiles, optionally with name (path or path:name). Defaults to current directory if not specified"
-    )]
-    watch_dir: Vec<String>,
-
-    #[arg(long, help = "Enable administrative tools")]
-    admin: bool,
-
-    #[arg(long, help = "Enable JSON output for logs")]
-    json_logs: bool,
-
-    #[arg(
-        long,
-        default_value = "info",
-        help = "Log level (trace, debug, info, warn, error)"
-    )]
-    log_level: String,
-}
+mod cli;
+use cli::{Args, Commands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -36,6 +13,23 @@ async fn main() -> Result<()> {
     // Initialize logging
     init_logging(&args)?;
 
+    // Handle different commands
+    match args.command {
+        #[cfg(feature = "vector-search")]
+        Some(Commands::Search { search_command }) => {
+            cli::handle_search_command(search_command).await?;
+        }
+        Some(Commands::Serve) | None => {
+            // Default behavior: start MCP server
+            start_mcp_server(&args).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Start the MCP server with the given arguments
+async fn start_mcp_server(args: &Args) -> Result<()> {
     tracing::info!("Starting {} v{}", just_mcp::PKG_NAME, just_mcp::VERSION);
 
     // Parse watch directories with optional names (format: "path" or "path:name")
@@ -50,7 +44,7 @@ async fn main() -> Result<()> {
         );
         watch_configs.push((cwd, None));
     } else {
-        for dir_spec in args.watch_dir {
+        for dir_spec in &args.watch_dir {
             if let Some(colon_pos) = dir_spec.find(':') {
                 // Format: path:name
                 let path = std::path::PathBuf::from(&dir_spec[..colon_pos]);

@@ -52,15 +52,29 @@ hyper = { version = "1.0", optional = true }
 tempfile = "3.14"
 pretty_assertions = "1.4"
 
+# Vector search and database
+libsql = { version = "0.6", optional = true }
+rusqlite = { version = "0.32", features = ["bundled", "blob"], optional = true }
+ndarray = { version = "0.16", optional = true }
+sqlite-vss = { version = "0.1", optional = true, features = ["download-libs"] }
+
+# HTTP client for embedding providers
+reqwest = { version = "0.12", features = ["json"], optional = true }
+
+# Directory walking for CLI
+walkdir = "2.5"
+
 [dev-dependencies]
 mockall = "0.13"
 insta = "1.41"
+futures = "0.3"
 
 [features]
 default = ["stdio"]
 stdio = []
 http = ["axum", "tower", "hyper"]
-all = ["stdio", "http"]
+vector-search = ["libsql", "rusqlite", "ndarray", "sqlite-vss", "reqwest"]
+all = ["stdio", "http", "vector-search"]
 
 [[bin]]
 name = "just-mcp"

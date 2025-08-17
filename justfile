@@ -468,3 +468,79 @@ zigbuild-test target="x86_64-apple-darwin":
         sh -c "rustup target add {{ target }} && cargo zigbuild --release --target {{ target }}"
     echo "✅ Build successful! Binary at: target/{{ target }}/release/just-mcp"
 
+# =====================================
+# Vector Search Demo Commands
+# =====================================
+
+# Vector search demo - index demo justfile and test search functionality
+[group('demo')]
+demo-vector-search:
+    #!/usr/bin/env bash
+    echo "🔍 Vector Search Demo"
+    echo "===================="
+    echo ""
+    
+    # Build with vector search feature
+    echo "1. Building with vector-search feature..."
+    cargo build --features vector-search
+    echo ""
+    
+    # Index the demo justfile
+    echo "2. Indexing demo/justfile..."
+    target/debug/just-mcp search index --directory demo --mock-embeddings --batch-size 10
+    echo ""
+    
+    # Show database stats
+    echo "3. Database statistics:"
+    target/debug/just-mcp search stats
+    echo ""
+    
+    # Demonstrate various search scenarios
+    echo "4. Search demonstrations:"
+    echo ""
+    
+    echo "🔸 Searching for 'build docker image':"
+    target/debug/just-mcp search query --query "build docker image" --mock-embeddings --limit 3
+    echo ""
+    
+    echo "🔸 Searching for 'database operations':"
+    target/debug/just-mcp search query --query "database operations" --mock-embeddings --limit 3
+    echo ""
+    
+    echo "🔸 Searching for 'testing and quality':"
+    target/debug/just-mcp search query --query "testing and quality" --mock-embeddings --limit 3
+    echo ""
+    
+    echo "🔸 Finding tasks similar to 'deploy':"
+    target/debug/just-mcp search similar --task "deploy to production environment" --mock-embeddings --limit 3
+    echo ""
+    
+    echo "🔸 Text search for 'docker':"
+    target/debug/just-mcp search text --text "docker" --limit 5
+    echo ""
+    
+    echo "🔸 Filter by task type:"
+    target/debug/just-mcp search filter --filter type=justfile_task --limit 5
+    echo ""
+    
+    echo "✅ Demo complete! Database saved as 'vector_search.db'"
+
+# Quick vector search test - build and run a simple search
+[group('demo')]
+demo-vector-quick:
+    @echo "🚀 Quick Vector Search Test"
+    @echo "=========================="
+    @echo "Building with vector-search feature..."
+    cargo build --features vector-search
+    @echo "Indexing demo justfile..."
+    target/debug/just-mcp search index --directory demo --mock-embeddings --batch-size 20
+    @echo "Running sample search..."
+    target/debug/just-mcp search query --query "docker deployment" --mock-embeddings --limit 5
+
+# Clean vector search database
+[group('demo')]
+demo-vector-clean:
+    @echo "🧹 Cleaning vector search database..."
+    @rm -f vector_search.db
+    @echo "✅ Database cleaned"
+
