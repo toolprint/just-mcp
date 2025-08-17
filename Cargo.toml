@@ -61,6 +61,15 @@ sqlite-vss = { version = "0.1", optional = true, features = ["download-libs"] }
 # HTTP client for embedding providers
 reqwest = { version = "0.12", features = ["json"], optional = true }
 
+# Local embedding model support with Candle
+candle-core = { version = "0.8", optional = true }
+candle-nn = { version = "0.8", optional = true }
+candle-transformers = { version = "0.8", optional = true }
+hf-hub = { version = "0.3.2", features = ["tokio"], optional = true }
+tokenizers = { version = "0.21", optional = true }
+dirs = { version = "5.0", optional = true }
+chrono = { version = "0.4", features = ["serde"], optional = true }
+
 # Directory walking for CLI
 walkdir = "2.5"
 
@@ -74,7 +83,8 @@ default = ["stdio"]
 stdio = []
 http = ["axum", "tower", "hyper"]
 vector-search = ["libsql", "rusqlite", "ndarray", "sqlite-vss", "reqwest"]
-all = ["stdio", "http", "vector-search"]
+local-embeddings = ["candle-core", "candle-nn", "candle-transformers", "hf-hub", "tokenizers", "dirs", "chrono"]
+all = ["stdio", "http", "vector-search", "local-embeddings"]
 
 [[bin]]
 name = "just-mcp"

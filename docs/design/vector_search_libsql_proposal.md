@@ -1523,7 +1523,8 @@ pub async fn handle_vector_search_command(
 
 ## Comparison Summary
 
-### libSQL Advantages:
+### libSQL Advantages
+
 1. **Zero External Dependencies**: Single binary deployment
 2. **SQL Interface**: Familiar query language with complex filtering
 3. **File-based Storage**: Easy backup, migration, and inspection
@@ -1532,7 +1533,8 @@ pub async fn handle_vector_search_command(
 6. **Rich Metadata Queries**: Complex joins and aggregations
 7. **Smaller Resource Footprint**: No separate vector database process
 
-### Key Features:
+### Key Features
+
 1. **Embedded SQLite**: No external services required
 2. **Vector Operations**: Custom similarity calculations with ndarray
 3. **Batch Processing**: Optimized for bulk document operations

@@ -58,6 +58,74 @@ main.rs → Server → Registry ← Watcher
             Executor → Security + ResourceLimits
 ```
 
+## Vector Search (Optional Feature)
+
+just-mcp includes optional semantic search capabilities for discovering and understanding justfile tasks across projects. This requires building with the `vector-search` and `local-embeddings` features.
+
+### Key Components
+
+- **LocalEmbeddingProvider**: Offline embedding generation using Candle and sentence transformers
+- **VectorSearchManager**: High-level interface combining vector storage and embedding providers
+- **LibSqlVectorStore**: SQLite-based vector database with similarity search
+- **Model Cache**: Downloads and caches models from Hugging Face Hub
+
+### Build Commands with Vector Search
+
+```bash
+# Build with all vector search features
+cargo build --features "vector-search,local-embeddings"
+
+# Test vector search functionality
+cargo test --features "vector-search,local-embeddings" vector_search
+cargo test --features "vector-search,local-embeddings" local_embedding
+
+# CLI commands for vector search
+just-mcp search index --local-embeddings     # Index justfiles with local embeddings
+just-mcp search query --query "build app" --local-embeddings  # Semantic search
+```
+
+### Local Embeddings
+
+The local embedding provider uses the **sentence-transformers/all-MiniLM-L6-v2** model:
+
+- **Dimensions**: 384
+- **Model Size**: ~80MB cached locally
+- **Advantages**: Offline, private, no API costs
+- **First Run**: Downloads model from Hugging Face Hub
+- **Cache Location**: `~/.cache/just-mcp/models/`
+
+### Vector Search Architecture
+
+```text
+CLI Commands → VectorSearchManager → LocalEmbeddingProvider → ModelCache
+                        ↓                                        ↓
+              LibSqlVectorStore ← Vector Database ← Hugging Face Hub
+                        ↓
+               Document Indexing & Similarity Search
+```
+
+### Testing Vector Search
+
+```bash
+# Unit tests for local embedding provider
+cargo test --features "local-embeddings,vector-search" local_embedding
+
+# Integration tests with demo justfile
+cargo test --features "local-embeddings,vector-search" local_embedding_interface
+
+# Vector store tests
+cargo test --features "vector-search" vector_store
+
+# End-to-end vector search integration
+cargo test --features "vector-search,local-embeddings" vector_search_integration
+```
+
+### Key Test Files for Vector Search
+
+- `local_embedding_interface_test.rs` - LocalEmbeddingProvider interface tests
+- `vector_search_integration_test.rs` - Full vector search workflow tests
+- `vector_store_test.rs` - LibSqlVectorStore unit tests
+
 ## Testing Strategy
 
 - **Unit Tests**: In each module's `mod.rs` file

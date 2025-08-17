@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-After conducting a comprehensive architectural review of both the Qdrant and libSQL vector database proposals for the just-mcp project, **I recommend implementing the libSQL proposal**. 
+After conducting a comprehensive architectural review of both the Qdrant and libSQL vector database proposals for the just-mcp project, **I recommend implementing the libSQL proposal**.
 
 The libSQL approach aligns better with just-mcp's architectural principles of simplicity, zero external dependencies, and operational efficiency. While Qdrant offers superior vector search capabilities, libSQL's embedded nature, transactional guarantees, and minimal resource footprint make it the more architecturally sound choice for this project's specific requirements.
 
@@ -11,6 +11,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 ### 1. Architectural Consistency
 
 #### libSQL Proposal ✅ **EXCELLENT**
+
 - **Aligns with existing patterns**: The single-process, embedded database model matches just-mcp's current architecture
 - **Channel-based communication**: Can integrate cleanly with existing broadcast channels for change notifications
 - **Async-first design**: Uses tokio consistently with the rest of the codebase
@@ -18,6 +19,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 - **Zero external processes**: Maintains the project's self-contained nature
 
 #### Qdrant Proposal ⚠️ **MODERATE**
+
 - **Introduces client-server pattern**: Even in embedded mode, adds architectural complexity
 - **Additional runtime dependencies**: Requires managing a separate vector database instance
 - **Network-style communication**: Uses gRPC/HTTP internally, adding layers of abstraction
@@ -26,6 +28,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 ### 2. SOLID Principles Compliance
 
 #### libSQL Proposal ✅ **EXCELLENT**
+
 - **Single Responsibility**: Clear separation between storage (libSQL) and vector operations (ndarray)
 - **Open/Closed**: Trait-based design allows extension without modification
 - **Liskov Substitution**: VectorStore trait implementation is fully substitutable
@@ -33,6 +36,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 - **Dependency Inversion**: Depends on abstractions (traits) not concrete implementations
 
 #### Qdrant Proposal ✅ **GOOD**
+
 - **Single Responsibility**: Well-separated concerns between client and storage
 - **Open/Closed**: Extensible through trait implementations
 - **Liskov Substitution**: Proper trait implementation
@@ -43,6 +47,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 ### 3. Maintainability
 
 #### libSQL Proposal ✅ **EXCELLENT**
+
 - **Code clarity**: SQL-based operations are familiar and debuggable
 - **Modularity**: Clean separation of concerns with simple interfaces
 - **Testing**: Easy to test with in-memory databases
@@ -51,6 +56,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 - **Migration paths**: Standard SQL migration tools apply
 
 #### Qdrant Proposal ⚠️ **MODERATE**
+
 - **Code complexity**: More abstraction layers to understand
 - **Modularity**: Good but with more moving parts
 - **Testing**: Requires mocking or test containers
@@ -61,6 +67,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 ### 4. Performance
 
 #### libSQL Proposal ✅ **GOOD**
+
 - **Efficiency**: Direct file I/O with SQLite's proven performance
 - **Scalability**: Adequate for expected dataset sizes (thousands of tasks)
 - **Resource usage**: Minimal memory footprint, efficient disk usage
@@ -69,6 +76,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 - *Limitation*: Linear search for vector similarity (acceptable for small datasets)
 
 #### Qdrant Proposal ✅ **EXCELLENT**
+
 - **Efficiency**: HNSW algorithm provides sub-linear search complexity
 - **Scalability**: Can handle millions of vectors efficiently
 - **Resource usage**: Higher memory requirements for indexes
@@ -79,6 +87,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 ### 5. Security
 
 #### libSQL Proposal ✅ **EXCELLENT**
+
 - **No network exposure**: Embedded database with no network interfaces
 - **SQL injection protection**: Parameterized queries throughout
 - **File permissions**: Standard OS-level file security
@@ -86,6 +95,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 - **Audit trail**: Can add SQL-based audit logging easily
 
 #### Qdrant Proposal ⚠️ **GOOD**
+
 - **Network security**: Even embedded mode has potential network exposure
 - **Authentication**: Additional auth mechanisms to consider
 - **API surface**: Larger attack surface through REST/gRPC APIs
@@ -95,6 +105,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 ### 6. Operational Complexity
 
 #### libSQL Proposal ✅ **EXCELLENT**
+
 - **Deployment**: Single binary, no additional services
 - **Configuration**: Minimal - just file path
 - **Monitoring**: Standard file system monitoring
@@ -103,6 +114,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 - **Updates**: No service coordination needed
 
 #### Qdrant Proposal ❌ **POOR**
+
 - **Deployment**: Additional service management required
 - **Configuration**: Complex configuration options
 - **Monitoring**: Requires specialized monitoring
@@ -113,6 +125,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 ### 7. Dependencies
 
 #### libSQL Proposal ✅ **EXCELLENT**
+
 - **Minimal additions**: libsql, rusqlite (with bundled SQLite), ndarray
 - **Well-maintained**: SQLite is one of the most tested codebases
 - **Security track record**: Excellent security history
@@ -120,6 +133,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 - **Binary size impact**: Minimal increase (~2-3MB)
 
 #### Qdrant Proposal ⚠️ **MODERATE**
+
 - **Significant additions**: qdrant-client, tonic, tokio-stream, protobuf dependencies
 - **Maintenance concerns**: More dependencies to track
 - **Security surface**: Larger dependency tree
@@ -129,6 +143,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 ### 8. Integration Ease
 
 #### libSQL Proposal ✅ **EXCELLENT**
+
 - **Drop-in integration**: Minimal changes to existing architecture
 - **Familiar patterns**: SQL operations align with common patterns
 - **Error handling**: Fits existing error types with one addition
@@ -136,6 +151,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 - **Migration path**: Can be added incrementally
 
 #### Qdrant Proposal ⚠️ **MODERATE**
+
 - **Architectural changes**: Requires adding service management
 - **New patterns**: Introduces client-server concepts
 - **Error handling**: More error types to handle
@@ -160,12 +176,14 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 ### Risk Assessment
 
 #### libSQL Risks (LOW)
+
 1. **Performance at scale**: Linear search may become slow with >10K documents
    - *Mitigation*: Implement simple clustering or partitioning if needed
 2. **Vector operation limitations**: No built-in vector indexes
    - *Mitigation*: Custom indexing strategies can be added later
 
 #### Qdrant Risks (MODERATE-HIGH)
+
 1. **Operational complexity**: Service management adds failure modes
    - *Mitigation*: Extensive error handling and recovery logic
 2. **Version compatibility**: Client-server version mismatches
@@ -177,7 +195,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 
 ## Implementation Recommendations
 
-### For libSQL Implementation:
+### For libSQL Implementation
 
 1. **Start Simple**: Implement basic vector storage and similarity search
 2. **Optimize Incrementally**: Add performance optimizations as needed:
@@ -188,7 +206,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 4. **Monitor Performance**: Add metrics for search latency
 5. **Plan for Growth**: Design schema with future partitioning in mind
 
-### Architecture Integration Points:
+### Architecture Integration Points
 
 1. **Error Handling**: Add `VectorStore` variant to existing `Error` enum
 2. **Configuration**: Add vector search settings to CLI args
@@ -196,7 +214,7 @@ The libSQL approach aligns better with just-mcp's architectural principles of si
 4. **Registry Integration**: Coordinate with ToolRegistry for consistency
 5. **Admin Tools**: Add vector search statistics to admin interface
 
-### Testing Strategy:
+### Testing Strategy
 
 1. **Unit Tests**: In-memory database for fast tests
 2. **Integration Tests**: Test with real justfile parsing

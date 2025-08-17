@@ -544,3 +544,225 @@ demo-vector-clean:
     @rm -f vector_search.db
     @echo "✅ Database cleaned"
 
+# Local embeddings demo - index and search using offline models
+[group('demo')]
+demo-vector-local:
+    #!/usr/bin/env bash
+    echo "🤖 Local Embeddings Demo"
+    echo "========================"
+    echo ""
+    
+    # Build with local embeddings feature
+    echo "1. Building with local-embeddings feature..."
+    cargo build --features "vector-search,local-embeddings"
+    echo ""
+    
+    # Index the demo justfile with local embeddings
+    echo "2. Indexing demo/justfile with local embeddings (first run downloads model ~80MB)..."
+    echo "   Note: This may take a moment on first run while the model downloads..."
+    target/debug/just-mcp search index --directory demo --local-embeddings --batch-size 10 --database vector_search_local.db
+    echo ""
+    
+    # Show database stats
+    echo "3. Database statistics:"
+    target/debug/just-mcp search stats --database vector_search_local.db
+    echo ""
+    
+    # Demonstrate semantic search with local embeddings
+    echo "4. Semantic search demonstrations with local embeddings:"
+    echo ""
+    
+    echo "🔸 Natural language query: 'How do I build a container image?':"
+    target/debug/just-mcp search query --query "How do I build a container image?" --local-embeddings --limit 3 --database vector_search_local.db
+    echo ""
+    
+    echo "🔸 Natural language query: 'I need to run tests':"
+    target/debug/just-mcp search query --query "I need to run tests" --local-embeddings --limit 3 --database vector_search_local.db
+    echo ""
+    
+    echo "🔸 Natural language query: 'deploy my application to production':"
+    target/debug/just-mcp search query --query "deploy my application to production" --local-embeddings --limit 3 --database vector_search_local.db
+    echo ""
+    
+    echo "🔸 Natural language query: 'check system health and status':"
+    target/debug/just-mcp search query --query "check system health and status" --local-embeddings --limit 3 --database vector_search_local.db
+    echo ""
+    
+    echo "🔸 Finding tasks similar to 'backup database':"
+    target/debug/just-mcp search similar --task "backup database with compression" --local-embeddings --limit 3 --database vector_search_local.db
+    echo ""
+    
+    echo "✅ Local embeddings demo complete! Database saved as 'vector_search_local.db'"
+    echo "💡 Model cached at: ~/.cache/just-mcp/models/ for future use"
+
+# Compare local vs mock embeddings - side-by-side comparison
+[group('demo')]
+demo-vector-compare:
+    #!/usr/bin/env bash
+    echo "⚖️  Local vs Mock Embeddings Comparison"
+    echo "======================================"
+    echo ""
+    
+    # Build with both features
+    echo "1. Building with all vector search features..."
+    cargo build --features "vector-search,local-embeddings"
+    echo ""
+    
+    # Clean databases first
+    echo "2. Cleaning previous databases..."
+    rm -f vector_search_mock.db vector_search_local.db
+    echo ""
+    
+    # Index with mock embeddings
+    echo "3. Indexing demo/justfile with MOCK embeddings..."
+    target/debug/just-mcp search index --directory demo --mock-embeddings --batch-size 10 --database vector_search_mock.db
+    echo ""
+    
+    # Index with local embeddings
+    echo "4. Indexing demo/justfile with LOCAL embeddings (may download model)..."
+    target/debug/just-mcp search index --directory demo --local-embeddings --batch-size 10 --database vector_search_local.db
+    echo ""
+    
+    # Compare searches
+    echo "5. Comparison Results:"
+    echo "====================="
+    echo ""
+    
+    queries=(
+        "How do I build my application?"
+        "run tests with coverage"
+        "deploy to production environment"
+        "create backup of data"
+        "monitor service health"
+    )
+    
+    for query in "${queries[@]}"; do
+        echo "📋 Query: '$query'"
+        echo "   ▶️  Mock Embeddings Results:"
+        target/debug/just-mcp search query --query "$query" --mock-embeddings --limit 2 --database vector_search_mock.db | sed 's/^/      /'
+        echo ""
+        echo "   ▶️  Local Embeddings Results:"
+        target/debug/just-mcp search query --query "$query" --local-embeddings --limit 2 --database vector_search_local.db | sed 's/^/      /'
+        echo ""
+        echo "   ────────────────────────────────────────"
+        echo ""
+    done
+    
+    echo "📊 Database Statistics Comparison:"
+    echo ""
+    echo "   Mock Embeddings Database:"
+    target/debug/just-mcp search stats --database vector_search_mock.db | sed 's/^/      /'
+    echo ""
+    echo "   Local Embeddings Database:"
+    target/debug/just-mcp search stats --database vector_search_local.db | sed 's/^/      /'
+    echo ""
+    
+    echo "✅ Comparison complete!"
+    echo "💡 Key Differences:"
+    echo "   • Mock embeddings: Fast, deterministic, poor semantic quality"
+    echo "   • Local embeddings: Slower first-time, good semantic understanding, offline"
+    echo "   • Local embeddings better understand natural language intent"
+    echo "   • Local embeddings require ~80MB model download on first use"
+
+# Test local embeddings with various natural language queries
+[group('demo')]
+demo-vector-nlp:
+    #!/usr/bin/env bash
+    echo "🗣️  Natural Language Processing Demo"
+    echo "===================================="
+    echo ""
+    
+    # Build and index if needed
+    echo "1. Building and preparing local embeddings database..."
+    cargo build --features "vector-search,local-embeddings"
+    
+    # Check if database exists, create if not
+    if [ ! -f "vector_search_local.db" ]; then
+        echo "   Creating database with local embeddings..."
+        target/debug/just-mcp search index --directory demo --local-embeddings --batch-size 10 --database vector_search_local.db
+    else
+        echo "   Using existing database: vector_search_local.db"
+    fi
+    echo ""
+    
+    # Test various natural language queries
+    echo "2. Testing natural language understanding:"
+    echo ""
+    
+    nlp_queries=(
+        "What can I do to test my code?"
+        "How do I package my app for distribution?"
+        "I want to start a development server"
+        "Show me tasks related to quality assurance"
+        "How can I monitor my application?"
+        "What deployment options are available?"
+        "I need to backup my important data"
+        "Show me database-related operations"
+        "How do I clean up temporary files?"
+        "What tasks help with development workflow?"
+    )
+    
+    for i, query in enumerate "${nlp_queries[@]}"; do
+        echo "🔍 Query $((i+1)): '$query'"
+        target/debug/just-mcp search query --query "$query" --local-embeddings --limit 2 --database vector_search_local.db --threshold 0.3 | sed 's/^/   /'
+        echo ""
+    done
+    
+    echo "✅ Natural language processing demo complete!"
+    echo "💡 Local embeddings can understand conversational queries and intent"
+
+# Performance benchmark - compare embedding generation speed
+[group('demo')]
+demo-vector-benchmark:
+    #!/usr/bin/env bash
+    echo "⏱️  Embedding Performance Benchmark"
+    echo "=================================="
+    echo ""
+    
+    # Build with features
+    echo "1. Building for benchmark..."
+    cargo build --release --features "vector-search,local-embeddings"
+    echo ""
+    
+    # Clean databases
+    echo "2. Preparing clean databases..."
+    rm -f vector_search_mock_bench.db vector_search_local_bench.db
+    echo ""
+    
+    # Benchmark mock embeddings
+    echo "3. Benchmarking MOCK embeddings indexing speed..."
+    time target/release/just-mcp search index --directory demo --mock-embeddings --batch-size 50 --database vector_search_mock_bench.db
+    echo ""
+    
+    # Benchmark local embeddings  
+    echo "4. Benchmarking LOCAL embeddings indexing speed..."
+    time target/release/just-mcp search index --directory demo --local-embeddings --batch-size 50 --database vector_search_local_bench.db
+    echo ""
+    
+    # Benchmark search speed
+    echo "5. Benchmarking search query speed..."
+    echo ""
+    
+    test_query="build and deploy application"
+    
+    echo "   Mock embeddings search speed:"
+    time target/release/just-mcp search query --query "$test_query" --mock-embeddings --limit 5 --database vector_search_mock_bench.db > /dev/null
+    echo ""
+    
+    echo "   Local embeddings search speed:"
+    time target/release/just-mcp search query --query "$test_query" --local-embeddings --limit 5 --database vector_search_local_bench.db > /dev/null
+    echo ""
+    
+    echo "✅ Benchmark complete!"
+    echo "💡 Performance notes:"
+    echo "   • Mock embeddings: Very fast, no model loading"
+    echo "   • Local embeddings: Slower first run (model loading), then comparable search speed"
+    echo "   • Local embeddings trade initial setup time for better semantic quality"
+
+# Clean all vector search demo databases
+[group('demo')]
+demo-vector-clean-all:
+    @echo "🧹 Cleaning all vector search demo databases..."
+    @rm -f vector_search.db vector_search_local.db vector_search_mock.db vector_search_mock_bench.db vector_search_local_bench.db
+    @echo "✅ All demo databases cleaned"
+

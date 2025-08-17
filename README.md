@@ -54,6 +54,13 @@ This enables AI assistants to understand, explore, and execute a project's commo
 - Conflict prevention and task name validation
 - Multi-directory targeting for task creation
 
+### 🔍 **Semantic Vector Search** *(Optional)*
+
+- Local embedding models for offline semantic search (no API keys required)
+- Multiple embedding providers: Local (Candle), OpenAI, or Mock for testing
+- Index and search justfile tasks using natural language queries
+- Find similar tasks and discover relevant automation across projects
+
 ### 🚀 **MCP Protocol Compliance**
 
 - Full JSON-RPC 2.0 MCP specification implementation
@@ -456,6 +463,168 @@ data-report input="data/raw" output="reports/data_quality.html":
     }
   }
 }
+```
+
+## Vector Search (Optional)
+
+just-mcp includes powerful semantic search capabilities to help discover and understand justfile tasks across your projects. This feature is optional and requires building with vector search features enabled.
+
+### Installation with Vector Search
+
+```bash
+# Build with vector search support
+cargo install --path . --features "vector-search,local-embeddings"
+
+# Or using just
+just install  # Automatically includes all features
+```
+
+### Vector Search Commands
+
+#### Index Justfiles
+
+Create a searchable index of your justfile tasks:
+
+```bash
+# Index current directory with local embeddings (offline, no API key needed)
+just-mcp search index --local-embeddings
+
+# Index specific directory
+just-mcp search index --directory ~/projects --local-embeddings
+
+# Index with OpenAI embeddings (requires API key)
+just-mcp search index --openai-api-key YOUR_API_KEY
+
+# Index with mock embeddings (for testing)
+just-mcp search index --mock-embeddings
+```
+
+#### Search Tasks
+
+Find relevant tasks using natural language queries:
+
+```bash
+# Find build-related tasks
+just-mcp search query --query "build compile application" --local-embeddings
+
+# Find deployment tasks with similarity threshold
+just-mcp search query --query "deploy production" --threshold 0.7 --local-embeddings
+
+# Limit results
+just-mcp search query --query "test unit integration" --limit 5 --local-embeddings
+```
+
+#### Find Similar Tasks
+
+Discover tasks similar to a given description:
+
+```bash
+just-mcp search similar --task "run tests with coverage" --local-embeddings
+```
+
+#### Database Operations
+
+```bash
+# View database statistics
+just-mcp search stats
+
+# Search by metadata filters
+just-mcp search filter --filter type=justfile_task --filter category=testing
+
+# Search by text content
+just-mcp search text --text "docker build"
+```
+
+### Embedding Providers
+
+just-mcp supports three embedding providers:
+
+#### 1. Local Embeddings (Recommended)
+
+- **Model**: sentence-transformers/all-MiniLM-L6-v2 (384 dimensions)
+- **Advantages**: Offline, private, no API costs, good semantic understanding
+- **Disadvantages**: Slower first-time setup (model download), uses local storage
+- **Usage**: Add `--local-embeddings` to any search command
+
+```bash
+# First run downloads model (~80MB) to cache directory
+just-mcp search index --local-embeddings
+```
+
+#### 2. OpenAI Embeddings
+
+- **Model**: text-embedding-ada-002 (1536 dimensions)
+- **Advantages**: High quality, fast inference
+- **Disadvantages**: Requires API key, costs money, sends data to OpenAI
+- **Usage**: Add `--openai-api-key YOUR_KEY` to search commands
+
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+just-mcp search index --openai-api-key $OPENAI_API_KEY
+```
+
+#### 3. Mock Embeddings
+
+- **Purpose**: Testing and development
+- **Advantages**: Fast, deterministic, no dependencies
+- **Disadvantages**: Poor semantic quality, not suitable for production
+- **Usage**: Add `--mock-embeddings` to search commands
+
+### Example Workflow
+
+```bash
+# 1. Index your projects with local embeddings
+just-mcp search index --directory ~/projects/api --local-embeddings
+just-mcp search index --directory ~/projects/web --local-embeddings
+just-mcp search index --directory ~/projects/infrastructure --local-embeddings
+
+# 2. Search for relevant tasks
+just-mcp search query --query "start development server" --local-embeddings
+just-mcp search query --query "deploy to staging environment" --local-embeddings
+just-mcp search query --query "run database migrations" --local-embeddings
+
+# 3. Find similar tasks to what you're working on
+just-mcp search similar --task "backup database with compression" --local-embeddings
+
+# 4. Filter by specific criteria
+just-mcp search filter --filter has_params=true --filter category=deployment
+```
+
+### Vector Search Integration
+
+The vector search functionality can be combined with the MCP server for AI-powered task discovery:
+
+```json
+{
+  "mcpServers": {
+    "just-with-search": {
+      "command": "just-mcp",
+      "args": [
+        "--watch-dir", "~/projects/api:backend",
+        "--watch-dir", "~/projects/web:frontend"
+      ],
+      "env": {
+        "ENABLE_VECTOR_SEARCH": "true",
+        "EMBEDDING_PROVIDER": "local"
+      }
+    }
+  }
+}
+```
+
+### Model Caching
+
+Local embedding models are cached for efficiency:
+
+- **Cache Location**: `~/.cache/just-mcp/models/` (or `$XDG_CACHE_HOME/just-mcp/models/`)
+- **Model Size**: ~80MB for all-MiniLM-L6-v2
+- **First Run**: Downloads model from Hugging Face Hub
+- **Subsequent Runs**: Uses cached model for instant startup
+
+To clear the cache:
+
+```bash
+rm -rf ~/.cache/just-mcp/models/
 ```
 
 ## Configuration
