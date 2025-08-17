@@ -80,11 +80,11 @@ pub enum SearchCommands {
         #[arg(short, long, default_value = "10")]
         limit: usize,
 
-        /// Minimum similarity threshold (0.0 to 1.0)
+        /// Minimum similarity threshold (0.0 to 1.0) [default: 0.0]
         #[arg(short, long, default_value = "0.0")]
         threshold: f32,
 
-        /// Database path for vector storage
+        /// Database path for vector storage [default: vector_search.db in current directory]
         #[arg(short = 'b', long, default_value = "vector_search.db")]
         database: PathBuf,
 
@@ -96,22 +96,30 @@ pub enum SearchCommands {
         #[arg(long)]
         mock_embeddings: bool,
 
-        /// Use local embedding model (all-MiniLM-L6-v2) for offline text embeddings. Downloads model on first use. Alternative to OpenAI API for privacy and cost savings.
+        /// Use local embedding model (all-MiniLM-L6-v2) for offline text embeddings. Downloads model on first use (~80MB). Cache location: ~/.cache/just-mcp/models/
         #[cfg(feature = "local-embeddings")]
         #[arg(
             long,
-            help = "Use local sentence transformer model for embeddings (offline, privacy-focused)"
+            help = "Use local sentence transformer model for embeddings (offline, cached at ~/.cache/just-mcp/models/)"
         )]
         local_embeddings: bool,
+
+        /// Custom directory for caching local embedding models [default: ~/.cache/just-mcp/models/]
+        #[cfg(feature = "local-embeddings")]
+        #[arg(
+            long,
+            help = "Override default cache directory for local embedding models"
+        )]
+        cache_dir: Option<PathBuf>,
     },
 
     /// Index justfiles from a directory into the vector database
     Index {
-        /// Directory containing justfiles to index
+        /// Directory containing justfiles to index [default: current directory (.)]
         #[arg(short, long, default_value = ".")]
         directory: PathBuf,
 
-        /// Database path for vector storage
+        /// Database path for vector storage [default: vector_search.db in current directory]
         #[arg(short = 'b', long, default_value = "vector_search.db")]
         database: PathBuf,
 
@@ -123,22 +131,30 @@ pub enum SearchCommands {
         #[arg(long)]
         mock_embeddings: bool,
 
-        /// Use local embedding model (all-MiniLM-L6-v2) for offline indexing. Downloads model on first use. Slower than OpenAI but private and cost-free.
+        /// Use local embedding model (all-MiniLM-L6-v2) for offline indexing. Downloads model on first use (~80MB). Cache location: ~/.cache/just-mcp/models/
         #[cfg(feature = "local-embeddings")]
         #[arg(
             long,
-            help = "Use local sentence transformer model for indexing (offline, no API costs)"
+            help = "Use local sentence transformer model for indexing (offline, cached at ~/.cache/just-mcp/models/)"
         )]
         local_embeddings: bool,
 
         /// Batch size for indexing operations
         #[arg(long, default_value = "50")]
         batch_size: usize,
+
+        /// Custom directory for caching local embedding models [default: ~/.cache/just-mcp/models/]
+        #[cfg(feature = "local-embeddings")]
+        #[arg(
+            long,
+            help = "Override default cache directory for local embedding models"
+        )]
+        cache_dir: Option<PathBuf>,
     },
 
     /// Show database statistics
     Stats {
-        /// Database path for vector storage
+        /// Database path for vector storage [default: vector_search.db in current directory]
         #[arg(short = 'b', long, default_value = "vector_search.db")]
         database: PathBuf,
     },
@@ -149,11 +165,11 @@ pub enum SearchCommands {
         #[arg(short, long)]
         task: String,
 
-        /// Maximum number of similar tasks to return
+        /// Maximum number of similar tasks to return [default: 5]
         #[arg(short, long, default_value = "5")]
         limit: usize,
 
-        /// Database path for vector storage
+        /// Database path for vector storage [default: vector_search.db in current directory]
         #[arg(short = 'b', long, default_value = "vector_search.db")]
         database: PathBuf,
 
@@ -165,13 +181,21 @@ pub enum SearchCommands {
         #[arg(long)]
         mock_embeddings: bool,
 
-        /// Use local embedding model (all-MiniLM-L6-v2) for finding similar tasks. Works offline without API calls.
+        /// Use local embedding model (all-MiniLM-L6-v2) for finding similar tasks. Works offline without API calls. Cache location: ~/.cache/just-mcp/models/
         #[cfg(feature = "local-embeddings")]
         #[arg(
             long,
-            help = "Use local sentence transformer model for similarity search (offline)"
+            help = "Use local sentence transformer model for similarity search (offline, cached at ~/.cache/just-mcp/models/)"
         )]
         local_embeddings: bool,
+
+        /// Custom directory for caching local embedding models [default: ~/.cache/just-mcp/models/]
+        #[cfg(feature = "local-embeddings")]
+        #[arg(
+            long,
+            help = "Override default cache directory for local embedding models"
+        )]
+        cache_dir: Option<PathBuf>,
     },
 
     /// Search by metadata filters
@@ -180,11 +204,11 @@ pub enum SearchCommands {
         #[arg(short, long, value_parser = parse_key_val)]
         filter: Vec<(String, String)>,
 
-        /// Maximum number of results to return
+        /// Maximum number of results to return [default: 10]
         #[arg(short, long, default_value = "10")]
         limit: usize,
 
-        /// Database path for vector storage
+        /// Database path for vector storage [default: vector_search.db in current directory]
         #[arg(short = 'b', long, default_value = "vector_search.db")]
         database: PathBuf,
     },
@@ -195,13 +219,41 @@ pub enum SearchCommands {
         #[arg(short, long)]
         text: String,
 
-        /// Maximum number of results to return
+        /// Maximum number of results to return [default: 10]
         #[arg(short, long, default_value = "10")]
         limit: usize,
 
-        /// Database path for vector storage
+        /// Database path for vector storage [default: vector_search.db in current directory]
         #[arg(short = 'b', long, default_value = "vector_search.db")]
         database: PathBuf,
+    },
+
+    /// Show local embedding model cache information
+    #[cfg(feature = "local-embeddings")]
+    CacheInfo {
+        /// Custom cache directory to inspect [default: ~/.cache/just-mcp/models/]
+        #[arg(long, help = "Override default cache directory to inspect")]
+        cache_dir: Option<PathBuf>,
+    },
+
+    /// Clear local embedding model cache
+    #[cfg(feature = "local-embeddings")]
+    CacheClear {
+        /// Custom cache directory to clear [default: ~/.cache/just-mcp/models/]
+        #[arg(long, help = "Override default cache directory to clear")]
+        cache_dir: Option<PathBuf>,
+
+        /// Clear all models without confirmation
+        #[arg(long, help = "Skip confirmation prompt")]
+        force: bool,
+    },
+
+    /// List cached local embedding models
+    #[cfg(feature = "local-embeddings")]
+    CacheList {
+        /// Custom cache directory to list [default: ~/.cache/just-mcp/models/]
+        #[arg(long, help = "Override default cache directory to list")]
+        cache_dir: Option<PathBuf>,
     },
 }
 
@@ -224,6 +276,7 @@ async fn query_with_fallback(
     prefer_local: bool,
     prefer_mock: bool,
     openai_api_key: Option<String>,
+    #[cfg(feature = "local-embeddings")] cache_dir: Option<PathBuf>,
 ) -> Result<()> {
     // If user explicitly requests a specific provider, use it directly
     if prefer_mock {
@@ -238,14 +291,14 @@ async fn query_with_fallback(
 
     #[cfg(feature = "local-embeddings")]
     if prefer_local {
-        let manager = create_search_manager_local(database).await?;
+        let manager = create_search_manager_local(database, cache_dir).await?;
         return query_search(manager, query, limit, threshold).await;
     }
 
     // Fallback logic: try local -> mock -> error
     #[cfg(feature = "local-embeddings")]
     {
-        match create_search_manager_local(database).await {
+        match create_search_manager_local(database, cache_dir).await {
             Ok(manager) => {
                 println!("Using local embeddings for vector search");
                 return query_search(manager, query, limit, threshold).await;
@@ -281,6 +334,7 @@ async fn index_with_fallback(
     prefer_local: bool,
     prefer_mock: bool,
     openai_api_key: Option<String>,
+    #[cfg(feature = "local-embeddings")] cache_dir: Option<PathBuf>,
 ) -> Result<()> {
     // If user explicitly requests a specific provider, use it directly
     if prefer_mock {
@@ -295,14 +349,14 @@ async fn index_with_fallback(
 
     #[cfg(feature = "local-embeddings")]
     if prefer_local {
-        let manager = create_search_manager_local(database).await?;
+        let manager = create_search_manager_local(database, cache_dir).await?;
         return index_documents(&manager, directory, batch_size).await;
     }
 
     // Fallback logic: try local -> mock -> error
     #[cfg(feature = "local-embeddings")]
     {
-        match create_search_manager_local(database).await {
+        match create_search_manager_local(database, cache_dir).await {
             Ok(manager) => {
                 println!("Using local embeddings for indexing");
                 return index_documents(&manager, directory, batch_size).await;
@@ -338,6 +392,7 @@ async fn similar_with_fallback(
     prefer_local: bool,
     prefer_mock: bool,
     openai_api_key: Option<String>,
+    #[cfg(feature = "local-embeddings")] cache_dir: Option<PathBuf>,
 ) -> Result<()> {
     // If user explicitly requests a specific provider, use it directly
     if prefer_mock {
@@ -352,14 +407,14 @@ async fn similar_with_fallback(
 
     #[cfg(feature = "local-embeddings")]
     if prefer_local {
-        let manager = create_search_manager_local(database).await?;
+        let manager = create_search_manager_local(database, cache_dir).await?;
         return similar_tasks(&manager, task, limit).await;
     }
 
     // Fallback logic: try local -> mock -> error
     #[cfg(feature = "local-embeddings")]
     {
-        match create_search_manager_local(database).await {
+        match create_search_manager_local(database, cache_dir).await {
             Ok(manager) => {
                 println!("Using local embeddings for similar task search");
                 return similar_tasks(&manager, task, limit).await;
@@ -486,6 +541,8 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
             mock_embeddings,
             #[cfg(feature = "local-embeddings")]
             local_embeddings,
+            #[cfg(feature = "local-embeddings")]
+            cache_dir,
         } => {
             #[cfg(feature = "local-embeddings")]
             {
@@ -497,6 +554,7 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
                     local_embeddings,
                     mock_embeddings,
                     openai_api_key,
+                    cache_dir,
                 )
                 .await?;
             }
@@ -524,6 +582,8 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
             #[cfg(feature = "local-embeddings")]
             local_embeddings,
             batch_size,
+            #[cfg(feature = "local-embeddings")]
+            cache_dir,
         } => {
             println!("Indexing justfiles from: {}", directory.display());
 
@@ -536,6 +596,7 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
                     local_embeddings,
                     mock_embeddings,
                     openai_api_key,
+                    cache_dir,
                 )
                 .await?;
             }
@@ -580,6 +641,8 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
             mock_embeddings,
             #[cfg(feature = "local-embeddings")]
             local_embeddings,
+            #[cfg(feature = "local-embeddings")]
+            cache_dir,
         } => {
             #[cfg(feature = "local-embeddings")]
             {
@@ -590,6 +653,7 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
                     local_embeddings,
                     mock_embeddings,
                     openai_api_key,
+                    cache_dir,
                 )
                 .await?;
             }
@@ -688,6 +752,160 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
                 }
             }
         }
+
+        #[cfg(feature = "local-embeddings")]
+        SearchCommands::CacheInfo { cache_dir } => {
+            use just_mcp::vector_search::{ModelCache, ModelCacheConfig};
+
+            let config = if let Some(cache_dir) = cache_dir {
+                ModelCacheConfig {
+                    cache_dir,
+                    ..Default::default()
+                }
+            } else {
+                ModelCacheConfig::default()
+            };
+
+            let cache = ModelCache::with_config(config).await?;
+            let stats = cache.get_stats().await;
+
+            println!("Local Embedding Model Cache Information");
+            println!("======================================");
+            println!("Cache directory: {}", stats.cache_dir.display());
+            println!("Total models: {}", stats.total_models);
+            println!("Loaded models: {}", stats.loaded_models);
+            println!(
+                "Total size: {:.2} MB",
+                stats.total_size_bytes as f64 / 1024.0 / 1024.0
+            );
+
+            if stats.total_models > 0 {
+                println!("\nCached Models:");
+                let models = cache.list_cached_models().await;
+                for model in models {
+                    println!(
+                        "  • {} ({:.2} MB)",
+                        model.model_id,
+                        model.size_bytes as f64 / 1024.0 / 1024.0
+                    );
+                    println!(
+                        "    Last accessed: {}",
+                        model.last_accessed.format("%Y-%m-%d %H:%M:%S UTC")
+                    );
+                    if let Some(dimension) = model.dimension {
+                        println!("    Dimension: {}", dimension);
+                    }
+                }
+            }
+        }
+
+        #[cfg(feature = "local-embeddings")]
+        SearchCommands::CacheClear { cache_dir, force } => {
+            use just_mcp::vector_search::{ModelCache, ModelCacheConfig};
+
+            let config = if let Some(cache_dir) = cache_dir {
+                ModelCacheConfig {
+                    cache_dir,
+                    ..Default::default()
+                }
+            } else {
+                ModelCacheConfig::default()
+            };
+
+            let cache = ModelCache::with_config(config).await?;
+            let stats = cache.get_stats().await;
+
+            if stats.total_models == 0 {
+                println!("No cached models found.");
+                return Ok(());
+            }
+
+            if !force {
+                println!(
+                    "This will remove {} cached models ({:.2} MB total).",
+                    stats.total_models,
+                    stats.total_size_bytes as f64 / 1024.0 / 1024.0
+                );
+                println!("Cache directory: {}", stats.cache_dir.display());
+                println!("Are you sure? (y/N): ");
+
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                if input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "yes" {
+                    println!("Cache clear cancelled.");
+                    return Ok(());
+                }
+            }
+
+            cache.clear_all().await?;
+            println!(
+                "Successfully cleared {} models from cache.",
+                stats.total_models
+            );
+        }
+
+        #[cfg(feature = "local-embeddings")]
+        SearchCommands::CacheList { cache_dir } => {
+            use just_mcp::vector_search::{ModelCache, ModelCacheConfig};
+
+            let config = if let Some(cache_dir) = cache_dir {
+                ModelCacheConfig {
+                    cache_dir,
+                    ..Default::default()
+                }
+            } else {
+                ModelCacheConfig::default()
+            };
+
+            let cache_dir_path = config.cache_dir.clone();
+            let cache = ModelCache::with_config(config).await?;
+            let models = cache.list_cached_models().await;
+
+            if models.is_empty() {
+                println!("No cached models found.");
+                println!("Cache directory: {}", cache_dir_path.display());
+                return Ok(());
+            }
+
+            println!("Cached Local Embedding Models");
+            println!("=============================");
+            println!("Cache directory: {}", cache_dir_path.display());
+            println!();
+
+            for (i, model) in models.iter().enumerate() {
+                println!("{}. Model: {}", i + 1, model.model_id);
+                println!(
+                    "   Size: {:.2} MB",
+                    model.size_bytes as f64 / 1024.0 / 1024.0
+                );
+                println!(
+                    "   Downloaded: {}",
+                    model.downloaded_at.format("%Y-%m-%d %H:%M:%S UTC")
+                );
+                println!(
+                    "   Last accessed: {}",
+                    model.last_accessed.format("%Y-%m-%d %H:%M:%S UTC")
+                );
+                if let Some(dimension) = model.dimension {
+                    println!("   Dimension: {}", dimension);
+                }
+                if let Some(ref model_type) = model.model_type {
+                    println!("   Type: {}", model_type);
+                }
+                println!(
+                    "   Status: {}",
+                    if model.loaded { "Loaded" } else { "Cached" }
+                );
+                println!();
+            }
+
+            let total_size: u64 = models.iter().map(|m| m.size_bytes).sum();
+            println!(
+                "Total: {} models, {:.2} MB",
+                models.len(),
+                total_size as f64 / 1024.0 / 1024.0
+            );
+        }
     }
 
     Ok(())
@@ -738,9 +956,14 @@ async fn create_search_manager_openai(
 #[cfg(all(feature = "vector-search", feature = "local-embeddings"))]
 async fn create_search_manager_local(
     database_path: &PathBuf,
+    cache_dir: Option<PathBuf>,
 ) -> Result<VectorSearchManager<LocalEmbeddingProvider, LibSqlVectorStore>> {
-    // Create local embedding provider with default config
-    let embedding_provider = LocalEmbeddingProvider::new();
+    // Create local embedding provider with custom or default config
+    let embedding_provider = if let Some(cache_dir) = cache_dir {
+        LocalEmbeddingProvider::with_cache_dir(cache_dir)?
+    } else {
+        LocalEmbeddingProvider::new()
+    };
 
     // Create vector store
     let dimension = embedding_provider.dimension();

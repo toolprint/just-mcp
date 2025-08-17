@@ -143,6 +143,21 @@ impl LocalEmbeddingProvider {
         Self::with_config(config)
     }
 
+    /// Create a provider with a custom cache directory
+    ///
+    /// # Arguments
+    /// * `cache_dir` - Directory to use for caching downloaded models
+    ///
+    /// # Example
+    /// ```
+    /// let provider = LocalEmbeddingProvider::with_cache_dir("/custom/cache/path").unwrap();
+    /// ```
+    pub fn with_cache_dir(cache_dir: PathBuf) -> Result<Self, anyhow::Error> {
+        let mut config = LocalEmbeddingConfig::default();
+        config.cache_dir = Some(cache_dir);
+        Ok(Self::with_config(config))
+    }
+
     /// Initialize the model and tokenizer (lazy loading)
     ///
     /// This method downloads the model from Hugging Face Hub if not already cached,

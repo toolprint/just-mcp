@@ -235,6 +235,107 @@ install: build-release
         exit 1
     fi
 
+# Install release binaries with vector search and local embeddings features
+[group('rust')]
+install-with-vector-search:
+    #!/usr/bin/env bash
+    echo "📦 Installing Release Binaries with Vector Search Features"
+    echo "========================================================"
+    echo ""
+    
+    # Parse TOML to get binary names (same logic as release-info)
+    if command -v tq >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+        echo "🔍 Using tq + jq to parse Cargo.toml"
+        binaries=$(tq -o json -f Cargo.toml 'bin' 2>/dev/null | jq -r '.[].name' 2>/dev/null | tr '\n' ' ')
+    elif command -v tq >/dev/null 2>&1; then
+        echo "🔍 Using tq to parse Cargo.toml"
+        bin_json=$(tq -o json -f Cargo.toml 'bin' 2>/dev/null)
+        binaries=$(echo "$bin_json" | sed 's/.*"name":"\([^"]*\)".*/\1/g' | tr '\n' ' ')
+    else
+        echo "🔍 Using AWK to parse Cargo.toml"
+        binaries=$(awk '
+        /^\[\[bin\]\]/ { in_bin=1; next }
+        /^\[/ { in_bin=0 }
+        in_bin && /^name = / {
+            gsub(/^name = "|"$/, "")
+            print
+        }
+        ' Cargo.toml | tr '\n' ' ')
+    fi
+    
+    if [ -z "$binaries" ]; then
+        echo "❌ No [[bin]] sections found in Cargo.toml"
+        exit 1
+    fi
+    
+    echo "🔍 Installing binaries: $binaries"
+    echo "🔬 Features: vector-search, local-embeddings"
+    echo ""
+    
+    # Build release with vector search features first
+    echo "🏗️  Building release with vector search features..."
+    if ! cargo build --release --features "vector-search,local-embeddings"; then
+        echo "❌ Build failed!"
+        exit 1
+    fi
+    echo ""
+    
+    # Install using cargo install with features
+    echo "🚀 Running: cargo install --path . --force --features \"vector-search,local-embeddings\""
+    if cargo install --path . --force --features "vector-search,local-embeddings"; then
+        echo ""
+        echo "✅ Installation completed successfully!"
+        echo ""
+        
+        # Show installation information  
+        if [ -n "$CARGO_HOME" ]; then
+            cargo_bin_dir="$CARGO_HOME/bin"
+        else
+            cargo_bin_dir="$HOME/.cargo/bin"
+        fi
+        
+        echo "📂 Installation Directory: $cargo_bin_dir"
+        echo ""
+        
+        for binary in $binaries; do
+            if [ -f "$cargo_bin_dir/$binary" ]; then
+                echo "🔧 Binary: $binary"
+                echo "   📍 Path: $cargo_bin_dir/$binary"
+                echo "   📏 Size: $(du -h $cargo_bin_dir/$binary | cut -f1)"
+                echo "   🏗️  Platform: $(uname -m)-$(uname -s | tr '[:upper:]' '[:lower:]')"
+                echo "   📅 Installed: $(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' $cargo_bin_dir/$binary 2>/dev/null || stat -c '%y' $cargo_bin_dir/$binary 2>/dev/null | cut -d'.' -f1)"
+                if command -v file >/dev/null 2>&1; then
+                    echo "   🔍 Type: $(file $cargo_bin_dir/$binary | cut -d':' -f2 | sed 's/^ *//')"
+                fi
+                echo "   ✨ Features: vector-search, local-embeddings"
+                echo ""
+            else
+                echo "❌ Binary $binary not found at $cargo_bin_dir/$binary"
+                echo ""
+            fi
+        done
+        
+        echo "💡 Usage with Vector Search:"
+        for binary in $binaries; do
+            echo "   Test installation: $binary search -h"
+            echo "   Cache information: $binary search cache-info"
+            echo "   Index justfiles: $binary search index --directory . --local-embeddings"
+            echo "   Semantic search: $binary search query --query \"your search\" --local-embeddings"
+        done
+        echo ""
+        echo "🤖 Local Embeddings:"
+        echo "   • Model cache: ~/.cache/just-mcp/models/ (or custom via --cache-dir)"
+        echo "   • Model: sentence-transformers/all-MiniLM-L6-v2 (~80MB)"
+        echo "   • First run downloads model automatically"
+        echo "   • Fully offline after initial download"
+        echo ""
+        
+    else
+        echo ""
+        echo "❌ Installation failed!"
+        exit 1
+    fi
+
 # Clean build artifacts and dependencies
 [group('clean')]
 clean:
