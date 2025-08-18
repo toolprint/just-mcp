@@ -10,6 +10,9 @@ pub mod server;
 pub mod types;
 pub mod watcher;
 
+#[cfg(feature = "vector-search")]
+pub mod vector_search;
+
 pub use error::{Error, Result};
 pub use server::Server;
 

@@ -58,6 +58,74 @@ main.rs → Server → Registry ← Watcher
             Executor → Security + ResourceLimits
 ```
 
+## Vector Search (Optional Feature)
+
+just-mcp includes optional semantic search capabilities for discovering and understanding justfile tasks across projects. This requires building with the `vector-search` and `local-embeddings` features.
+
+### Key Components
+
+- **LocalEmbeddingProvider**: Offline embedding generation using Candle and sentence transformers
+- **VectorSearchManager**: High-level interface combining vector storage and embedding providers
+- **LibSqlVectorStore**: SQLite-based vector database with similarity search
+- **Model Cache**: Downloads and caches models from Hugging Face Hub
+
+### Build Commands with Vector Search
+
+```bash
+# Build with all vector search features
+cargo build --features "vector-search,local-embeddings"
+
+# Test vector search functionality
+cargo test --features "vector-search,local-embeddings" vector_search
+cargo test --features "vector-search,local-embeddings" local_embedding
+
+# CLI commands for vector search
+just-mcp search index --local-embeddings     # Index justfiles with local embeddings
+just-mcp search query --query "build app" --local-embeddings  # Semantic search
+```
+
+### Local Embeddings
+
+The local embedding provider uses the **sentence-transformers/all-MiniLM-L6-v2** model:
+
+- **Dimensions**: 384
+- **Model Size**: ~80MB cached locally
+- **Advantages**: Offline, private, no API costs
+- **First Run**: Downloads model from Hugging Face Hub
+- **Cache Location**: `~/.cache/just-mcp/models/`
+
+### Vector Search Architecture
+
+```text
+CLI Commands → VectorSearchManager → LocalEmbeddingProvider → ModelCache
+                        ↓                                        ↓
+              LibSqlVectorStore ← Vector Database ← Hugging Face Hub
+                        ↓
+               Document Indexing & Similarity Search
+```
+
+### Testing Vector Search
+
+```bash
+# Unit tests for local embedding provider
+cargo test --features "local-embeddings,vector-search" local_embedding
+
+# Integration tests with demo justfile
+cargo test --features "local-embeddings,vector-search" local_embedding_interface
+
+# Vector store tests
+cargo test --features "vector-search" vector_store
+
+# End-to-end vector search integration
+cargo test --features "vector-search,local-embeddings" vector_search_integration
+```
+
+### Key Test Files for Vector Search
+
+- `local_embedding_interface_test.rs` - LocalEmbeddingProvider interface tests
+- `vector_search_integration_test.rs` - Full vector search workflow tests
+- `vector_store_test.rs` - LibSqlVectorStore unit tests
+
 ## Testing Strategy
 
 - **Unit Tests**: In each module's `mod.rs` file
@@ -133,6 +201,9 @@ Always add tests for new security validations.
 ```bash
 # Check parser output for a specific justfile
 cargo test parser::tests::test_parse_complex -- --nocapture
+
+# Debug logging for parser component
+RUST_LOG=just_mcp::parser=debug cargo test parser -- --nocapture
 ```
 
 ### Testing File Watching
@@ -140,6 +211,9 @@ cargo test parser::tests::test_parse_complex -- --nocapture
 ```bash
 # Run watcher tests with debug output
 RUST_LOG=debug cargo test watcher_integration_test -- --nocapture
+
+# Debug logging for watcher component
+RUST_LOG=just_mcp::watcher=debug cargo test watcher -- --nocapture
 ```
 
 ### Validating Security
@@ -147,6 +221,42 @@ RUST_LOG=debug cargo test watcher_integration_test -- --nocapture
 ```bash
 # Run security tests
 cargo test security_test
+```
+
+### Debug Logging for Server
+
+```bash
+# Run server with debug logging for all components
+RUST_LOG=just_mcp=debug target/debug/just-mcp --watch-dir ./demo
+
+# Debug specific components
+RUST_LOG=just_mcp::server=debug,just_mcp::registry=debug target/debug/just-mcp --watch-dir ./demo
+```
+
+### Testing MCP Protocol
+
+```bash
+# Test with manual JSON-RPC commands
+echo '{"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}}' | target/debug/just-mcp
+
+# Test tools listing
+echo '{"jsonrpc": "2.0", "method": "tools/list", "id": 2}' | target/debug/just-mcp --watch-dir ./demo
+```
+
+### Feature Flag Development
+
+```bash
+# Development without optional features (minimal build)
+cargo build --no-default-features
+cargo test --no-default-features
+
+# All features enabled
+cargo build --all-features
+cargo test --all-features
+
+# Specific feature combinations
+cargo build --features vector-search
+cargo test --features "vector-search,local-embeddings"
 ```
 
 ## Performance Considerations
