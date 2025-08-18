@@ -201,6 +201,9 @@ Always add tests for new security validations.
 ```bash
 # Check parser output for a specific justfile
 cargo test parser::tests::test_parse_complex -- --nocapture
+
+# Debug logging for parser component
+RUST_LOG=just_mcp::parser=debug cargo test parser -- --nocapture
 ```
 
 ### Testing File Watching
@@ -208,6 +211,9 @@ cargo test parser::tests::test_parse_complex -- --nocapture
 ```bash
 # Run watcher tests with debug output
 RUST_LOG=debug cargo test watcher_integration_test -- --nocapture
+
+# Debug logging for watcher component
+RUST_LOG=just_mcp::watcher=debug cargo test watcher -- --nocapture
 ```
 
 ### Validating Security
@@ -215,6 +221,42 @@ RUST_LOG=debug cargo test watcher_integration_test -- --nocapture
 ```bash
 # Run security tests
 cargo test security_test
+```
+
+### Debug Logging for Server
+
+```bash
+# Run server with debug logging for all components
+RUST_LOG=just_mcp=debug target/debug/just-mcp --watch-dir ./demo
+
+# Debug specific components
+RUST_LOG=just_mcp::server=debug,just_mcp::registry=debug target/debug/just-mcp --watch-dir ./demo
+```
+
+### Testing MCP Protocol
+
+```bash
+# Test with manual JSON-RPC commands
+echo '{"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}}' | target/debug/just-mcp
+
+# Test tools listing
+echo '{"jsonrpc": "2.0", "method": "tools/list", "id": 2}' | target/debug/just-mcp --watch-dir ./demo
+```
+
+### Feature Flag Development
+
+```bash
+# Development without optional features (minimal build)
+cargo build --no-default-features
+cargo test --no-default-features
+
+# All features enabled
+cargo build --all-features
+cargo test --all-features
+
+# Specific feature combinations
+cargo build --features vector-search
+cargo test --features "vector-search,local-embeddings"
 ```
 
 ## Performance Considerations
