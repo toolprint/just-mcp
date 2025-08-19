@@ -165,6 +165,13 @@ impl Server {
             handler = handler.with_admin_tools(admin_tools.clone());
         }
 
+        // Create and configure the embedded resource provider
+        let embedded_registry = Arc::new(crate::embedded_content::EmbeddedContentRegistry::new());
+        let resource_provider = Arc::new(
+            crate::embedded_content::resources::EmbeddedResourceProvider::new(embedded_registry),
+        );
+        handler = handler.with_resource_provider(resource_provider);
+
         match handler.handle(message).await? {
             Some(response) => {
                 self.transport.send(response).await?;
