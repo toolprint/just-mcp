@@ -312,7 +312,7 @@ async fn test_resources_read_invalid_uri() {
     });
 
     let result = handler.handle(request).await;
-    
+
     // Should return an error for non-existent resource
     match result {
         Ok(Some(response)) => {
@@ -340,7 +340,7 @@ async fn test_resources_read_malformed_uri() {
     });
 
     let result = handler.handle(request).await;
-    
+
     // Should return an error for malformed URI
     match result {
         Ok(Some(response)) => {
@@ -366,7 +366,7 @@ async fn test_resources_read_missing_params() {
     });
 
     let result = handler.handle(request).await;
-    
+
     // Should return an error for missing uri parameter
     match result {
         Ok(Some(response)) => {
@@ -519,7 +519,7 @@ async fn test_completion_complete_invalid_template_ref() {
     });
 
     let result = handler.handle(request).await;
-    
+
     // The completion might return a successful empty result or an error
     match result {
         Ok(Some(response)) => {
@@ -557,7 +557,7 @@ async fn test_completion_complete_missing_params() {
     });
 
     let result = handler.handle(request).await;
-    
+
     // Should return an error for missing required parameters
     match result {
         Ok(Some(response)) => {
