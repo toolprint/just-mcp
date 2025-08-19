@@ -641,6 +641,7 @@ project/
 ```
 
 Main justfile:
+
 ```just
 # Import all modules
 import 'just/common.just'
@@ -811,6 +812,7 @@ list:
 ### Avoid Custom Parsing
 
 **Don't do this:**
+
 ```just
 # BAD: Custom AWK parsing
 group name="":
@@ -819,6 +821,7 @@ group name="":
 ```
 
 **Do this instead:**
+
 ```just
 # GOOD: Use native commands and teach users proper Just patterns
 help:
@@ -833,6 +836,7 @@ help:
 Modular justfiles enable maintainable build automation for complex polyglot projects. By following these patterns, you can create a consistent, discoverable interface that scales with your project's growth while remaining approachable for new contributors.
 
 **Key Principles:**
+
 - Use Just's native features instead of reimplementing them
 - Make `just help` comprehensive and the default command
 - Organize recipes into logical groups

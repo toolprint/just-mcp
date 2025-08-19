@@ -429,7 +429,10 @@ mod vector_search_tests {
 
         assert_eq!(incremental_ids.len(), registry.len());
 
-        println!("Incremental indexing completed in {:?}", incremental_duration);
+        println!(
+            "Incremental indexing completed in {:?}",
+            incremental_duration
+        );
 
         // Incremental indexing should be faster (or at least not significantly slower)
         // Note: With mock embeddings, this might not show significant difference
@@ -529,7 +532,7 @@ mod vector_search_tests {
         let is_indexed_future = indexer.is_content_indexed();
         let reindex_future = indexer.index_embedded_content();
 
-        let (stats, is_indexed, reindex_ids) = 
+        let (stats, is_indexed, reindex_ids) =
             futures::future::try_join3(stats_future, is_indexed_future, reindex_future).await?;
 
         // All operations should complete successfully
@@ -539,7 +542,9 @@ mod vector_search_tests {
 
         println!(
             "Concurrent access test completed: stats complete={}, indexed={}, reindexed={}",
-            stats.indexing_complete, is_indexed, reindex_ids.len()
+            stats.indexing_complete,
+            is_indexed,
+            reindex_ids.len()
         );
 
         Ok(())

@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 
 pub mod handler;
 pub mod protocol;
+pub mod resources;
 pub mod transport;
 
 pub use transport::StdioTransport;
