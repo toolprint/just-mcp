@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 
 pub mod handler;
 pub mod protocol;
+pub mod resources;
 pub mod transport;
 
 pub use transport::StdioTransport;
@@ -163,6 +164,13 @@ impl Server {
         if let Some(ref admin_tools) = self.admin_tools {
             handler = handler.with_admin_tools(admin_tools.clone());
         }
+
+        // Create and configure the embedded resource provider
+        let embedded_registry = Arc::new(crate::embedded_content::EmbeddedContentRegistry::new());
+        let resource_provider = Arc::new(
+            crate::embedded_content::resources::EmbeddedResourceProvider::new(embedded_registry),
+        );
+        handler = handler.with_resource_provider(resource_provider);
 
         match handler.handle(message).await? {
             Some(response) => {

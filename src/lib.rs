@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod embedded_content;
 pub mod error;
 pub mod executor;
 mod notification;

@@ -1,6 +1,12 @@
+use crate::embedded_content::resources::ResourceProvider;
 use crate::error::{Error, Result};
 use crate::registry::ToolRegistry;
 use crate::server::protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
+use crate::server::resources::{
+    CompletionCompleteRequest, CompletionCompleteResponse, ResourceTemplatesListRequest,
+    ResourceTemplatesListResponse, ResourcesListRequest, ResourcesListResponse,
+    ResourcesReadRequest, ResourcesReadResponse,
+};
 use crate::types::ToolDefinition;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -13,6 +19,7 @@ pub struct MessageHandler {
     admin_tools: Option<Arc<crate::admin::AdminTools>>,
     security_config: Option<crate::security::SecurityConfig>,
     resource_limits: Option<crate::resource_limits::ResourceLimits>,
+    resource_provider: Option<Arc<crate::embedded_content::resources::EmbeddedResourceProvider>>,
 }
 
 impl MessageHandler {
@@ -22,6 +29,7 @@ impl MessageHandler {
             admin_tools: None,
             security_config: None,
             resource_limits: None,
+            resource_provider: None,
         }
     }
 
@@ -40,6 +48,14 @@ impl MessageHandler {
         self
     }
 
+    pub fn with_resource_provider(
+        mut self,
+        provider: Arc<crate::embedded_content::resources::EmbeddedResourceProvider>,
+    ) -> Self {
+        self.resource_provider = Some(provider);
+        self
+    }
+
     pub async fn handle(&self, message: Value) -> Result<Option<Value>> {
         // Parse the message as a JSON-RPC request
         let request: JsonRpcRequest = serde_json::from_value(message).map_err(Error::Json)?;
@@ -53,6 +69,10 @@ impl MessageHandler {
             }
             "tools/list" => self.handle_list_tools(&request).await,
             "tools/call" => self.handle_call_tool(&request).await,
+            "resources/list" => self.handle_resources_list(&request).await,
+            "resources/read" => self.handle_resources_read(&request).await,
+            "resources/templates/list" => self.handle_resource_templates_list(&request).await,
+            "completion/complete" => self.handle_completion_complete(&request).await,
             _ => {
                 // Method not found
                 let error = JsonRpcError {
@@ -85,6 +105,10 @@ impl MessageHandler {
         struct ServerCapabilities {
             tools: ToolsCapability,
             logging: LoggingCapability,
+            resources: ResourcesCapability,
+            #[serde(rename = "resourceTemplates")]
+            resource_templates: ResourceTemplatesCapability,
+            completion: CompletionCapability,
         }
 
         #[derive(Serialize)]
@@ -97,6 +121,24 @@ impl MessageHandler {
         struct LoggingCapability {}
 
         #[derive(Serialize)]
+        struct ResourcesCapability {
+            subscribe: bool,
+            #[serde(rename = "listChanged")]
+            list_changed: bool,
+        }
+
+        #[derive(Serialize)]
+        struct ResourceTemplatesCapability {
+            #[serde(rename = "listChanged")]
+            list_changed: bool,
+        }
+
+        #[derive(Serialize)]
+        struct CompletionCapability {
+            argument: bool,
+        }
+
+        #[derive(Serialize)]
         struct ServerInfo {
             name: String,
             version: String,
@@ -107,6 +149,14 @@ impl MessageHandler {
             capabilities: ServerCapabilities {
                 tools: ToolsCapability { list_changed: true },
                 logging: LoggingCapability {},
+                resources: ResourcesCapability {
+                    subscribe: false,
+                    list_changed: false,
+                },
+                resource_templates: ResourceTemplatesCapability {
+                    list_changed: false,
+                },
+                completion: CompletionCapability { argument: true },
             },
             server_info: ServerInfo {
                 name: crate::PKG_NAME.to_string(),
@@ -348,5 +398,115 @@ impl MessageHandler {
                 Ok(Some(serde_json::to_value(response)?))
             }
         }
+    }
+
+    async fn handle_resources_list(&self, request: &JsonRpcRequest) -> Result<Option<Value>> {
+        let resource_provider = self.resource_provider.as_ref().ok_or_else(|| {
+            Error::InvalidParameter("Resource provider not available".to_string())
+        })?;
+
+        // Parse parameters if present
+        let _params: ResourcesListRequest = if request.params.is_null() {
+            ResourcesListRequest { cursor: None }
+        } else {
+            serde_json::from_value(request.params.clone()).map_err(|_| {
+                Error::InvalidParameter("Invalid resources/list parameters".to_string())
+            })?
+        };
+
+        // TODO: Handle pagination with cursor
+        let resources = resource_provider
+            .list_resources()
+            .await
+            .map_err(|e| Error::Execution(format!("Failed to list resources: {e}")))?;
+
+        let result = ResourcesListResponse {
+            resources,
+            next_cursor: None, // No pagination yet
+        };
+
+        let response = JsonRpcResponse::success(request.id.clone(), serde_json::to_value(result)?);
+        Ok(Some(serde_json::to_value(response)?))
+    }
+
+    async fn handle_resources_read(&self, request: &JsonRpcRequest) -> Result<Option<Value>> {
+        let resource_provider = self.resource_provider.as_ref().ok_or_else(|| {
+            Error::InvalidParameter("Resource provider not available".to_string())
+        })?;
+
+        let params: ResourcesReadRequest =
+            serde_json::from_value(request.params.clone()).map_err(|_| {
+                Error::InvalidParameter("Invalid resources/read parameters".to_string())
+            })?;
+
+        let content = resource_provider
+            .read_resource(&params.uri)
+            .await
+            .map_err(|e| Error::Execution(format!("Failed to read resource: {e}")))?;
+
+        let result = ResourcesReadResponse {
+            contents: vec![content],
+        };
+
+        let response = JsonRpcResponse::success(request.id.clone(), serde_json::to_value(result)?);
+        Ok(Some(serde_json::to_value(response)?))
+    }
+
+    async fn handle_resource_templates_list(
+        &self,
+        request: &JsonRpcRequest,
+    ) -> Result<Option<Value>> {
+        let resource_provider = self.resource_provider.as_ref().ok_or_else(|| {
+            Error::InvalidParameter("Resource provider not available".to_string())
+        })?;
+
+        // Parse parameters if present
+        let _params: ResourceTemplatesListRequest = if request.params.is_null() {
+            ResourceTemplatesListRequest { cursor: None }
+        } else {
+            serde_json::from_value(request.params.clone()).map_err(|_| {
+                Error::InvalidParameter("Invalid resources/templates/list parameters".to_string())
+            })?
+        };
+
+        // TODO: Handle pagination with cursor
+        let resource_templates = resource_provider
+            .list_resource_templates()
+            .await
+            .map_err(|e| Error::Execution(format!("Failed to list resource templates: {e}")))?;
+
+        let result = ResourceTemplatesListResponse {
+            resource_templates,
+            next_cursor: None, // No pagination yet
+        };
+
+        let response = JsonRpcResponse::success(request.id.clone(), serde_json::to_value(result)?);
+        Ok(Some(serde_json::to_value(response)?))
+    }
+
+    async fn handle_completion_complete(&self, request: &JsonRpcRequest) -> Result<Option<Value>> {
+        let resource_provider = self.resource_provider.as_ref().ok_or_else(|| {
+            Error::InvalidParameter("Resource provider not available".to_string())
+        })?;
+
+        let params: CompletionCompleteRequest = serde_json::from_value(request.params.clone())
+            .map_err(|_| {
+                Error::InvalidParameter("Invalid completion/complete parameters".to_string())
+            })?;
+
+        // Convert to domain request
+        let completion_request = params.into();
+
+        let completion_result = resource_provider
+            .complete_resource(&completion_request)
+            .await
+            .map_err(|e| Error::Execution(format!("Failed to complete resource: {e}")))?;
+
+        let result = CompletionCompleteResponse {
+            completion: completion_result.completion,
+        };
+
+        let response = JsonRpcResponse::success(request.id.clone(), serde_json::to_value(result)?);
+        Ok(Some(serde_json::to_value(response)?))
     }
 }
