@@ -11,7 +11,7 @@ use std::sync::Arc;
 #[cfg(feature = "vector-search")]
 use {
     crate::embedded_content::EmbeddedDocument,
-    crate::vector_search::{types::Document, EmbeddingProvider, VectorSearchManager, VectorStore},
+    crate::vector_search::{Document, EmbeddingProvider, VectorSearchManager, VectorStore},
     anyhow::Context,
     std::collections::HashMap,
     std::time::{SystemTime, UNIX_EPOCH},
@@ -104,7 +104,7 @@ impl<E: EmbeddingProvider, V: VectorStore> EmbeddedContentIndexer<E, V> {
         match store.get_document(&embedded_id).await {
             Ok(existing_doc) => {
                 // Document exists, check if it needs updating
-                self.document_needs_update(doc, &existing_doc)
+                Ok(self.document_needs_update(doc, &existing_doc)?)
             }
             Err(_) => {
                 // Document doesn't exist, needs indexing
@@ -115,7 +115,11 @@ impl<E: EmbeddingProvider, V: VectorStore> EmbeddedContentIndexer<E, V> {
     }
 
     /// Check if an existing document needs to be updated
-    fn document_needs_update(&self, new_doc: &EmbeddedDocument, existing_doc: &Document) -> bool {
+    fn document_needs_update(
+        &self,
+        new_doc: &EmbeddedDocument,
+        existing_doc: &Document,
+    ) -> Result<bool> {
         // Check version from metadata
         let new_version = new_doc.version();
         let existing_version = existing_doc
@@ -129,7 +133,7 @@ impl<E: EmbeddingProvider, V: VectorStore> EmbeddedContentIndexer<E, V> {
                 "Version mismatch for '{}': {} vs {}",
                 new_doc.id, new_version, existing_version
             );
-            return true;
+            return Ok(true);
         }
 
         // Check content hash
@@ -145,10 +149,10 @@ impl<E: EmbeddingProvider, V: VectorStore> EmbeddedContentIndexer<E, V> {
                 "Content hash mismatch for '{}': {} vs {}",
                 new_doc.id, new_content_hash, existing_content_hash
             );
-            return true;
+            return Ok(true);
         }
 
-        false
+        Ok(false)
     }
 
     /// Convert an embedded document to a vector search document
@@ -234,14 +238,13 @@ impl<E: EmbeddingProvider, V: VectorStore> EmbeddedContentIndexer<E, V> {
 
             // Index all documents fresh
             let documents = self.registry.get_all_documents();
-            let vector_documents: Result<Vec<_>> = futures::future::try_join_all(
-                documents
-                    .iter()
-                    .map(|doc| self.convert_to_vector_document(doc)),
-            )
-            .await;
+            let mut vector_documents = Vec::new();
 
-            let vector_documents = vector_documents?;
+            // Convert documents one by one instead of using futures::try_join_all
+            for doc in documents {
+                let vector_doc = self.convert_to_vector_document(doc).await?;
+                vector_documents.push(vector_doc);
+            }
 
             if !vector_documents.is_empty() {
                 let manager = self.vector_manager.lock().await;
@@ -405,9 +408,7 @@ mod tests {
 
             let temp_dir = TempDir::new().unwrap();
             let db_path = temp_dir.path().join("test.db");
-            let vector_store = LibSqlVectorStore::new(db_path.to_str().unwrap(), 384)
-                .await
-                .unwrap();
+            let vector_store = LibSqlVectorStore::new(db_path.to_string_lossy().to_string(), 384);
 
             let mut vector_manager = VectorSearchManager::new(embedding_provider, vector_store);
             vector_manager.initialize().await.unwrap();
@@ -443,11 +444,6 @@ mod tests {
 
         #[test]
         fn test_calculate_content_hash() {
-            let registry = Arc::new(EmbeddedContentRegistry::new());
-            let embedding_provider = MockEmbeddingProvider::new();
-            let temp_dir = TempDir::new().unwrap();
-            let db_path = temp_dir.path().join("test.db");
-
             // We can't easily async/await in this test, so just test the hash calculation
             // Create a mock indexer just for testing the hash function
             struct MockIndexer;
