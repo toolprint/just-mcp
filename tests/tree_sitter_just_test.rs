@@ -11,7 +11,7 @@ mod ast_parser_tests {
     #[test]
     fn test_tree_sitter_just_language_loads() {
         let language = tree_sitter_just::language();
-        
+
         // Verify the language has expected properties
         assert!(language.version() > 0);
         assert!(language.node_kind_count() > 0);
@@ -24,7 +24,7 @@ mod ast_parser_tests {
     fn test_parser_creation_with_just_language() {
         let mut parser = Parser::new();
         let language = tree_sitter_just::language();
-        
+
         // This should not panic
         parser
             .set_language(&language)
@@ -51,7 +51,7 @@ build:
 
         let tree = parser.parse(source_code, None).unwrap();
         let root_node = tree.root_node();
-        
+
         // Verify we got a valid parse tree
         assert!(!root_node.has_error());
         assert!(root_node.child_count() > 0);
@@ -82,7 +82,7 @@ test coverage="false":
 
         let tree = parser.parse(source_code, None).unwrap();
         let root_node = tree.root_node();
-        
+
         // Verify we got a valid parse tree
         assert!(!root_node.has_error());
         assert!(root_node.child_count() > 0);
@@ -112,7 +112,7 @@ test: build
 
         let tree = parser.parse(source_code, None).unwrap();
         let root_node = tree.root_node();
-        
+
         // Verify we got a valid parse tree
         assert!(!root_node.has_error());
         assert!(root_node.child_count() > 0);
@@ -128,6 +128,9 @@ mod no_ast_parser_tests {
         // the code compiles correctly without the tree-sitter dependencies.
         // The existence of this test passing when the feature is disabled
         // confirms proper feature gating.
-        assert!(true, "AST parser functionality properly gated behind feature flag");
+        assert!(
+            true,
+            "AST parser functionality properly gated behind feature flag"
+        );
     }
 }

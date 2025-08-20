@@ -6,7 +6,15 @@ use std::path::Path;
 
 mod just_command_parser;
 
+// AST parser module (feature-gated)
+#[cfg(feature = "ast-parser")]
+pub mod ast;
+
 pub use just_command_parser::JustCommandParser;
+
+// Re-export AST parser types when feature is enabled
+#[cfg(feature = "ast-parser")]
+pub use ast::{ASTError, ASTJustParser, ASTResult, ParseTree};
 
 /// Legacy regex-based parser - kept for fallback compatibility
 pub struct JustfileParser {
