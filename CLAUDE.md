@@ -377,7 +377,6 @@ justfile (main interface, <200 lines)
 - Development environment setup
 - Dependency management
 
-
 #### `vector.just` - Vector Search Demos
 
 - Main demos: `demo-search`, `demo-local`, `demo-quick`, `demo-compare`

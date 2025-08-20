@@ -120,8 +120,8 @@ test-rust-all-features:
 
 # Run specific Rust test suite with output
 [group('rust-test')]
-test-rust-specific test_name:
-    @just _run "Running specific test suite: {{test_name}}" "cargo test --test {{test_name}} -- --nocapture"
+test-rust-specific test-name:
+    @just _run "Running specific test suite: {{test-name}}" "cargo test --test {{test-name}} -- --nocapture"
 
 # =====================================
 # Rust Code Quality Commands
@@ -141,6 +141,11 @@ format-rust-check:
 [group('rust-quality')]
 lint-rust:
     @just _run "Running Rust clippy linter" "cargo clippy -- -D warnings"
+
+# Run Rust linter (clippy) with automatic fixes
+[group('rust-quality')]
+lint-rust-fix:
+    @just _run "Running Rust clippy with fixes" "cargo clippy --fix --allow-dirty -- -D warnings"
 
 # Run Rust static analysis check
 [group('rust-quality')]

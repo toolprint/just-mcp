@@ -24,7 +24,7 @@ default:
 help:
     #!/usr/bin/env bash
     echo "🚀 just-mcp Development Commands"
-    echo "================================"
+    echo "═══════════════════════════════════════════════════════════"
     echo ""
     echo "🎯 QUICK START:"
     echo "  just quickstart         - Complete setup for new developers"
@@ -33,19 +33,34 @@ help:
     echo "  just workflow [target]  - Run development workflow (quick/full/all/commit)"
     echo "  just dev                - Start development environment"
     echo ""
-    echo "🔧 DEVELOPMENT:"
-    echo "  just build [mode]       - Build project (delegates to build-rust)"
-    echo "  just test [coverage]    - Run tests (delegates to test-rust)"
-    echo "  just format             - Format code (delegates to format-rust)"
-    echo "  just lint [fix]         - Lint code (delegates to lint-rust)"
-    echo "  just pre-commit         - Run pre-commit validation"
+    echo "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+    echo "🔥 MOST USED COMMANDS:"
+    echo "  just build              - Build project for development"
+    echo "  just test               - Run all tests"
+    echo "  just format             - Format all code (Rust + JSON + Markdown)"
+    echo "  just lint               - Lint all code with fixes"
+    echo "  just check              - Run format + lint + test (full validation)"
+    echo "  just install            - Install binaries locally"
+    echo "  just dev                - Start development environment"
+    echo "  just ci                 - Run all CI checks"
+    echo "  just clean              - Clean all build artifacts"
+    echo "  just pre-commit         - Validate before committing"
     echo ""
+    echo "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
+    echo "🔧 DETAILED DEVELOPMENT:"
+    echo "  just build [debug|release] - Build project with specific mode"
+    echo "  just test [true|false]     - Run tests with optional coverage"
+    echo "  just format [rust|json|markdown|all] - Format specific code types"
+    echo "  just lint [target] [fix]   - Lint code (target: rust|json|markdown|all, fix: true|false)"
+    echo "  just workflow [quick|full|all|commit] - Run development workflows"
+    echo ""
+    echo "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
     echo "🏗️  BUILD & RELEASE:"
-    echo "  just install            - Install binaries (delegates to install-rust)"
-    echo "  just release <version>  - Create release for all platforms"
-    echo "  just zigbuild-release   - Cross-compile for all platforms"
-    echo "  just dagger-ci          - Run CI pipeline with Dagger"
+    echo "  just release <version> [zigbuild|dagger] - Create release for all platforms"
+    echo "  just zigbuild-release [version]          - Cross-compile for all platforms"
+    echo "  just dagger-ci                           - Run CI pipeline with Dagger"
     echo ""
+    echo "▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬"
     echo "🔍 DISCOVERY & NAVIGATION:"
     echo "  just --list             - List all recipes organized by groups"
     echo "  just --groups           - List all recipe groups"
@@ -54,27 +69,25 @@ help:
     echo "  just --choose           - Interactive recipe picker (requires fzf)"
     echo ""
     echo "📚 MODULE-SPECIFIC HELP:"
-    echo "  just/rust.just          - Rust development commands"
-    echo "  just/setup.just         - Setup and installation commands"
-    echo "  just/git.just           - Git operations and version control"
-    echo "  just/vector.just        - Vector search demos and utilities"
-    echo "  just/docker.just        - Docker/Dagger CI/CD operations"
-    echo "  just/release.just       - Release and deployment operations"
+    echo "  just rust-help          - Rust development commands"
+    echo "  just docker-help        - Docker/Dagger CI/CD operations"
+    echo "  just vector-help        - Vector search demos and utilities"
+    echo "  just release-help       - Release and deployment operations"
     echo ""
     echo "💡 TIPS:"
-    echo "  • Use 'just --show <recipe>' to see how recipes work"
-    echo "  • Recipes are organized by logical groups and modules"
-    echo "  • Most commands delegate to specialized modules for consistency"
-    echo "  • Run 'just <module-command>' for module-specific functionality"
-    echo "  • Vector search demos: just demo-vector-search, just demo-vector-local"
-    echo "  • Docker operations: just dagger-build, just dagger-test"
+    echo "  • Use 'just --show <recipe>' to see implementation details"
+    echo "  • Commands are organized by logical groups and functionality"
+    echo "  • Try 'just --choose' for interactive command selection"
+    echo "  • Most commands work without parameters (sensible defaults)"
+    echo "  • Vector search: try 'just demo-search' or 'just demo-local'"
+    echo "  • Docker/CI: try 'just dagger-ci' or 'just dagger-test'"
     echo ""
     echo "🆘 GETTING HELP:"
     echo "  • Documentation: docs/refactor/justfile-refactor.md"
     echo "  • Best practices: docs/guides/justfile-best-practices.md"
     echo "  • Module help: just <module>-help (e.g., just docker-help)"
 
-# Setup recipes (delegated to setup module)
+# Setup recipes
 [group('setup')]
 brew:
     just _setup-brew
@@ -100,7 +113,7 @@ dev:
     @echo "💡 Tip: Use 'just build' to build, 'just test' to test"
     @echo "📚 Run 'just help' for all available commands"
 
-# Unified test command (delegates to rust module)
+# Unified test command
 [group('dev')]
 test coverage="false":
     #!/usr/bin/env bash
@@ -111,7 +124,7 @@ test coverage="false":
         just test-rust
     fi
 
-# Unified build command (delegates to rust module)
+# Unified build command
 [group('dev')]
 build mode="debug":
     #!/usr/bin/env bash
@@ -122,12 +135,12 @@ build mode="debug":
         just build-rust
     fi
 
-# Install tq (TOML query tool) for better TOML parsing (delegates to rust module)
+# Install tq (TOML query tool) for better TOML parsing
 [group('dev')]
 install-tq:
     just install-rust-tq
 
-# Show information about release binaries (delegates to rust module)
+# Show information about release binaries
 [group('dev')]
 release-info:
     just release-rust-info
@@ -137,7 +150,7 @@ release-info:
 install-with-vector-search:
     just install vector-search
 
-# Clean build artifacts and dependencies (delegates to rust module)
+# Clean build artifacts and dependencies
 [group('dev')]
 clean:
     just clean-rust
@@ -220,7 +233,7 @@ lint target="all" fix="false":
             ;;
     esac
 
-# Unified install command (delegates to rust module)
+# Unified install command
 [group('dev')]
 install features="":
     #!/usr/bin/env bash
@@ -258,7 +271,7 @@ check target="all":
             ;;
     esac
 
-# Pre-commit validation (delegates to rust module)
+# Pre-commit validation
 [group('dev')]
 pre-commit:
     just pre-commit-rust
@@ -557,7 +570,7 @@ rust-help:
     echo "  just clean-rust                    - Clean Rust artifacts"
     echo "  just pre-commit-rust               - Run pre-commit validation"
     echo ""
-    echo "Unified commands (delegate to rust.just):"
+    echo "Unified commands:"
     echo "  just build, just test, just format, just lint, just install"
 
 # Show all available help topics

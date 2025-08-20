@@ -1,6 +1,6 @@
 # Justfile Refactoring Plan - just-mcp
 
-**Goaly Goal ID: 14**
+## Goaly Goal ID: 14
 
 ## Overview
 
@@ -384,39 +384,39 @@ list:
 
 This refactor has been broken down into 24 discrete tasks in Goaly (Goal ID: 14):
 
-**Phase 1: Infrastructure (Task IDs: 79-81)**
+### Phase 1: Infrastructure (Task IDs: 79-81)
 
 - Task 79: Create just/ directory structure
 - Task 80: Create common.just utilities module
 - Task 81: Test common utilities functionality
 
-**Phase 2: Core Modules (Task IDs: 82-84)**
+### Phase 2: Core Modules (Task IDs: 82-84)
 
 - Task 82: Create rust.just module
 - Task 83: Create setup.just module  
 - Task 84: Create git.just module
 
-**Phase 3: Feature Modules (Task IDs: 85-87)**
+### Phase 3: Feature Modules (Task IDs: 85-87)
 
 - Task 85: Create vector.just module
 - Task 86: Create docker.just module
 - Task 87: Create release.just module
 
-**Phase 4: Main Justfile (Task IDs: 88-91)**
+### Phase 4: Main Justfile (Task IDs: 88-91)
 
 - Task 88: Design comprehensive help system
 - Task 89: Create unified delegation commands
 - Task 90: Create workflow recipes
 - Task 91: Add convenience wrapper recipes
 
-**Phase 5: Quality & Consistency (Task IDs: 92-95)**
+### Phase 5: Quality & Consistency (Task IDs: 92-95)
 
 - Task 92: Standardize naming conventions
 - Task 93: Add parameter validation throughout
 - Task 94: Update recipe groups organization
 - Task 95: Add comprehensive module documentation
 
-**Migration & Testing (Task IDs: 96-102)**
+### Migration & Testing (Task IDs: 96-102)
 
 - Task 96: Create backward compatibility aliases
 - Task 97: Validate all imports work correctly

@@ -24,10 +24,10 @@ fn test_parse_actual_justfile() {
     assert!(tasks.iter().any(|t| t.name == "format"));
     assert!(tasks.iter().any(|t| t.name == "lint"));
 
-    // Check that git-branch has a parameter
-    let git_branch = tasks.iter().find(|t| t.name == "git-branch").unwrap();
-    assert_eq!(git_branch.parameters.len(), 1);
-    assert_eq!(git_branch.parameters[0].name, "name");
+    // Check that test has a parameter
+    let test_task = tasks.iter().find(|t| t.name == "test").unwrap();
+    assert_eq!(test_task.parameters.len(), 1);
+    assert_eq!(test_task.parameters[0].name, "coverage");
 }
 
 #[test]
