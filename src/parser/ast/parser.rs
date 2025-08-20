@@ -7,12 +7,12 @@ use crate::parser::ast::cache::{QueryBundle, QueryCache, QueryCompiler};
 use crate::parser::ast::queries::CompiledQuery;
 use crate::parser::ast::errors::{ASTError, ASTResult};
 use crate::parser::ast::nodes::{ASTNode, NodeType};
-use crate::parser::ast::parser_pool::{get_global_parser_pool, PooledParser};
+use crate::parser::ast::parser_pool::get_global_parser_pool;
 use crate::types::{JustTask, Parameter};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-use tree_sitter::{Language, Parser, Query, Tree};
+use tree_sitter::{Language, Query, Tree};
 
 /// A wrapper around a parsed Tree-sitter tree with utility methods
 pub struct ParseTree {
@@ -120,7 +120,7 @@ impl ASTJustParser {
         
         // Get or create global query compiler
         let query_compiler = GLOBAL_QUERY_COMPILER.get_or_init(|| {
-            Arc::new(QueryCompiler::new(language))
+            Arc::new(QueryCompiler::new(language.clone()))
         }).clone();
         
         // Get or create global query bundle
@@ -593,23 +593,36 @@ impl ASTJustParser {
         for node in root.descendants() {
             match node.node_type() {
                 NodeType::Recipe => recipes.push(node),
-                // Also check for unknown node types that might be recipes
-                NodeType::Unknown(ref kind) if self.looks_like_recipe(kind, &node) => {
+                // Also check for unknown node types that might be recipes (be more conservative)
+                NodeType::Unknown(ref kind) if self.looks_like_recipe_conservative(kind, &node) => {
                     recipes.push(node);
                 }
                 _ => {}
             }
         }
 
-        // If we didn't find any explicit recipe nodes, try a different approach
+        // Only use pattern-based fallback if we found absolutely no recipe nodes
+        // and the Tree-sitter parsing might have failed
         if recipes.is_empty() {
+            tracing::debug!("No explicit recipe nodes found, using pattern-based fallback");
             recipes = self.find_recipes_by_pattern(root)?;
+        } else {
+            tracing::debug!("Found {} explicit recipe nodes", recipes.len());
         }
 
         Ok(recipes)
     }
 
-    /// Check if an unknown node type looks like a recipe
+    /// Check if an unknown node type looks like a recipe (conservative)
+    fn looks_like_recipe_conservative(&self, kind: &str, node: &ASTNode) -> bool {
+        // Only accept explicit recipe-related node types, not generic patterns
+        kind == "recipe" || 
+        kind == "recipe_definition" ||
+        kind == "rule" ||
+        kind == "task"
+    }
+
+    /// Check if an unknown node type looks like a recipe (legacy, broad matching)
     fn looks_like_recipe(&self, kind: &str, node: &ASTNode) -> bool {
         // Common patterns in Tree-sitter just grammars
         kind.contains("recipe") || 
