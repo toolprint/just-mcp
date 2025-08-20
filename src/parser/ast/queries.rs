@@ -1657,6 +1657,265 @@ impl QueryResultProcessor {
         })
     }
 
+    /// Extract conditional expression information from query results
+    pub fn extract_conditional_expressions(results: &[QueryResult]) -> Vec<ConditionalExpressionInfo> {
+        results
+            .iter()
+            .filter(|r| r.result_type == QueryResultType::ConditionalExpression)
+            .filter_map(Self::result_to_conditional_expression)
+            .collect()
+    }
+
+    /// Extract function call information from query results
+    pub fn extract_function_calls(results: &[QueryResult]) -> Vec<FunctionCallInfo> {
+        results
+            .iter()
+            .filter(|r| r.result_type == QueryResultType::FunctionCall)
+            .filter_map(Self::result_to_function_call)
+            .collect()
+    }
+
+    /// Convert a query result to conditional expression information
+    fn result_to_conditional_expression(result: &QueryResult) -> Option<ConditionalExpressionInfo> {
+        // Extract the full conditional expression
+        let full_expression = result
+            .get_text("expression.conditional")
+            .or_else(|| result.get_text("conditional.expression"))
+            .or_else(|| result.get_text("expression"))?
+            .to_string();
+
+        // Extract condition part
+        let condition = result
+            .get_text("expression.conditional.condition")
+            .or_else(|| result.get_text("conditional.condition"))
+            .unwrap_or("true")
+            .to_string();
+
+        // Extract true branch
+        let true_branch = result
+            .get_text("expression.conditional.true_branch")
+            .or_else(|| result.get_text("conditional.true_branch"))
+            .or_else(|| result.get_text("expression.conditional.then"))
+            .unwrap_or("")
+            .to_string();
+
+        // Extract false branch (optional)
+        let false_branch = result
+            .get_text("expression.conditional.false_branch")
+            .or_else(|| result.get_text("conditional.false_branch"))
+            .or_else(|| result.get_text("expression.conditional.else"))
+            .map(|s| s.to_string());
+
+        // Determine conditional type
+        let conditional_type = if false_branch.is_some() {
+            if full_expression.contains('?') && full_expression.contains(':') {
+                ConditionalType::Ternary
+            } else {
+                ConditionalType::IfThenElse
+            }
+        } else {
+            ConditionalType::IfThen
+        };
+
+        // Extract position
+        let position = result
+            .captures
+            .values()
+            .next()
+            .map(|capture| capture.start_position);
+
+        // Calculate nesting level
+        let nesting_level = Self::calculate_conditional_nesting(&full_expression);
+
+        let mut conditional_info = match conditional_type {
+            ConditionalType::IfThen => ConditionalExpressionInfo::if_then(condition, true_branch),
+            ConditionalType::IfThenElse => ConditionalExpressionInfo::if_then_else(
+                condition,
+                true_branch,
+                false_branch.unwrap_or_default(),
+            ),
+            ConditionalType::Ternary => ConditionalExpressionInfo::ternary(
+                condition,
+                true_branch,
+                false_branch.unwrap_or_default(),
+            ),
+            _ => ConditionalExpressionInfo::if_then(condition, true_branch),
+        };
+
+        // Set additional properties
+        conditional_info.position = position;
+        conditional_info.nesting_level = nesting_level;
+        conditional_info.has_nested_expressions = Self::has_nested_expressions(&full_expression);
+
+        Some(conditional_info)
+    }
+
+    /// Convert a query result to function call information
+    fn result_to_function_call(result: &QueryResult) -> Option<FunctionCallInfo> {
+        // Extract function name
+        let function_name = result
+            .get_text("expression.function.name")
+            .or_else(|| result.get_text("function.name"))
+            .or_else(|| result.get_text("function_call.name"))?
+            .to_string();
+
+        // Extract the full function call expression
+        let full_expression = result
+            .get_text("expression.function_call")
+            .or_else(|| result.get_text("function_call"))
+            .or_else(|| result.get_text("expression"))
+            .unwrap_or("")
+            .to_string();
+
+        // Parse arguments from the expression
+        let arguments = Self::parse_function_call_arguments(&full_expression, &function_name);
+
+        // Extract position
+        let position = result
+            .captures
+            .values()
+            .next()
+            .map(|capture| capture.start_position);
+
+        // Calculate nesting level
+        let nesting_level = Self::calculate_function_nesting(&full_expression);
+
+        let mut function_call = FunctionCallInfo::new(function_name, arguments);
+        function_call.position = position;
+        function_call.nesting_level = nesting_level;
+        function_call.has_nested_calls = Self::has_nested_function_calls(&full_expression);
+
+        Some(function_call)
+    }
+
+    /// Parse function call arguments from the full expression
+    fn parse_function_call_arguments(expression: &str, function_name: &str) -> Vec<FunctionArgument> {
+        let mut arguments = Vec::new();
+
+        // Find the function call pattern
+        if let Some(start) = expression.find(&format!("{}(", function_name)) {
+            let args_start = start + function_name.len() + 1;
+            if let Some(end) = expression.rfind(')') {
+                let args_str = &expression[args_start..end];
+                
+                if !args_str.trim().is_empty() {
+                    // Simple argument parsing - split by commas but handle nested calls
+                    let parsed_args = Self::parse_function_arguments(args_str);
+                    
+                    for (i, arg_str) in parsed_args.iter().enumerate() {
+                        let arg = FunctionArgument::new(arg_str.trim().to_string(), i);
+                        arguments.push(arg);
+                    }
+                }
+            }
+        }
+
+        arguments
+    }
+
+    /// Parse function arguments handling nested calls and complex expressions
+    fn parse_function_arguments(args_str: &str) -> Vec<String> {
+        let mut arguments = Vec::new();
+        let mut current_arg = String::new();
+        let mut paren_count = 0;
+        let mut in_quotes = false;
+        let mut quote_char = '"';
+
+        for ch in args_str.chars() {
+            match ch {
+                '"' | '\'' if !in_quotes => {
+                    in_quotes = true;
+                    quote_char = ch;
+                    current_arg.push(ch);
+                }
+                c if c == quote_char && in_quotes => {
+                    in_quotes = false;
+                    current_arg.push(ch);
+                }
+                '(' if !in_quotes => {
+                    paren_count += 1;
+                    current_arg.push(ch);
+                }
+                ')' if !in_quotes => {
+                    paren_count -= 1;
+                    current_arg.push(ch);
+                }
+                ',' if !in_quotes && paren_count == 0 => {
+                    if !current_arg.trim().is_empty() {
+                        arguments.push(current_arg.trim().to_string());
+                    }
+                    current_arg.clear();
+                }
+                _ => {
+                    current_arg.push(ch);
+                }
+            }
+        }
+
+        // Add the last argument
+        if !current_arg.trim().is_empty() {
+            arguments.push(current_arg.trim().to_string());
+        }
+
+        arguments
+    }
+
+    /// Calculate conditional expression nesting level
+    fn calculate_conditional_nesting(expression: &str) -> usize {
+        let mut max_nesting = 1;
+        let mut current_nesting = 0;
+
+        let keywords = ["if", "then", "else"];
+        let words: Vec<&str> = expression.split_whitespace().collect();
+
+        for word in words {
+            if keywords.contains(&word) {
+                current_nesting += 1;
+                max_nesting = max_nesting.max(current_nesting);
+            }
+        }
+
+        max_nesting.min(1).max(1) // At least 1, handle edge cases
+    }
+
+    /// Calculate function call nesting level
+    fn calculate_function_nesting(expression: &str) -> usize {
+        let mut max_nesting = 1;
+        let mut current_nesting: usize = 0;
+
+        for ch in expression.chars() {
+            match ch {
+                '(' => {
+                    current_nesting += 1;
+                    max_nesting = max_nesting.max(current_nesting);
+                }
+                ')' => {
+                    current_nesting = current_nesting.saturating_sub(1);
+                }
+                _ => {}
+            }
+        }
+
+        max_nesting.max(1)
+    }
+
+    /// Check if expression contains nested expressions
+    fn has_nested_expressions(expression: &str) -> bool {
+        // Simple heuristic: contains interpolations or nested conditionals
+        expression.contains("{{") && expression.contains("}}")
+            || expression.matches("if").count() > 1
+    }
+
+    /// Check if expression contains nested function calls
+    fn has_nested_function_calls(expression: &str) -> bool {
+        // Count function call patterns
+        let open_parens = expression.matches('(').count();
+        let close_parens = expression.matches(')').count();
+        
+        // If we have multiple balanced parentheses, likely nested calls
+        open_parens > 1 && open_parens == close_parens
+    }
+
     /// Process string content with interpolations
     fn process_string_with_interpolations(
         content: &str,
@@ -2976,6 +3235,295 @@ impl ExpressionEvaluator {
         Ok(None)
     }
 
+    /// Enhanced function call evaluation using FunctionCallInfo
+    pub fn evaluate_function_call_advanced(
+        function_info: &FunctionCallInfo,
+        variables: &HashMap<String, String>,
+        allow_missing: bool,
+    ) -> Result<String, String> {
+        // Validate the function call first
+        if !function_info.is_valid() {
+            let errors = function_info.validation_errors();
+            return Err(format!("Invalid function call: {}", errors.join(", ")));
+        }
+
+        let func_name = &function_info.function_name;
+        let arguments = &function_info.arguments;
+
+        // Evaluate arguments first
+        let mut evaluated_args = Vec::new();
+        for arg in arguments {
+            let evaluated = Self::evaluate_function_argument(arg, variables, allow_missing)?;
+            evaluated_args.push(evaluated);
+        }
+
+        // Execute function based on type and name
+        match function_info.function_type {
+            FunctionType::BuiltIn => {
+                Self::execute_builtin_function(func_name, &evaluated_args, allow_missing)
+            }
+            FunctionType::UserDefined => {
+                Self::execute_user_function(func_name, &evaluated_args, allow_missing)
+            }
+            FunctionType::ExternalCommand => {
+                Self::execute_external_command(func_name, &evaluated_args, allow_missing)
+            }
+            FunctionType::Unknown => {
+                if allow_missing {
+                    Ok(format!("{}({})", func_name, evaluated_args.join(", ")))
+                } else {
+                    Err(format!("Unknown function type: {}", func_name))
+                }
+            }
+        }
+    }
+
+    /// Evaluate a single function argument
+    fn evaluate_function_argument(
+        arg: &FunctionArgument,
+        variables: &HashMap<String, String>,
+        allow_missing: bool,
+    ) -> Result<String, String> {
+        match arg.argument_type {
+            ArgumentType::StringLiteral => {
+                // Remove quotes and process escapes
+                let content = if arg.value.starts_with('"') && arg.value.ends_with('"') {
+                    &arg.value[1..arg.value.len() - 1]
+                } else if arg.value.starts_with('\'') && arg.value.ends_with('\'') {
+                    &arg.value[1..arg.value.len() - 1]
+                } else {
+                    &arg.value
+                };
+                Ok(Self::process_string_escapes(content))
+            }
+            ArgumentType::Variable => {
+                variables
+                    .get(&arg.value)
+                    .cloned()
+                    .ok_or_else(|| format!("Variable '{}' not found", arg.value))
+            }
+            ArgumentType::NumericLiteral => Ok(arg.value.clone()),
+            ArgumentType::BooleanLiteral => Ok(arg.value.clone()),
+            ArgumentType::Expression => {
+                Self::evaluate_expression(&arg.value, variables, allow_missing)
+            }
+            ArgumentType::FunctionCall => {
+                // Parse and evaluate nested function call
+                Self::evaluate_expression(&arg.value, variables, allow_missing)
+            }
+            ArgumentType::Conditional => {
+                // Parse and evaluate conditional expression
+                Self::evaluate_expression(&arg.value, variables, allow_missing)
+            }
+            ArgumentType::Unknown => {
+                if allow_missing {
+                    Ok(arg.value.clone())
+                } else {
+                    Err(format!("Cannot evaluate unknown argument type: {}", arg.value))
+                }
+            }
+        }
+    }
+
+    /// Execute built-in Just functions
+    fn execute_builtin_function(
+        func_name: &str,
+        args: &[String],
+        allow_missing: bool,
+    ) -> Result<String, String> {
+        match func_name {
+            "env_var" => {
+                if args.is_empty() {
+                    return Err("env_var requires at least one argument".to_string());
+                }
+                // For now, return a placeholder - in a real implementation, this would read env vars
+                let default = args.get(1).cloned().unwrap_or_else(|| "".to_string());
+                Ok(format!("${{{}:{}}}", args[0], default))
+            }
+            "uppercase" => {
+                if args.len() != 1 {
+                    return Err("uppercase requires exactly one argument".to_string());
+                }
+                Ok(args[0].to_uppercase())
+            }
+            "lowercase" => {
+                if args.len() != 1 {
+                    return Err("lowercase requires exactly one argument".to_string());
+                }
+                Ok(args[0].to_lowercase())
+            }
+            "trim" => {
+                if args.len() != 1 {
+                    return Err("trim requires exactly one argument".to_string());
+                }
+                Ok(args[0].trim().to_string())
+            }
+            "replace" => {
+                if args.len() != 3 {
+                    return Err("replace requires exactly three arguments".to_string());
+                }
+                Ok(args[0].replace(&args[1], &args[2]))
+            }
+            "join" => {
+                if args.len() < 2 {
+                    return Err("join requires at least two arguments".to_string());
+                }
+                let separator = &args[0];
+                let parts = &args[1..];
+                Ok(parts.join(separator))
+            }
+            "quote" => {
+                if args.len() != 1 {
+                    return Err("quote requires exactly one argument".to_string());
+                }
+                Ok(format!("\"{}\"", args[0].replace('"', "\\\"")))
+            }
+            "path_exists" => {
+                if args.len() != 1 {
+                    return Err("path_exists requires exactly one argument".to_string());
+                }
+                // For now, return a placeholder
+                Ok("true".to_string())
+            }
+            _ => {
+                if allow_missing {
+                    Ok(format!("{}({})", func_name, args.join(", ")))
+                } else {
+                    Err(format!("Unknown built-in function: {}", func_name))
+                }
+            }
+        }
+    }
+
+    /// Execute user-defined functions (placeholder)
+    fn execute_user_function(
+        func_name: &str,
+        args: &[String],
+        allow_missing: bool,
+    ) -> Result<String, String> {
+        if allow_missing {
+            Ok(format!("{}({})", func_name, args.join(", ")))
+        } else {
+            Err(format!("User-defined function not implemented: {}", func_name))
+        }
+    }
+
+    /// Execute external command functions (placeholder)
+    fn execute_external_command(
+        func_name: &str,
+        args: &[String],
+        allow_missing: bool,
+    ) -> Result<String, String> {
+        if allow_missing {
+            Ok(format!("`{} {}`", func_name, args.join(" ")))
+        } else {
+            Err(format!("External command execution not implemented: {}", func_name))
+        }
+    }
+
+    /// Enhanced conditional evaluation using ConditionalExpressionInfo
+    pub fn evaluate_conditional_advanced(
+        conditional_info: &ConditionalExpressionInfo,
+        variables: &HashMap<String, String>,
+        allow_missing: bool,
+    ) -> Result<String, String> {
+        // Validate the conditional first
+        if !conditional_info.is_valid() {
+            let errors = conditional_info.validation_errors();
+            return Err(format!("Invalid conditional expression: {}", errors.join(", ")));
+        }
+
+        // Evaluate the condition
+        let condition_result = Self::evaluate_expression(&conditional_info.condition, variables, allow_missing)?;
+        let is_true = Self::evaluate_condition_as_boolean(&condition_result);
+
+        // Choose the appropriate branch
+        if is_true {
+            Self::evaluate_expression(&conditional_info.true_branch, variables, allow_missing)
+        } else if let Some(ref false_branch) = conditional_info.false_branch {
+            Self::evaluate_expression(false_branch, variables, allow_missing)
+        } else {
+            // If no false branch and condition is false, return empty string
+            Ok("".to_string())
+        }
+    }
+
+    /// Convert a value to boolean for conditional evaluation
+    pub fn evaluate_condition_as_boolean(value: &str) -> bool {
+        match value.trim().to_lowercase().as_str() {
+            "true" | "1" | "yes" | "on" => true,
+            "false" | "0" | "no" | "off" | "" => false,
+            _ => !value.trim().is_empty(), // Non-empty strings are truthy
+        }
+    }
+
+    /// Parse a conditional expression string into ConditionalExpressionInfo
+    pub fn parse_conditional_expression(expr: &str) -> Result<ConditionalExpressionInfo, String> {
+        let trimmed = expr.trim();
+        
+        // Handle ternary syntax: condition ? true_value : false_value
+        if trimmed.contains('?') && trimmed.contains(':') {
+            let parts: Vec<&str> = trimmed.splitn(2, '?').collect();
+            if parts.len() == 2 {
+                let condition = parts[0].trim().to_string();
+                let rest = parts[1];
+                let value_parts: Vec<&str> = rest.splitn(2, ':').collect();
+                if value_parts.len() == 2 {
+                    let true_branch = value_parts[0].trim().to_string();
+                    let false_branch = value_parts[1].trim().to_string();
+                    return Ok(ConditionalExpressionInfo::ternary(condition, true_branch, false_branch));
+                }
+            }
+        }
+
+        // Handle if-then-else syntax
+        if trimmed.starts_with("if ") {
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if let (Some(then_pos), else_pos) = (
+                parts.iter().position(|&x| x == "then"),
+                parts.iter().position(|&x| x == "else"),
+            ) {
+                let condition = parts[1..then_pos].join(" ");
+                let true_branch = if let Some(else_pos) = else_pos {
+                    parts[then_pos + 1..else_pos].join(" ")
+                } else {
+                    parts[then_pos + 1..].join(" ")
+                };
+
+                if let Some(else_pos) = else_pos {
+                    let false_branch = parts[else_pos + 1..].join(" ");
+                    return Ok(ConditionalExpressionInfo::if_then_else(condition, true_branch, false_branch));
+                } else {
+                    return Ok(ConditionalExpressionInfo::if_then(condition, true_branch));
+                }
+            }
+        }
+
+        Err(format!("Cannot parse conditional expression: {}", expr))
+    }
+
+    /// Parse a function call expression string into FunctionCallInfo
+    pub fn parse_function_call(expr: &str) -> Result<FunctionCallInfo, String> {
+        let trimmed = expr.trim();
+        
+        if let Some(paren_start) = trimmed.find('(') {
+            if let Some(paren_end) = trimmed.rfind(')') {
+                let func_name = trimmed[..paren_start].trim().to_string();
+                let args_str = &trimmed[paren_start + 1..paren_end];
+                
+                let args = if args_str.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    QueryResultProcessor::parse_function_arguments(args_str)
+                };
+
+                return Ok(FunctionCallInfo::simple(func_name, args));
+            }
+        }
+
+        Err(format!("Cannot parse function call: {}", expr))
+    }
+
     /// Evaluate arithmetic expressions (basic implementation)
     fn evaluate_arithmetic(
         expr: &str,
@@ -3178,7 +3726,7 @@ impl NestedInterpolationProcessor {
                     } else if ch == '}' && chars.peek().map(|(_, c)| *c) == Some('}') {
                         brace_count -= 1;
                         if brace_count == 0 {
-                            let (end_pos, _) = chars.next().unwrap(); // consume second '}'
+                            let (_end_pos, _) = chars.next().unwrap(); // consume second '}'
                             full_text.push('}');
 
                             // Create interpolation info
@@ -3762,6 +4310,536 @@ impl std::fmt::Display for DependencyErrorType {
             DependencyErrorType::InvalidArgument => write!(f, "invalid_argument"),
             DependencyErrorType::InvalidCondition => write!(f, "invalid_condition"),
             DependencyErrorType::InvalidStructure => write!(f, "invalid_structure"),
+        }
+    }
+}
+
+/// Enhanced conditional expression information for complex if-then-else parsing
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConditionalExpressionInfo {
+    /// The full conditional expression text
+    pub full_expression: String,
+    /// The condition part of the expression
+    pub condition: String,
+    /// The value returned when condition is true
+    pub true_branch: String,
+    /// The value returned when condition is false (optional)
+    pub false_branch: Option<String>,
+    /// Type of conditional expression
+    pub conditional_type: ConditionalType,
+    /// Variables referenced in the condition
+    pub condition_variables: Vec<String>,
+    /// Variables referenced in branches
+    pub branch_variables: Vec<String>,
+    /// Position information for error reporting
+    pub position: Option<(usize, usize)>,
+    /// Nesting level for complex conditionals
+    pub nesting_level: usize,
+    /// Whether this conditional contains nested expressions
+    pub has_nested_expressions: bool,
+}
+
+/// Types of conditional expressions supported
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConditionalType {
+    /// Simple if-then expression without else clause
+    IfThen,
+    /// Complete if-then-else expression
+    IfThenElse,
+    /// Ternary-style expression (condition ? true : false)
+    Ternary,
+    /// Pattern matching expression
+    Match,
+    /// Unknown conditional type
+    Unknown,
+}
+
+impl ConditionalExpressionInfo {
+    /// Create a simple if-then conditional
+    pub fn if_then(condition: String, true_branch: String) -> Self {
+        let full_expression = format!("if {} then {}", condition, true_branch);
+        Self {
+            condition_variables: Self::extract_variables(&condition),
+            branch_variables: Self::extract_variables(&true_branch),
+            full_expression,
+            condition,
+            true_branch,
+            false_branch: None,
+            conditional_type: ConditionalType::IfThen,
+            position: None,
+            nesting_level: 1,
+            has_nested_expressions: false,
+        }
+    }
+
+    /// Create a complete if-then-else conditional
+    pub fn if_then_else(condition: String, true_branch: String, false_branch: String) -> Self {
+        let full_expression = format!("if {} then {} else {}", condition, true_branch, false_branch);
+        let condition_vars = Self::extract_variables(&condition);
+        let true_vars = Self::extract_variables(&true_branch);
+        let false_vars = Self::extract_variables(&false_branch);
+        
+        let mut branch_variables = true_vars;
+        branch_variables.extend(false_vars);
+        branch_variables.sort();
+        branch_variables.dedup();
+
+        Self {
+            condition_variables: condition_vars,
+            branch_variables,
+            full_expression,
+            condition,
+            true_branch,
+            false_branch: Some(false_branch),
+            conditional_type: ConditionalType::IfThenElse,
+            position: None,
+            nesting_level: 1,
+            has_nested_expressions: false,
+        }
+    }
+
+    /// Create a ternary conditional
+    pub fn ternary(condition: String, true_branch: String, false_branch: String) -> Self {
+        let full_expression = format!("{} ? {} : {}", condition, true_branch, false_branch);
+        let mut info = Self::if_then_else(condition, true_branch, false_branch);
+        info.conditional_type = ConditionalType::Ternary;
+        info.full_expression = full_expression;
+        info
+    }
+
+    /// Check if this conditional has an else branch
+    pub fn has_else_branch(&self) -> bool {
+        self.false_branch.is_some()
+    }
+
+    /// Get all variables referenced in this conditional
+    pub fn get_all_variables(&self) -> Vec<String> {
+        let mut all_vars = self.condition_variables.clone();
+        all_vars.extend(self.branch_variables.clone());
+        all_vars.sort();
+        all_vars.dedup();
+        all_vars
+    }
+
+    /// Validate the conditional expression structure
+    pub fn is_valid(&self) -> bool {
+        !self.condition.is_empty() 
+            && !self.true_branch.is_empty()
+            && (self.conditional_type == ConditionalType::IfThen || self.false_branch.is_some())
+    }
+
+    /// Get validation errors for this conditional
+    pub fn validation_errors(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        if self.condition.is_empty() {
+            errors.push("Conditional expression missing condition".to_string());
+        }
+
+        if self.true_branch.is_empty() {
+            errors.push("Conditional expression missing true branch".to_string());
+        }
+
+        if matches!(self.conditional_type, ConditionalType::IfThenElse | ConditionalType::Ternary) 
+            && self.false_branch.is_none() {
+            errors.push("If-then-else conditional missing false branch".to_string());
+        }
+
+        if self.nesting_level > 5 {
+            errors.push("Conditional expression nesting too deep (limit: 5)".to_string());
+        }
+
+        errors
+    }
+
+    /// Extract variables from an expression string
+    fn extract_variables(expr: &str) -> Vec<String> {
+        // Simple variable extraction - in a full implementation this would be more sophisticated
+        let mut variables = Vec::new();
+        let words: Vec<&str> = expr.split_whitespace().collect();
+        
+        for word in words {
+            if word.chars().all(|c| c.is_alphanumeric() || c == '_') 
+                && !Self::is_keyword(word) 
+                && !Self::is_operator(word) {
+                variables.push(word.to_string());
+            }
+        }
+
+        variables.sort();
+        variables.dedup();
+        variables
+    }
+
+    /// Check if a word is a keyword
+    fn is_keyword(word: &str) -> bool {
+        matches!(word, "if" | "then" | "else" | "true" | "false" | "null" | "and" | "or" | "not")
+    }
+
+    /// Check if a word is an operator
+    fn is_operator(word: &str) -> bool {
+        matches!(word, "==" | "!=" | "<" | ">" | "<=" | ">=" | "+" | "-" | "*" | "/" | "%" | "?" | ":")
+    }
+
+    /// Format the conditional for display
+    pub fn format_display(&self) -> String {
+        match self.conditional_type {
+            ConditionalType::IfThen => format!("if {} then {}", self.condition, self.true_branch),
+            ConditionalType::IfThenElse => format!(
+                "if {} then {} else {}",
+                self.condition,
+                self.true_branch,
+                self.false_branch.as_ref().unwrap_or(&"".to_string())
+            ),
+            ConditionalType::Ternary => format!(
+                "{} ? {} : {}",
+                self.condition,
+                self.true_branch,
+                self.false_branch.as_ref().unwrap_or(&"".to_string())
+            ),
+            _ => self.full_expression.clone(),
+        }
+    }
+}
+
+/// Enhanced function call information for complex function parsing
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionCallInfo {
+    /// The function name
+    pub function_name: String,
+    /// Arguments passed to the function
+    pub arguments: Vec<FunctionArgument>,
+    /// The full function call expression
+    pub full_expression: String,
+    /// Return type inferred from function name and usage
+    pub return_type: FunctionReturnType,
+    /// Whether this function is a built-in or user-defined
+    pub function_type: FunctionType,
+    /// Variables referenced in arguments
+    pub argument_variables: Vec<String>,
+    /// Position information for error reporting
+    pub position: Option<(usize, usize)>,
+    /// Whether this function call contains nested expressions
+    pub has_nested_calls: bool,
+    /// Nesting level for complex function calls
+    pub nesting_level: usize,
+}
+
+/// Individual function argument with type information
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionArgument {
+    /// The argument value or expression
+    pub value: String,
+    /// Type of argument
+    pub argument_type: ArgumentType,
+    /// Variables referenced in this argument
+    pub variables: Vec<String>,
+    /// Whether this argument is required
+    pub is_required: bool,
+    /// Position within the argument list
+    pub position: usize,
+}
+
+/// Types of function arguments
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArgumentType {
+    /// String literal argument
+    StringLiteral,
+    /// Variable reference
+    Variable,
+    /// Numeric literal
+    NumericLiteral,
+    /// Boolean literal
+    BooleanLiteral,
+    /// Complex expression
+    Expression,
+    /// Nested function call
+    FunctionCall,
+    /// Conditional expression
+    Conditional,
+    /// Unknown argument type
+    Unknown,
+}
+
+/// Function return types for type inference
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionReturnType {
+    /// Returns a string value
+    String,
+    /// Returns a numeric value
+    Number,
+    /// Returns a boolean value
+    Boolean,
+    /// Returns a list/array
+    List,
+    /// Return type depends on arguments
+    Dynamic,
+    /// Unknown return type
+    Unknown,
+}
+
+/// Types of functions
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionType {
+    /// Built-in Just functions (env_var, uppercase, etc.)
+    BuiltIn,
+    /// User-defined functions
+    UserDefined,
+    /// External command functions
+    ExternalCommand,
+    /// Unknown function type
+    Unknown,
+}
+
+impl FunctionCallInfo {
+    /// Create a new function call with arguments
+    pub fn new(function_name: String, arguments: Vec<FunctionArgument>) -> Self {
+        let arg_strings: Vec<String> = arguments.iter().map(|a| a.value.clone()).collect();
+        let full_expression = format!("{}({})", function_name, arg_strings.join(", "));
+        
+        let mut argument_variables = Vec::new();
+        for arg in &arguments {
+            argument_variables.extend(arg.variables.clone());
+        }
+        argument_variables.sort();
+        argument_variables.dedup();
+
+        let function_type = Self::infer_function_type(&function_name);
+        let return_type = Self::infer_return_type(&function_name, &arguments);
+
+        Self {
+            function_name,
+            arguments,
+            full_expression,
+            return_type,
+            function_type,
+            argument_variables,
+            position: None,
+            has_nested_calls: false,
+            nesting_level: 1,
+        }
+    }
+
+    /// Create a simple function call with string arguments
+    pub fn simple(function_name: String, args: Vec<String>) -> Self {
+        let arguments: Vec<FunctionArgument> = args
+            .into_iter()
+            .enumerate()
+            .map(|(i, arg)| FunctionArgument::new(arg, i))
+            .collect();
+        Self::new(function_name, arguments)
+    }
+
+    /// Check if this function call is valid
+    pub fn is_valid(&self) -> bool {
+        !self.function_name.is_empty() && self.validate_arguments()
+    }
+
+    /// Validate function arguments
+    pub fn validate_arguments(&self) -> bool {
+        // Check for required arguments
+        let required_count = self.arguments.iter().filter(|a| a.is_required).count();
+        required_count <= self.arguments.len()
+    }
+
+    /// Get validation errors for this function call
+    pub fn validation_errors(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        if self.function_name.is_empty() {
+            errors.push("Function call missing function name".to_string());
+        }
+
+        if self.nesting_level > 10 {
+            errors.push("Function call nesting too deep (limit: 10)".to_string());
+        }
+
+        // Validate arguments
+        for (i, arg) in self.arguments.iter().enumerate() {
+            let arg_errors = arg.validation_errors();
+            for error in arg_errors {
+                errors.push(format!("Argument {}: {}", i + 1, error));
+            }
+        }
+
+        // Check for known function signatures
+        if let Err(signature_error) = self.validate_function_signature() {
+            errors.push(signature_error);
+        }
+
+        errors
+    }
+
+    /// Validate function signature against known functions
+    fn validate_function_signature(&self) -> Result<(), String> {
+        match self.function_name.as_str() {
+            "env_var" => {
+                if self.arguments.is_empty() {
+                    return Err("env_var function requires at least one argument".to_string());
+                }
+                if self.arguments.len() > 2 {
+                    return Err("env_var function accepts maximum two arguments".to_string());
+                }
+            },
+            "uppercase" | "lowercase" | "trim" => {
+                if self.arguments.len() != 1 {
+                    return Err(format!("{} function requires exactly one argument", self.function_name));
+                }
+            },
+            "replace" => {
+                if self.arguments.len() != 3 {
+                    return Err("replace function requires exactly three arguments".to_string());
+                }
+            },
+            "join" => {
+                if self.arguments.len() < 2 {
+                    return Err("join function requires at least two arguments".to_string());
+                }
+            },
+            _ => {
+                // Unknown function - allow but mark as user-defined
+            }
+        }
+        Ok(())
+    }
+
+    /// Infer function type from name
+    fn infer_function_type(name: &str) -> FunctionType {
+        match name {
+            "env_var" | "uppercase" | "lowercase" | "trim" | "replace" | "join" 
+            | "quote" | "path_exists" | "extension" | "file_name" | "parent_directory" => {
+                FunctionType::BuiltIn
+            },
+            _ if name.starts_with('`') || name.contains('/') => FunctionType::ExternalCommand,
+            _ => FunctionType::UserDefined,
+        }
+    }
+
+    /// Infer return type from function name and arguments
+    fn infer_return_type(name: &str, _arguments: &[FunctionArgument]) -> FunctionReturnType {
+        match name {
+            "env_var" | "uppercase" | "lowercase" | "trim" | "replace" 
+            | "quote" | "extension" | "file_name" | "parent_directory" => {
+                FunctionReturnType::String
+            },
+            "path_exists" => FunctionReturnType::Boolean,
+            "join" => FunctionReturnType::String,
+            _ => FunctionReturnType::Unknown,
+        }
+    }
+
+    /// Format the function call for display
+    pub fn format_display(&self) -> String {
+        let args: Vec<String> = self.arguments.iter().map(|a| a.format_display()).collect();
+        format!("{}({})", self.function_name, args.join(", "))
+    }
+
+    /// Get all variables referenced in this function call
+    pub fn get_all_variables(&self) -> Vec<String> {
+        self.argument_variables.clone()
+    }
+}
+
+impl FunctionArgument {
+    /// Create a new function argument
+    pub fn new(value: String, position: usize) -> Self {
+        let argument_type = Self::infer_argument_type(&value);
+        let variables = Self::extract_variables(&value);
+        
+        Self {
+            value,
+            argument_type,
+            variables,
+            is_required: true,
+            position,
+        }
+    }
+
+    /// Create an optional argument
+    pub fn optional(value: String, position: usize) -> Self {
+        let mut arg = Self::new(value, position);
+        arg.is_required = false;
+        arg
+    }
+
+    /// Infer argument type from value
+    fn infer_argument_type(value: &str) -> ArgumentType {
+        let trimmed = value.trim();
+        
+        if (trimmed.starts_with('"') && trimmed.ends_with('"')) 
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
+            ArgumentType::StringLiteral
+        } else if trimmed == "true" || trimmed == "false" {
+            ArgumentType::BooleanLiteral
+        } else if trimmed.parse::<f64>().is_ok() {
+            ArgumentType::NumericLiteral
+        } else if trimmed.contains('(') && trimmed.contains(')') {
+            ArgumentType::FunctionCall
+        } else if trimmed.contains("if") && trimmed.contains("then") {
+            ArgumentType::Conditional
+        } else if trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            ArgumentType::Variable
+        } else {
+            ArgumentType::Expression
+        }
+    }
+
+    /// Extract variables from argument value
+    fn extract_variables(value: &str) -> Vec<String> {
+        let mut variables = Vec::new();
+        
+        // Simple implementation - extract alphanumeric words that aren't keywords
+        let words: Vec<&str> = value.split_whitespace().collect();
+        for word in words {
+            if word.chars().all(|c| c.is_alphanumeric() || c == '_') 
+                && !Self::is_keyword(word) {
+                variables.push(word.to_string());
+            }
+        }
+
+        variables.sort();
+        variables.dedup();
+        variables
+    }
+
+    /// Check if a word is a keyword
+    fn is_keyword(word: &str) -> bool {
+        matches!(word, "true" | "false" | "null" | "if" | "then" | "else")
+    }
+
+    /// Validate this argument
+    pub fn validation_errors(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        if self.value.is_empty() {
+            errors.push("Argument cannot be empty".to_string());
+        }
+
+        // Type-specific validation
+        match self.argument_type {
+            ArgumentType::StringLiteral => {
+                if !((self.value.starts_with('"') && self.value.ends_with('"'))
+                    || (self.value.starts_with('\'') && self.value.ends_with('\''))) {
+                    errors.push("String literal must be quoted".to_string());
+                }
+            },
+            ArgumentType::FunctionCall => {
+                if !self.value.contains('(') || !self.value.contains(')') {
+                    errors.push("Function call must contain parentheses".to_string());
+                }
+            },
+            _ => {}
+        }
+
+        errors
+    }
+
+    /// Format the argument for display
+    pub fn format_display(&self) -> String {
+        match self.argument_type {
+            ArgumentType::StringLiteral => self.value.clone(),
+            ArgumentType::Variable => format!("{{{{{}}}}}", self.value),
+            _ => self.value.clone(),
         }
     }
 }

@@ -203,6 +203,9 @@ impl ASTJustParser {
         let comment_results = executor.execute(&bundle.comments, ast_tree)?;
         let dependency_results = executor.execute(&bundle.dependencies, ast_tree)?;
         let attribute_results = executor.execute(&bundle.attributes, ast_tree)?;
+        
+        // Execute enhanced expression queries for conditional expressions and function calls
+        let expression_results = executor.execute(&bundle.expressions, ast_tree).unwrap_or_default();
 
         // Extract structured information
         let recipes = QueryResultProcessor::extract_recipes(&recipe_results);
@@ -213,6 +216,10 @@ impl ASTJustParser {
         let dependencies = QueryResultProcessor::extract_dependencies(&dependency_results);
         let comments = QueryResultProcessor::extract_comments(&comment_results);
         let attributes = QueryResultProcessor::extract_attributes(&attribute_results);
+        
+        // Extract enhanced expression information
+        let conditional_expressions = QueryResultProcessor::extract_conditional_expressions(&expression_results);
+        let function_calls = QueryResultProcessor::extract_function_calls(&expression_results);
 
         // Associate parameters with recipes and enhance with descriptions
         let mut just_tasks = Vec::new();
@@ -287,6 +294,50 @@ impl ASTJustParser {
                     description: param.description.clone(),
                 })
                 .collect();
+
+            // Find conditional expressions and function calls for this recipe
+            let recipe_conditionals: Vec<_> = conditional_expressions
+                .iter()
+                .filter(|expr| {
+                    // Find expressions that are likely associated with this recipe
+                    // This is a simple heuristic - in a full implementation, position tracking would be more sophisticated
+                    expr.get_all_variables().iter().any(|var| {
+                        recipe.name.contains(var) || 
+                        recipe_params.iter().any(|param| param.name == *var)
+                    })
+                })
+                .cloned()
+                .collect();
+
+            let recipe_function_calls: Vec<_> = function_calls
+                .iter()
+                .filter(|func| {
+                    // Find function calls that are likely associated with this recipe
+                    func.get_all_variables().iter().any(|var| {
+                        recipe.name.contains(var) ||
+                        recipe_params.iter().any(|param| param.name == *var)
+                    })
+                })
+                .cloned()
+                .collect();
+
+            // Log discovered expressions for development/debugging
+            if !recipe_conditionals.is_empty() || !recipe_function_calls.is_empty() {
+                tracing::debug!(
+                    "Recipe '{}' has {} conditional expressions and {} function calls",
+                    recipe.name,
+                    recipe_conditionals.len(),
+                    recipe_function_calls.len()
+                );
+                
+                for conditional in &recipe_conditionals {
+                    tracing::debug!("  Conditional: {}", conditional.format_display());
+                }
+                
+                for func_call in &recipe_function_calls {
+                    tracing::debug!("  Function call: {}", func_call.format_display());
+                }
+            }
 
             // Extract attribute information for recipe
             let (group, is_private, confirm_message, doc) =
