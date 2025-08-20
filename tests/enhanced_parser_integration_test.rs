@@ -249,3 +249,189 @@ _helper:
     let deploy_task = tasks.iter().find(|t| t.name == "deploy").unwrap();
     assert_eq!(deploy_task.dependencies, vec!["build", "test"]);
 }
+
+/// Test the complete three-tier fallback system with valid content
+#[test]
+fn test_three_tier_fallback_system_integration() {
+    let parser = EnhancedJustfileParser::new().expect("Failed to create parser");
+
+    // Test with a well-formed justfile that should parse successfully
+    let valid_content = r#"
+# Build the project
+build target="debug":
+    cargo build --{{target}}
+
+# Run tests
+test: build
+    cargo test --all
+
+# Deploy application
+deploy: test
+    echo "Deploying to production"
+"#;
+
+    let tasks = parser
+        .parse_content(valid_content)
+        .expect("Should parse valid content");
+
+    // Should extract multiple tasks
+    assert!(
+        tasks.len() >= 3,
+        "Should extract at least 3 tasks, got {}",
+        tasks.len()
+    );
+
+    // Verify specific tasks exist
+    let task_names: Vec<&str> = tasks.iter().map(|t| t.name.as_str()).collect();
+    println!("Extracted task names: {:?}", task_names);
+
+    // Check that parsing was successful (not minimal task creation)
+    let metrics = parser.get_metrics();
+    assert_eq!(
+        metrics.minimal_task_creations, 0,
+        "Should not have created minimal tasks for valid content"
+    );
+
+    // At least one parsing method should have succeeded
+    let total_successes =
+        metrics.ast_successes + metrics.command_successes + metrics.regex_successes;
+    assert!(
+        total_successes > 0,
+        "At least one parsing method should have succeeded"
+    );
+}
+
+/// Test fallback behavior with malformed content
+#[test]
+fn test_three_tier_fallback_with_malformed_content() {
+    let parser = EnhancedJustfileParser::new().expect("Failed to create parser");
+
+    // Malformed content that should fail most parsers but not crash
+    let malformed_content = r#"
+this is not a valid justfile
+{{{ syntax error >>>
+invalid: incomplete
+    missing body
+another-error without colon
+}}}
+"#;
+
+    let tasks = parser
+        .parse_content(malformed_content)
+        .expect("Should handle malformed content gracefully");
+
+    // Should create at least one task (minimal fallback)
+    assert!(
+        !tasks.is_empty(),
+        "Should create at least one fallback task"
+    );
+
+    // Check if we got a minimal task
+    let metrics = parser.get_metrics();
+    if metrics.minimal_task_creations > 0 {
+        // Verify minimal task properties
+        let minimal_task = &tasks[0];
+        assert!(
+            minimal_task.name.contains("parse-error"),
+            "Minimal task should have error-indicating name: {}",
+            minimal_task.name
+        );
+        assert!(
+            minimal_task.body.contains("ERROR"),
+            "Minimal task body should contain error message"
+        );
+        assert!(
+            !minimal_task.comments.is_empty(),
+            "Minimal task should have warning comments"
+        );
+        assert!(
+            minimal_task.comments[0].contains("WARNING"),
+            "First comment should be a warning"
+        );
+    }
+}
+
+/// Test parsing metrics collection and diagnostics
+#[test]
+fn test_parsing_metrics_and_diagnostics() {
+    let parser = EnhancedJustfileParser::new().expect("Failed to create parser");
+
+    // Start with clean metrics
+    parser.reset_metrics();
+    let initial_metrics = parser.get_metrics();
+    assert_eq!(initial_metrics.ast_attempts, 0);
+    assert_eq!(initial_metrics.command_attempts, 0);
+    assert_eq!(initial_metrics.regex_attempts, 0);
+
+    // Parse multiple different types of content
+    let contents = vec![
+        "simple:\n    echo 'hello'",
+        "complex target=\"prod\":\n    deploy --target={{target}}",
+        "with-deps: build test\n    echo 'done'",
+    ];
+
+    for content in contents {
+        let _ = parser.parse_content(content).expect("Should parse content");
+    }
+
+    // Check that metrics were accumulated
+    let final_metrics = parser.get_metrics();
+    let total_attempts =
+        final_metrics.ast_attempts + final_metrics.command_attempts + final_metrics.regex_attempts;
+
+    assert!(
+        total_attempts >= 3,
+        "Should have attempted parsing at least 3 times"
+    );
+    assert!(
+        final_metrics.total_parse_time_ms > 0,
+        "Should have recorded parse time"
+    );
+
+    // Test diagnostics output
+    let diagnostics = parser.get_diagnostics();
+    assert!(diagnostics.contains("Parsing Diagnostics"));
+    assert!(diagnostics.contains("success rate"));
+    assert!(diagnostics.contains("%"));
+
+    println!("Parsing diagnostics:\n{}", diagnostics);
+}
+
+/// Test parser configuration and method selection
+#[test]
+fn test_parser_configuration_and_method_selection() {
+    let mut parser = EnhancedJustfileParser::new().expect("Failed to create parser");
+
+    let test_content = r#"
+hello:
+    echo "world"
+"#;
+
+    // Test with AST parsing disabled
+    parser.set_ast_parsing_enabled(false);
+    let tasks1 = parser
+        .parse_content(test_content)
+        .expect("Should parse with AST disabled");
+    assert!(!tasks1.is_empty());
+
+    // Test with command parsing disabled
+    parser.set_command_parsing_enabled(false);
+    let tasks2 = parser
+        .parse_content(test_content)
+        .expect("Should parse with command disabled");
+    assert!(!tasks2.is_empty());
+
+    // Test with only regex parsing (legacy mode)
+    parser.set_legacy_parser_only();
+    let tasks3 = parser
+        .parse_content(test_content)
+        .expect("Should parse with regex only");
+    assert!(!tasks3.is_empty());
+
+    // Verify that the parser adapted to different configurations
+    let final_metrics = parser.get_metrics();
+    assert!(
+        final_metrics.regex_attempts > 0,
+        "Regex parsing should have been attempted in legacy mode"
+    );
+}

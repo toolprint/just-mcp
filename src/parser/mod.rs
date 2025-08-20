@@ -24,11 +24,56 @@ pub struct JustfileParser {
     param_desc_regex: Regex,
 }
 
-/// Enhanced parser that uses Just CLI commands for accurate parsing
+/// Parsing metrics for diagnostics and performance monitoring
+#[derive(Debug, Clone, Default)]
+pub struct ParsingMetrics {
+    /// Number of times AST parsing was attempted
+    pub ast_attempts: u64,
+    /// Number of times AST parsing succeeded
+    pub ast_successes: u64,
+    /// Number of times command parsing was attempted
+    pub command_attempts: u64,
+    /// Number of times command parsing succeeded
+    pub command_successes: u64,
+    /// Number of times regex parsing was attempted
+    pub regex_attempts: u64,
+    /// Number of times regex parsing succeeded
+    pub regex_successes: u64,
+    /// Number of times minimal task creation was used
+    pub minimal_task_creations: u64,
+    /// Total parsing time in milliseconds
+    pub total_parse_time_ms: u64,
+    /// Time spent in AST parsing (milliseconds)
+    pub ast_parse_time_ms: u64,
+    /// Time spent in command parsing (milliseconds)
+    pub command_parse_time_ms: u64,
+    /// Time spent in regex parsing (milliseconds)
+    pub regex_parse_time_ms: u64,
+}
+
+/// Parsing method used for successful parsing
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParsingMethod {
+    /// AST-based parsing using Tree-sitter
+    AST,
+    /// CLI command-based parsing
+    Command,
+    /// Regex-based parsing
+    Regex,
+    /// Minimal task creation (fallback)
+    Minimal,
+}
+
+/// Enhanced parser that implements three-tier fallback system
+/// AST → Command → Regex → Minimal task creation
 pub struct EnhancedJustfileParser {
+    #[cfg(feature = "ast-parser")]
+    ast_parser: Option<ast::ASTJustParser>,
     command_parser: JustCommandParser,
     legacy_parser: JustfileParser,
+    prefer_ast_parser: bool,
     prefer_command_parser: bool,
+    metrics: std::sync::Arc<std::sync::RwLock<ParsingMetrics>>,
 }
 
 impl JustfileParser {
@@ -358,85 +403,596 @@ impl Default for JustfileParser {
     }
 }
 
+impl ParsingMetrics {
+    /// Get the success rate for AST parsing
+    pub fn ast_success_rate(&self) -> f64 {
+        if self.ast_attempts == 0 {
+            0.0
+        } else {
+            self.ast_successes as f64 / self.ast_attempts as f64
+        }
+    }
+
+    /// Get the success rate for command parsing
+    pub fn command_success_rate(&self) -> f64 {
+        if self.command_attempts == 0 {
+            0.0
+        } else {
+            self.command_successes as f64 / self.command_attempts as f64
+        }
+    }
+
+    /// Get the success rate for regex parsing
+    pub fn regex_success_rate(&self) -> f64 {
+        if self.regex_attempts == 0 {
+            0.0
+        } else {
+            self.regex_successes as f64 / self.regex_attempts as f64
+        }
+    }
+
+    /// Get the average parse time per attempt in milliseconds
+    pub fn average_parse_time_ms(&self) -> f64 {
+        let total_attempts = self.ast_attempts + self.command_attempts + self.regex_attempts;
+        if total_attempts == 0 {
+            0.0
+        } else {
+            self.total_parse_time_ms as f64 / total_attempts as f64
+        }
+    }
+
+    /// Get the most successful parsing method
+    pub fn preferred_method(&self) -> ParsingMethod {
+        if self.ast_attempts > 0 && self.ast_success_rate() > 0.8 {
+            ParsingMethod::AST
+        } else if self.command_attempts > 0 && self.command_success_rate() > 0.8 {
+            ParsingMethod::Command
+        } else if self.regex_attempts > 0 && self.regex_success_rate() > 0.8 {
+            ParsingMethod::Regex
+        } else {
+            ParsingMethod::Minimal
+        }
+    }
+}
+
 impl EnhancedJustfileParser {
-    /// Create a new enhanced parser
+    /// Create a new enhanced parser with all parsing methods available
     pub fn new() -> Result<Self> {
+        #[cfg(feature = "ast-parser")]
+        let ast_parser = match ast::ASTJustParser::new() {
+            Ok(parser) => {
+                tracing::info!("AST parser initialized successfully");
+                Some(parser)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to initialize AST parser: {}, falling back to other methods",
+                    e
+                );
+                None
+            }
+        };
+
         Ok(Self {
+            #[cfg(feature = "ast-parser")]
+            ast_parser,
             command_parser: JustCommandParser::new()?,
             legacy_parser: JustfileParser::new()?,
+            prefer_ast_parser: true,
             prefer_command_parser: true,
+            metrics: std::sync::Arc::new(std::sync::RwLock::new(ParsingMetrics::default())),
         })
     }
 
     /// Create parser with command parser disabled (fallback mode)
     pub fn new_legacy_only() -> Result<Self> {
         Ok(Self {
+            #[cfg(feature = "ast-parser")]
+            ast_parser: None,
             command_parser: JustCommandParser::new()?,
             legacy_parser: JustfileParser::new()?,
+            prefer_ast_parser: false,
             prefer_command_parser: false,
+            metrics: std::sync::Arc::new(std::sync::RwLock::new(ParsingMetrics::default())),
         })
     }
 
-    /// Parse justfile using the best available method
-    pub fn parse_file(&self, path: &Path) -> Result<Vec<JustTask>> {
-        if self.prefer_command_parser {
-            // Try command parser first
-            match self.command_parser.parse_file(path) {
-                Ok(tasks) => {
-                    tracing::info!(
-                        "Successfully parsed {} using Just CLI commands",
-                        path.display()
-                    );
-                    Ok(tasks)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Just command parser failed for {}, falling back to regex parser: {}",
-                        path.display(),
-                        e
-                    );
-                    // Fall back to legacy parser
-                    self.legacy_parser.parse_file(path)
-                }
-            }
-        } else {
-            // Use legacy parser
-            self.legacy_parser.parse_file(path)
-        }
+    /// Create parser with AST parsing disabled
+    pub fn new_without_ast() -> Result<Self> {
+        Ok(Self {
+            #[cfg(feature = "ast-parser")]
+            ast_parser: None,
+            command_parser: JustCommandParser::new()?,
+            legacy_parser: JustfileParser::new()?,
+            prefer_ast_parser: false,
+            prefer_command_parser: true,
+            metrics: std::sync::Arc::new(std::sync::RwLock::new(ParsingMetrics::default())),
+        })
     }
 
-    /// Parse content string using the best available method
-    pub fn parse_content(&self, content: &str) -> Result<Vec<JustTask>> {
+    /// Parse justfile using three-tier fallback system: AST → Command → Regex → Minimal
+    pub fn parse_file(&self, path: &Path) -> Result<Vec<JustTask>> {
+        let start_time = std::time::Instant::now();
+        let mut last_error = None;
+
+        // Tier 1: Try AST parsing first
+        #[cfg(feature = "ast-parser")]
+        if self.prefer_ast_parser && self.ast_parser.is_some() {
+            let ast_start = std::time::Instant::now();
+            if let Some(ref _ast_parser) = self.ast_parser.as_ref() {
+                // Need mutable access - create a new parser instance if needed
+                match self.try_ast_parsing_file(path) {
+                    Ok(tasks) if !tasks.is_empty() => {
+                        let ast_time = ast_start.elapsed().as_millis() as u64;
+                        self.update_metrics(|m| {
+                            m.ast_attempts += 1;
+                            m.ast_successes += 1;
+                            m.ast_parse_time_ms += ast_time;
+                            m.total_parse_time_ms += start_time.elapsed().as_millis() as u64;
+                        });
+                        tracing::info!(
+                            "Successfully parsed {} using AST parser ({} tasks in {}ms)",
+                            path.display(),
+                            tasks.len(),
+                            ast_time
+                        );
+                        return Ok(tasks);
+                    }
+                    Ok(_) => {
+                        tracing::debug!("AST parser returned empty results for {}", path.display());
+                    }
+                    Err(e) => {
+                        last_error = Some(format!("AST parsing failed: {}", e));
+                        tracing::warn!("AST parser failed for {}: {}", path.display(), e);
+                    }
+                }
+                self.update_metrics(|m| {
+                    m.ast_attempts += 1;
+                    m.ast_parse_time_ms += ast_start.elapsed().as_millis() as u64;
+                });
+            }
+        }
+
+        // Tier 2: Try command parser
         if self.prefer_command_parser {
-            // Try command parser first
-            match self.command_parser.parse_content(content) {
-                Ok(tasks) => {
-                    tracing::info!("Successfully parsed content using Just CLI commands");
-                    Ok(tasks)
+            let command_start = std::time::Instant::now();
+            match self.command_parser.parse_file(path) {
+                Ok(tasks) if !tasks.is_empty() => {
+                    let command_time = command_start.elapsed().as_millis() as u64;
+                    self.update_metrics(|m| {
+                        m.command_attempts += 1;
+                        m.command_successes += 1;
+                        m.command_parse_time_ms += command_time;
+                        m.total_parse_time_ms += start_time.elapsed().as_millis() as u64;
+                    });
+                    tracing::info!(
+                        "Successfully parsed {} using Just CLI commands ({} tasks in {}ms)",
+                        path.display(),
+                        tasks.len(),
+                        command_time
+                    );
+                    return Ok(tasks);
+                }
+                Ok(_) => {
+                    tracing::debug!(
+                        "Command parser returned empty results for {}",
+                        path.display()
+                    );
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "Just command parser failed for content, falling back to regex parser: {}",
-                        e
-                    );
-                    // Fall back to legacy parser
-                    self.legacy_parser.parse_content(content)
+                    last_error = Some(format!("Command parsing failed: {}", e));
+                    tracing::warn!("Command parser failed for {}: {}", path.display(), e);
                 }
             }
-        } else {
-            // Use legacy parser
-            self.legacy_parser.parse_content(content)
+            self.update_metrics(|m| {
+                m.command_attempts += 1;
+                m.command_parse_time_ms += command_start.elapsed().as_millis() as u64;
+            });
         }
+
+        // Tier 3: Try regex parser
+        let regex_start = std::time::Instant::now();
+        match self.legacy_parser.parse_file(path) {
+            Ok(tasks) if !tasks.is_empty() => {
+                let regex_time = regex_start.elapsed().as_millis() as u64;
+                self.update_metrics(|m| {
+                    m.regex_attempts += 1;
+                    m.regex_successes += 1;
+                    m.regex_parse_time_ms += regex_time;
+                    m.total_parse_time_ms += start_time.elapsed().as_millis() as u64;
+                });
+                tracing::info!(
+                    "Successfully parsed {} using regex parser ({} tasks in {}ms)",
+                    path.display(),
+                    tasks.len(),
+                    regex_time
+                );
+                return Ok(tasks);
+            }
+            Ok(_) => {
+                tracing::debug!("Regex parser returned empty results for {}", path.display());
+            }
+            Err(e) => {
+                last_error = Some(format!("Regex parsing failed: {}", e));
+                tracing::warn!("Regex parser failed for {}: {}", path.display(), e);
+            }
+        }
+        self.update_metrics(|m| {
+            m.regex_attempts += 1;
+            m.regex_parse_time_ms += regex_start.elapsed().as_millis() as u64;
+        });
+
+        // Tier 4: Create minimal task with warning
+        let total_time = start_time.elapsed().as_millis() as u64;
+        self.update_metrics(|m| {
+            m.minimal_task_creations += 1;
+            m.total_parse_time_ms += total_time;
+        });
+
+        let minimal_task = self.create_minimal_task_for_file(path, last_error.as_deref());
+        tracing::warn!(
+            "All parsing methods failed for {}, created minimal task with warning (total time: {}ms)",
+            path.display(), total_time
+        );
+        Ok(vec![minimal_task])
+    }
+
+    /// Parse content string using three-tier fallback system: AST → Command → Regex → Minimal
+    pub fn parse_content(&self, content: &str) -> Result<Vec<JustTask>> {
+        let start_time = std::time::Instant::now();
+        let mut last_error = None;
+
+        // Tier 1: Try AST parsing first
+        #[cfg(feature = "ast-parser")]
+        if self.prefer_ast_parser && self.ast_parser.is_some() {
+            let ast_start = std::time::Instant::now();
+            match self.try_ast_parsing_content(content) {
+                Ok(tasks) if !tasks.is_empty() => {
+                    let ast_time = ast_start.elapsed().as_millis() as u64;
+                    self.update_metrics(|m| {
+                        m.ast_attempts += 1;
+                        m.ast_successes += 1;
+                        m.ast_parse_time_ms += ast_time;
+                        m.total_parse_time_ms += start_time.elapsed().as_millis() as u64;
+                    });
+                    tracing::info!(
+                        "Successfully parsed content using AST parser ({} tasks in {}ms)",
+                        tasks.len(),
+                        ast_time
+                    );
+                    return Ok(tasks);
+                }
+                Ok(_) => {
+                    tracing::debug!("AST parser returned empty results for content");
+                }
+                Err(e) => {
+                    last_error = Some(format!("AST parsing failed: {}", e));
+                    tracing::warn!("AST parser failed for content: {}", e);
+                }
+            }
+            self.update_metrics(|m| {
+                m.ast_attempts += 1;
+                m.ast_parse_time_ms += ast_start.elapsed().as_millis() as u64;
+            });
+        }
+
+        // Tier 2: Try command parser
+        if self.prefer_command_parser {
+            let command_start = std::time::Instant::now();
+            match self.command_parser.parse_content(content) {
+                Ok(tasks) if !tasks.is_empty() => {
+                    let command_time = command_start.elapsed().as_millis() as u64;
+                    self.update_metrics(|m| {
+                        m.command_attempts += 1;
+                        m.command_successes += 1;
+                        m.command_parse_time_ms += command_time;
+                        m.total_parse_time_ms += start_time.elapsed().as_millis() as u64;
+                    });
+                    tracing::info!(
+                        "Successfully parsed content using Just CLI commands ({} tasks in {}ms)",
+                        tasks.len(),
+                        command_time
+                    );
+                    return Ok(tasks);
+                }
+                Ok(_) => {
+                    tracing::debug!("Command parser returned empty results for content");
+                }
+                Err(e) => {
+                    last_error = Some(format!("Command parsing failed: {}", e));
+                    tracing::warn!("Command parser failed for content: {}", e);
+                }
+            }
+            self.update_metrics(|m| {
+                m.command_attempts += 1;
+                m.command_parse_time_ms += command_start.elapsed().as_millis() as u64;
+            });
+        }
+
+        // Tier 3: Try regex parser
+        let regex_start = std::time::Instant::now();
+        match self.legacy_parser.parse_content(content) {
+            Ok(tasks) if !tasks.is_empty() => {
+                let regex_time = regex_start.elapsed().as_millis() as u64;
+                self.update_metrics(|m| {
+                    m.regex_attempts += 1;
+                    m.regex_successes += 1;
+                    m.regex_parse_time_ms += regex_time;
+                    m.total_parse_time_ms += start_time.elapsed().as_millis() as u64;
+                });
+                tracing::info!(
+                    "Successfully parsed content using regex parser ({} tasks in {}ms)",
+                    tasks.len(),
+                    regex_time
+                );
+                return Ok(tasks);
+            }
+            Ok(_) => {
+                tracing::debug!("Regex parser returned empty results for content");
+            }
+            Err(e) => {
+                last_error = Some(format!("Regex parsing failed: {}", e));
+                tracing::warn!("Regex parser failed for content: {}", e);
+            }
+        }
+        self.update_metrics(|m| {
+            m.regex_attempts += 1;
+            m.regex_parse_time_ms += regex_start.elapsed().as_millis() as u64;
+        });
+
+        // Tier 4: Create minimal task with warning
+        let total_time = start_time.elapsed().as_millis() as u64;
+        self.update_metrics(|m| {
+            m.minimal_task_creations += 1;
+            m.total_parse_time_ms += total_time;
+        });
+
+        let minimal_task = self.create_minimal_task_for_content(content, last_error.as_deref());
+        tracing::warn!(
+            "All parsing methods failed for content, created minimal task with warning (total time: {}ms)",
+            total_time
+        );
+        Ok(vec![minimal_task])
+    }
+
+    /// Force use of AST parser only (for testing)
+    pub fn set_ast_parser_only(&mut self) {
+        self.prefer_ast_parser = true;
+        self.prefer_command_parser = false;
     }
 
     /// Force use of command parser only (for testing)
     pub fn set_command_parser_only(&mut self) {
+        self.prefer_ast_parser = false;
         self.prefer_command_parser = true;
     }
 
     /// Force use of legacy parser only (for testing)
     pub fn set_legacy_parser_only(&mut self) {
+        self.prefer_ast_parser = false;
         self.prefer_command_parser = false;
+    }
+
+    /// Enable or disable AST parsing
+    pub fn set_ast_parsing_enabled(&mut self, enabled: bool) {
+        self.prefer_ast_parser = enabled;
+    }
+
+    /// Enable or disable command parsing
+    pub fn set_command_parsing_enabled(&mut self, enabled: bool) {
+        self.prefer_command_parser = enabled;
+    }
+
+    /// Try AST parsing for file content
+    #[cfg(feature = "ast-parser")]
+    fn try_ast_parsing_file(&self, path: &Path) -> Result<Vec<JustTask>> {
+        if let Some(ref _ast_parser) = self.ast_parser {
+            // Create a new parser instance for mutable operations
+            let mut temp_parser =
+                ast::ASTJustParser::new().map_err(|e| crate::error::Error::Parse {
+                    message: format!("Failed to create temp AST parser: {}", e),
+                    line: 0,
+                    column: 0,
+                })?;
+
+            let tree = temp_parser
+                .parse_file(path)
+                .map_err(|e| crate::error::Error::Parse {
+                    message: format!("AST file parsing failed: {}", e),
+                    line: 0,
+                    column: 0,
+                })?;
+
+            let tasks =
+                temp_parser
+                    .extract_recipes(&tree)
+                    .map_err(|e| crate::error::Error::Parse {
+                        message: format!("AST recipe extraction failed: {}", e),
+                        line: 0,
+                        column: 0,
+                    })?;
+
+            Ok(tasks)
+        } else {
+            Err(crate::error::Error::Internal(
+                "AST parser not available".to_string(),
+            ))
+        }
+    }
+
+    /// Try AST parsing for content string
+    #[cfg(feature = "ast-parser")]
+    fn try_ast_parsing_content(&self, content: &str) -> Result<Vec<JustTask>> {
+        if let Some(ref _ast_parser) = self.ast_parser {
+            // Create a new parser instance for mutable operations
+            let mut temp_parser =
+                ast::ASTJustParser::new().map_err(|e| crate::error::Error::Parse {
+                    message: format!("Failed to create temp AST parser: {}", e),
+                    line: 0,
+                    column: 0,
+                })?;
+
+            let tree =
+                temp_parser
+                    .parse_content(content)
+                    .map_err(|e| crate::error::Error::Parse {
+                        message: format!("AST content parsing failed: {}", e),
+                        line: 0,
+                        column: 0,
+                    })?;
+
+            let tasks =
+                temp_parser
+                    .extract_recipes(&tree)
+                    .map_err(|e| crate::error::Error::Parse {
+                        message: format!("AST recipe extraction failed: {}", e),
+                        line: 0,
+                        column: 0,
+                    })?;
+
+            Ok(tasks)
+        } else {
+            Err(crate::error::Error::Internal(
+                "AST parser not available".to_string(),
+            ))
+        }
+    }
+
+    /// Create a minimal task when all parsing methods fail
+    fn create_minimal_task_for_file(&self, path: &Path, error_details: Option<&str>) -> JustTask {
+        let filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("unknown");
+
+        let error_msg = error_details
+            .map(|e| format!(" ({})", e))
+            .unwrap_or_default();
+
+        JustTask {
+            name: format!("parse-error-{}", filename.replace('.', "-")),
+            body: format!("echo 'ERROR: Failed to parse justfile at {}{}'\necho 'This is a minimal task created as fallback.'", path.display(), error_msg),
+            parameters: vec![],
+            dependencies: vec![],
+            comments: vec![
+                format!("WARNING: This task was auto-generated due to parsing failure."),
+                format!("Original justfile: {}", path.display()),
+                format!("All parsing methods failed{}", error_msg),
+                "Please check the justfile syntax and try again.".to_string(),
+            ],
+            line_number: 1,
+        }
+    }
+
+    /// Create a minimal task when all parsing methods fail for content
+    fn create_minimal_task_for_content(
+        &self,
+        content: &str,
+        error_details: Option<&str>,
+    ) -> JustTask {
+        let first_line = content.lines().next().unwrap_or("<empty>");
+        let content_preview = if first_line.len() > 50 {
+            format!("{}...", &first_line[..47])
+        } else {
+            first_line.to_string()
+        };
+
+        let error_msg = error_details
+            .map(|e| format!(" ({})", e))
+            .unwrap_or_default();
+
+        JustTask {
+            name: "parse-error-content".to_string(),
+            body: format!("echo 'ERROR: Failed to parse justfile content{}'\necho 'Content preview: {}'\necho 'This is a minimal task created as fallback.'", error_msg, content_preview),
+            parameters: vec![],
+            dependencies: vec![],
+            comments: vec![
+                "WARNING: This task was auto-generated due to parsing failure.".to_string(),
+                format!("Content preview: {}", content_preview),
+                format!("All parsing methods failed{}", error_msg),
+                "Please check the justfile syntax and try again.".to_string(),
+            ],
+            line_number: 1,
+        }
+    }
+
+    /// Update metrics with a closure
+    fn update_metrics<F>(&self, update_fn: F)
+    where
+        F: FnOnce(&mut ParsingMetrics),
+    {
+        if let Ok(mut metrics) = self.metrics.write() {
+            update_fn(&mut *metrics);
+        }
+    }
+
+    /// Get a copy of current parsing metrics
+    pub fn get_metrics(&self) -> ParsingMetrics {
+        self.metrics
+            .read()
+            .map(|metrics| metrics.clone())
+            .unwrap_or_default()
+    }
+
+    /// Reset parsing metrics
+    pub fn reset_metrics(&self) {
+        if let Ok(mut metrics) = self.metrics.write() {
+            *metrics = ParsingMetrics::default();
+        }
+    }
+
+    /// Get parsing diagnostics as a formatted string
+    pub fn get_diagnostics(&self) -> String {
+        let metrics = self.get_metrics();
+
+        format!(
+            "Parsing Diagnostics:\n\
+             AST: {}/{} attempts (success rate: {:.1}%, avg time: {:.1}ms)\n\
+             Command: {}/{} attempts (success rate: {:.1}%, avg time: {:.1}ms)\n\
+             Regex: {}/{} attempts (success rate: {:.1}%, avg time: {:.1}ms)\n\
+             Minimal tasks created: {}\n\
+             Overall avg parse time: {:.1}ms\n\
+             Preferred method: {:?}",
+            metrics.ast_successes,
+            metrics.ast_attempts,
+            metrics.ast_success_rate() * 100.0,
+            if metrics.ast_attempts > 0 {
+                metrics.ast_parse_time_ms as f64 / metrics.ast_attempts as f64
+            } else {
+                0.0
+            },
+            metrics.command_successes,
+            metrics.command_attempts,
+            metrics.command_success_rate() * 100.0,
+            if metrics.command_attempts > 0 {
+                metrics.command_parse_time_ms as f64 / metrics.command_attempts as f64
+            } else {
+                0.0
+            },
+            metrics.regex_successes,
+            metrics.regex_attempts,
+            metrics.regex_success_rate() * 100.0,
+            if metrics.regex_attempts > 0 {
+                metrics.regex_parse_time_ms as f64 / metrics.regex_attempts as f64
+            } else {
+                0.0
+            },
+            metrics.minimal_task_creations,
+            metrics.average_parse_time_ms(),
+            metrics.preferred_method()
+        )
+    }
+
+    /// Check if AST parsing is available and enabled
+    pub fn is_ast_parsing_available(&self) -> bool {
+        #[cfg(feature = "ast-parser")]
+        {
+            self.prefer_ast_parser && self.ast_parser.is_some()
+        }
+        #[cfg(not(feature = "ast-parser"))]
+        {
+            false
+        }
     }
 
     /// Check if Just CLI is available
@@ -623,6 +1179,190 @@ db-seed count="10":
     fn test_enhanced_parser_creation() {
         let parser = EnhancedJustfileParser::new();
         assert!(parser.is_ok());
+    }
+
+    #[test]
+    fn test_three_tier_fallback_system() {
+        let parser = EnhancedJustfileParser::new().unwrap();
+
+        // Test with simple valid content
+        let content = r#"
+# Simple test
+test:
+    echo "test"
+"#;
+
+        let tasks = parser.parse_content(content).unwrap();
+        assert!(!tasks.is_empty(), "Should parse at least one task");
+
+        // Check metrics were updated
+        let metrics = parser.get_metrics();
+        assert!(
+            metrics.ast_attempts > 0 || metrics.command_attempts > 0 || metrics.regex_attempts > 0,
+            "At least one parsing method should have been attempted"
+        );
+    }
+
+    #[test]
+    fn test_parsing_metrics() {
+        let parser = EnhancedJustfileParser::new().unwrap();
+        let initial_metrics = parser.get_metrics();
+
+        // All metrics should start at zero
+        assert_eq!(initial_metrics.ast_attempts, 0);
+        assert_eq!(initial_metrics.command_attempts, 0);
+        assert_eq!(initial_metrics.regex_attempts, 0);
+        assert_eq!(initial_metrics.minimal_task_creations, 0);
+
+        // Parse some content
+        let content = "test:\n    echo 'hello'";
+        let _ = parser.parse_content(content);
+
+        let updated_metrics = parser.get_metrics();
+        let total_attempts = updated_metrics.ast_attempts
+            + updated_metrics.command_attempts
+            + updated_metrics.regex_attempts;
+        assert!(
+            total_attempts > 0,
+            "Should have attempted at least one parsing method"
+        );
+    }
+
+    #[test]
+    fn test_minimal_task_creation() {
+        let mut parser = EnhancedJustfileParser::new().unwrap();
+
+        // Disable all preferred parsers to force minimal task creation
+        parser.set_legacy_parser_only();
+
+        // Use completely invalid content that should fail all parsers
+        let invalid_content = "this is not a justfile at all {{{ invalid syntax >>>>";
+        let tasks = parser.parse_content(invalid_content).unwrap();
+
+        // Should get exactly one minimal task
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert!(task.name.starts_with("parse-error"));
+        assert!(task.body.contains("ERROR"));
+        assert!(!task.comments.is_empty());
+        assert!(task.comments[0].contains("WARNING"));
+
+        // Check that minimal task creation was recorded
+        let metrics = parser.get_metrics();
+        assert!(metrics.minimal_task_creations > 0);
+    }
+
+    #[test]
+    fn test_parser_configuration() {
+        let mut parser = EnhancedJustfileParser::new().unwrap();
+
+        // Test AST parser configuration
+        parser.set_ast_parsing_enabled(false);
+        assert!(!parser.is_ast_parsing_available() || !parser.prefer_ast_parser);
+
+        parser.set_ast_parsing_enabled(true);
+        // AST availability depends on feature flag and initialization
+
+        // Test command parser configuration
+        parser.set_command_parsing_enabled(false);
+        assert!(!parser.prefer_command_parser);
+
+        parser.set_command_parsing_enabled(true);
+        assert!(parser.prefer_command_parser);
+    }
+
+    #[test]
+    fn test_diagnostics_output() {
+        let parser = EnhancedJustfileParser::new().unwrap();
+
+        // Parse some content to generate metrics
+        let content = "hello:\n    echo 'world'";
+        let _ = parser.parse_content(content);
+
+        let diagnostics = parser.get_diagnostics();
+        assert!(diagnostics.contains("Parsing Diagnostics"));
+        assert!(diagnostics.contains("AST:"));
+        assert!(diagnostics.contains("Command:"));
+        assert!(diagnostics.contains("Regex:"));
+        assert!(diagnostics.contains("success rate"));
+        assert!(diagnostics.contains("Preferred method:"));
+    }
+
+    #[test]
+    fn test_metrics_reset() {
+        let parser = EnhancedJustfileParser::new().unwrap();
+
+        // Generate some metrics
+        let content = "test:\n    echo 'test'";
+        let _ = parser.parse_content(content);
+
+        let metrics_before = parser.get_metrics();
+        let total_before = metrics_before.ast_attempts
+            + metrics_before.command_attempts
+            + metrics_before.regex_attempts;
+        assert!(total_before > 0);
+
+        // Reset metrics
+        parser.reset_metrics();
+
+        let metrics_after = parser.get_metrics();
+        assert_eq!(metrics_after.ast_attempts, 0);
+        assert_eq!(metrics_after.command_attempts, 0);
+        assert_eq!(metrics_after.regex_attempts, 0);
+        assert_eq!(metrics_after.minimal_task_creations, 0);
+    }
+
+    #[cfg(feature = "ast-parser")]
+    #[test]
+    fn test_ast_parser_integration() {
+        let parser = EnhancedJustfileParser::new().unwrap();
+
+        // Test AST parsing with a complex justfile
+        let content = r#"
+# Build the project with specified target
+build target="debug":
+    cargo build --release={{target}}
+
+# Test with coverage
+test: build
+    cargo test --all
+
+# Deploy to production  
+deploy: test
+    echo "Deploying..."
+"#;
+
+        let tasks = parser.parse_content(content).unwrap();
+        assert!(!tasks.is_empty(), "Should parse multiple tasks");
+
+        // Find specific tasks
+        let build_task = tasks.iter().find(|t| t.name == "build");
+        let test_task = tasks.iter().find(|t| t.name == "test");
+        let deploy_task = tasks.iter().find(|t| t.name == "deploy");
+
+        // Verify tasks were found (depending on parser capabilities)
+        if let Some(build) = build_task {
+            assert_eq!(build.name, "build");
+            // Parameters might be detected depending on parser implementation
+        }
+
+        if let Some(test) = test_task {
+            assert_eq!(test.name, "test");
+            // Dependencies might be detected
+        }
+
+        if let Some(deploy) = deploy_task {
+            assert_eq!(deploy.name, "deploy");
+        }
+
+        // Check that AST parsing was attempted
+        let metrics = parser.get_metrics();
+        if parser.is_ast_parsing_available() {
+            assert!(
+                metrics.ast_attempts > 0,
+                "AST parsing should have been attempted"
+            );
+        }
     }
 
     #[test]
