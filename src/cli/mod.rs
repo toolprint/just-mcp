@@ -1060,11 +1060,11 @@ fn find_justfiles(dir: &PathBuf) -> Result<Vec<PathBuf>> {
 /// Parse a justfile and extract tasks as documents
 #[cfg(feature = "vector-search")]
 fn parse_justfile(justfile_path: &PathBuf) -> Result<Vec<Document>> {
-    use just_mcp::parser::JustfileParser;
+    use just_mcp::parser::EnhancedJustfileParser;
     use uuid::Uuid;
 
     let content = std::fs::read_to_string(justfile_path)?;
-    let parser = JustfileParser::new()?;
+    let parser = EnhancedJustfileParser::new()?;
     let tasks = parser.parse_content(&content)?;
 
     let mut documents = Vec::new();

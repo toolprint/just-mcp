@@ -51,7 +51,7 @@ fail:
     println!("Absolute justfile path: {}", justfile_path.display());
 
     // Verify the parser can read the file
-    let parser = just_mcp::parser::JustfileParser::new().unwrap();
+    let parser = just_mcp::parser::EnhancedJustfileParser::new().unwrap();
     let tasks = parser.parse_file(&justfile_path).unwrap();
     println!(
         "Parsed tasks: {:?}",

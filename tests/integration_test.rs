@@ -14,6 +14,10 @@ fn test_error_types() {
     let io_error = Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
     assert!(matches!(io_error, Error::Io(_)));
 
-    let parse_error = Error::Parse("test parse error".to_string());
-    assert!(matches!(parse_error, Error::Parse(_)));
+    let parse_error = Error::Parse {
+        message: "test parse error".to_string(),
+        line: 1,
+        column: 0,
+    };
+    assert!(matches!(parse_error, Error::Parse { .. }));
 }

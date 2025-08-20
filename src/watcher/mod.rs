@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use crate::notification::{Notification, NotificationSender};
-use crate::parser::JustfileParser;
+use crate::parser::EnhancedJustfileParser;
 use crate::registry::ToolRegistry;
 use crate::types::{JustTask, Parameter, ToolDefinition};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -15,7 +15,7 @@ use tracing::{error, info, warn};
 
 pub struct JustfileWatcher {
     registry: Arc<Mutex<ToolRegistry>>,
-    parser: JustfileParser,
+    parser: EnhancedJustfileParser,
     watched_paths: Arc<Mutex<HashSet<PathBuf>>>,
     debounce_duration: Duration,
     notification_sender: Option<NotificationSender>,
@@ -29,9 +29,41 @@ pub struct JustfileWatcher {
 
 impl JustfileWatcher {
     pub fn new(registry: Arc<Mutex<ToolRegistry>>) -> Self {
+        // Try to use enhanced parser, fall back to legacy if needed
+        let parser = if EnhancedJustfileParser::is_just_available() {
+            info!("Just CLI detected, using enhanced command-based parser");
+            EnhancedJustfileParser::new().expect("Failed to create enhanced parser")
+        } else {
+            warn!("Just CLI not available, using legacy regex-based parser");
+            EnhancedJustfileParser::new_legacy_only().expect("Failed to create legacy parser")
+        };
+
         Self {
             registry,
-            parser: JustfileParser::new().expect("Failed to create parser"),
+            parser,
+            watched_paths: Arc::new(Mutex::new(HashSet::new())),
+            debounce_duration: Duration::from_millis(500),
+            notification_sender: None,
+            tool_source_map: Arc::new(Mutex::new(HashMap::new())),
+            path_names: Arc::new(Mutex::new(HashMap::new())),
+            has_multiple_dirs: false,
+        }
+    }
+
+    /// Create a watcher with explicit parser preference for testing
+    pub fn new_with_parser_preference(
+        registry: Arc<Mutex<ToolRegistry>>,
+        prefer_command_parser: bool,
+    ) -> Self {
+        let parser = if prefer_command_parser {
+            EnhancedJustfileParser::new().expect("Failed to create enhanced parser")
+        } else {
+            EnhancedJustfileParser::new_legacy_only().expect("Failed to create legacy parser")
+        };
+
+        Self {
+            registry,
+            parser,
             watched_paths: Arc::new(Mutex::new(HashSet::new())),
             debounce_duration: Duration::from_millis(500),
             notification_sender: None,

@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::parser::JustfileParser;
+use crate::parser::EnhancedJustfileParser;
 use crate::resource_limits::{ResourceLimits, ResourceManager};
 use crate::security::{SecurityConfig, SecurityValidator};
 use crate::types::{ExecutionContext, ExecutionRequest, ExecutionResult, JustTask};
@@ -16,7 +16,7 @@ pub use crate::security::{SecurityConfig as SecConfig, SecurityValidator as SecV
 
 pub struct TaskExecutor {
     default_timeout: Duration,
-    parser: JustfileParser,
+    parser: EnhancedJustfileParser,
     justfile_cache: HashMap<PathBuf, Vec<JustTask>>,
     security_validator: SecurityValidator,
     resource_manager: Arc<ResourceManager>,
@@ -27,7 +27,7 @@ impl TaskExecutor {
         let resource_manager = Arc::new(ResourceManager::with_default());
         Self {
             default_timeout: resource_manager.get_timeout(),
-            parser: JustfileParser::new().expect("Failed to create parser"),
+            parser: EnhancedJustfileParser::new().expect("Failed to create parser"),
             justfile_cache: HashMap::new(),
             security_validator: SecurityValidator::with_default(),
             resource_manager,

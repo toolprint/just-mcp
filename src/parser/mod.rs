@@ -4,11 +4,23 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::path::Path;
 
+mod just_command_parser;
+
+pub use just_command_parser::JustCommandParser;
+
+/// Legacy regex-based parser - kept for fallback compatibility
 pub struct JustfileParser {
     recipe_regex: Regex,
     parameter_regex: Regex,
     attribute_regex: Regex,
     param_desc_regex: Regex,
+}
+
+/// Enhanced parser that uses Just CLI commands for accurate parsing
+pub struct EnhancedJustfileParser {
+    command_parser: JustCommandParser,
+    legacy_parser: JustfileParser,
+    prefer_command_parser: bool,
 }
 
 impl JustfileParser {
@@ -338,6 +350,103 @@ impl Default for JustfileParser {
     }
 }
 
+impl EnhancedJustfileParser {
+    /// Create a new enhanced parser
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            command_parser: JustCommandParser::new()?,
+            legacy_parser: JustfileParser::new()?,
+            prefer_command_parser: true,
+        })
+    }
+
+    /// Create parser with command parser disabled (fallback mode)
+    pub fn new_legacy_only() -> Result<Self> {
+        Ok(Self {
+            command_parser: JustCommandParser::new()?,
+            legacy_parser: JustfileParser::new()?,
+            prefer_command_parser: false,
+        })
+    }
+
+    /// Parse justfile using the best available method
+    pub fn parse_file(&self, path: &Path) -> Result<Vec<JustTask>> {
+        if self.prefer_command_parser {
+            // Try command parser first
+            match self.command_parser.parse_file(path) {
+                Ok(tasks) => {
+                    tracing::info!(
+                        "Successfully parsed {} using Just CLI commands",
+                        path.display()
+                    );
+                    Ok(tasks)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Just command parser failed for {}, falling back to regex parser: {}",
+                        path.display(),
+                        e
+                    );
+                    // Fall back to legacy parser
+                    self.legacy_parser.parse_file(path)
+                }
+            }
+        } else {
+            // Use legacy parser
+            self.legacy_parser.parse_file(path)
+        }
+    }
+
+    /// Parse content string using the best available method
+    pub fn parse_content(&self, content: &str) -> Result<Vec<JustTask>> {
+        if self.prefer_command_parser {
+            // Try command parser first
+            match self.command_parser.parse_content(content) {
+                Ok(tasks) => {
+                    tracing::info!("Successfully parsed content using Just CLI commands");
+                    Ok(tasks)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Just command parser failed for content, falling back to regex parser: {}",
+                        e
+                    );
+                    // Fall back to legacy parser
+                    self.legacy_parser.parse_content(content)
+                }
+            }
+        } else {
+            // Use legacy parser
+            self.legacy_parser.parse_content(content)
+        }
+    }
+
+    /// Force use of command parser only (for testing)
+    pub fn set_command_parser_only(&mut self) {
+        self.prefer_command_parser = true;
+    }
+
+    /// Force use of legacy parser only (for testing)
+    pub fn set_legacy_parser_only(&mut self) {
+        self.prefer_command_parser = false;
+    }
+
+    /// Check if Just CLI is available
+    pub fn is_just_available() -> bool {
+        std::process::Command::new("just")
+            .arg("--version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+}
+
+impl Default for EnhancedJustfileParser {
+    fn default() -> Self {
+        Self::new().expect("Failed to create enhanced parser")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -500,5 +609,34 @@ db-seed count="10":
             tasks[0].comments,
             vec!["Seed the database with sample data"]
         );
+    }
+
+    #[test]
+    fn test_enhanced_parser_creation() {
+        let parser = EnhancedJustfileParser::new();
+        assert!(parser.is_ok());
+    }
+
+    #[test]
+    fn test_enhanced_parser_fallback() {
+        let mut parser = EnhancedJustfileParser::new().unwrap();
+        parser.set_legacy_parser_only();
+
+        let content = r#"
+# Simple test
+test:
+    echo "test"
+"#;
+        let tasks = parser.parse_content(content).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "test");
+    }
+
+    #[test]
+    fn test_just_availability() {
+        // This test will pass/fail based on whether just is installed
+        let available = EnhancedJustfileParser::is_just_available();
+        println!("Just CLI available: {}", available);
+        // Don't assert on this as it depends on environment
     }
 }

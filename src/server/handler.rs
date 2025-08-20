@@ -418,7 +418,11 @@ impl MessageHandler {
         let resources = resource_provider
             .list_resources()
             .await
-            .map_err(|e| Error::Execution(format!("Failed to list resources: {e}")))?;
+            .map_err(|e| Error::Execution {
+                command: "list_resources".to_string(),
+                exit_code: None,
+                stderr: format!("Failed to list resources: {e}"),
+            })?;
 
         let result = ResourcesListResponse {
             resources,
@@ -442,7 +446,11 @@ impl MessageHandler {
         let content = resource_provider
             .read_resource(&params.uri)
             .await
-            .map_err(|e| Error::Execution(format!("Failed to read resource: {e}")))?;
+            .map_err(|e| Error::Execution {
+                command: "read_resource".to_string(),
+                exit_code: None,
+                stderr: format!("Failed to read resource: {e}"),
+            })?;
 
         let result = ResourcesReadResponse {
             contents: vec![content],
@@ -470,10 +478,15 @@ impl MessageHandler {
         };
 
         // TODO: Handle pagination with cursor
-        let resource_templates = resource_provider
-            .list_resource_templates()
-            .await
-            .map_err(|e| Error::Execution(format!("Failed to list resource templates: {e}")))?;
+        let resource_templates =
+            resource_provider
+                .list_resource_templates()
+                .await
+                .map_err(|e| Error::Execution {
+                    command: "list_resource_templates".to_string(),
+                    exit_code: None,
+                    stderr: format!("Failed to list resource templates: {e}"),
+                })?;
 
         let result = ResourceTemplatesListResponse {
             resource_templates,
@@ -500,7 +513,11 @@ impl MessageHandler {
         let completion_result = resource_provider
             .complete_resource(&completion_request)
             .await
-            .map_err(|e| Error::Execution(format!("Failed to complete resource: {e}")))?;
+            .map_err(|e| Error::Execution {
+                command: "complete_resource".to_string(),
+                exit_code: None,
+                stderr: format!("Failed to complete resource: {e}"),
+            })?;
 
         let result = CompletionCompleteResponse {
             completion: completion_result.completion,

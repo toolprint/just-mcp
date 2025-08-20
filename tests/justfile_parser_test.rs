@@ -1,9 +1,9 @@
-use just_mcp::parser::JustfileParser;
+use just_mcp::parser::EnhancedJustfileParser;
 use std::path::Path;
 
 #[test]
 fn test_parse_actual_justfile() {
-    let parser = JustfileParser::new().unwrap();
+    let parser = EnhancedJustfileParser::new().unwrap();
     let path = Path::new("justfile");
 
     let tasks = parser.parse_file(path).unwrap();
@@ -32,7 +32,7 @@ fn test_parse_actual_justfile() {
 
 #[test]
 fn test_parse_complex_justfile() {
-    let parser = JustfileParser::new().unwrap();
+    let parser = EnhancedJustfileParser::new().unwrap();
     let content = r#"
 # Variables
 export RUST_LOG := "debug"
