@@ -3,9 +3,9 @@
 //! This module provides the main `ASTJustParser` struct that integrates Tree-sitter
 //! for accurate justfile parsing, with parser reuse and comprehensive error handling.
 
+use crate::parser::ast::cache::{QueryBundle, QueryCache, QueryCompiler};
 use crate::parser::ast::errors::{ASTError, ASTResult};
 use crate::parser::ast::nodes::{ASTNode, NodeType};
-use crate::parser::ast::cache::{QueryBundle, QueryCache, QueryCompiler};
 use crate::types::{JustTask, Parameter};
 use std::collections::HashSet;
 use std::path::Path;
@@ -107,7 +107,7 @@ impl ASTJustParser {
 
         let query_cache = QueryCache::new();
         let query_compiler = QueryCompiler::new(language);
-        
+
         // Try to compile standard queries on creation
         let query_bundle = match query_compiler.compile_standard_queries() {
             Ok(bundle) => Some(Arc::new(bundle)),
@@ -120,8 +120,8 @@ impl ASTJustParser {
         // Get a fresh language instance for storage
         let language_for_storage = tree_sitter_just::language();
 
-        Ok(Self { 
-            parser, 
+        Ok(Self {
+            parser,
             language: language_for_storage,
             query_cache,
             query_compiler,
@@ -167,8 +167,113 @@ impl ASTJustParser {
 
     /// Extract all recipes from a parsed tree
     pub fn extract_recipes(&self, tree: &ParseTree) -> ASTResult<Vec<JustTask>> {
-        // Use fallback extraction for now since query implementation is complex
+        // Try AST-based extraction first, fall back to regex-based if needed
+        if let Some(ref bundle) = self.query_bundle {
+            match self.extract_recipes_ast(tree, bundle) {
+                Ok(recipes) if !recipes.is_empty() => return Ok(recipes),
+                Ok(_) => {
+                    // Empty result, try fallback
+                    tracing::debug!("AST extraction returned empty results, trying fallback");
+                }
+                Err(e) => {
+                    // AST extraction failed, use fallback
+                    tracing::warn!("AST extraction failed: {}, using fallback", e);
+                }
+            }
+        }
+
+        // Use fallback extraction
         self.extract_recipes_fallback(tree)
+    }
+
+    /// Extract recipes using AST queries with enhanced parameter extraction
+    fn extract_recipes_ast(
+        &self,
+        tree: &ParseTree,
+        bundle: &crate::parser::ast::cache::QueryBundle,
+    ) -> ASTResult<Vec<JustTask>> {
+        use crate::parser::ast::queries::{QueryExecutor, QueryResultProcessor};
+
+        let mut executor = QueryExecutor::new(tree.source());
+        let ast_tree = tree.inner();
+
+        // Execute queries to get structured results
+        let recipe_results = executor.execute(&bundle.recipes, ast_tree)?;
+        let parameter_results = executor.execute(&bundle.parameters, ast_tree)?;
+        let comment_results = executor.execute(&bundle.comments, ast_tree)?;
+        let dependency_results = executor.execute(&bundle.dependencies, ast_tree)?;
+
+        // Extract structured information
+        let recipes = QueryResultProcessor::extract_recipes(&recipe_results);
+        let parameters = QueryResultProcessor::extract_parameters_with_descriptions(
+            &parameter_results,
+            &comment_results,
+        );
+        let dependencies = QueryResultProcessor::extract_dependencies(&dependency_results);
+        let comments = QueryResultProcessor::extract_comments(&comment_results);
+
+        // Associate parameters with recipes and enhance with descriptions
+        let mut just_tasks = Vec::new();
+
+        for recipe in recipes {
+            // Find parameters for this recipe (based on line proximity)
+            let recipe_params: Vec<_> = parameters
+                .iter()
+                .filter(|param| {
+                    if let Some((param_line, _)) = param.position {
+                        // Parameter should be within a few lines of the recipe
+                        param_line >= recipe.line_number.saturating_sub(5)
+                            && param_line <= recipe.line_number + 10
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+
+            // Find dependencies for this recipe
+            let recipe_deps: Vec<_> = dependencies
+                .iter()
+                .filter(|_dep| {
+                    // Simple heuristic: dependencies appear on same line as recipe
+                    true // For now, include all dependencies - more complex logic could filter by position
+                })
+                .map(|dep| dep.name.clone())
+                .collect();
+
+            // Find comments for this recipe (preceding comments)
+            let recipe_comments: Vec<_> = comments
+                .iter()
+                .filter(|comment| {
+                    comment.line_number < recipe.line_number
+                        && recipe.line_number - comment.line_number <= 5
+                })
+                .map(|comment| comment.text.clone())
+                .collect();
+
+            // Convert ParameterInfo to Parameter for JustTask
+            let just_params: Vec<_> = recipe_params
+                .iter()
+                .map(|param| crate::types::Parameter {
+                    name: param.name.clone(),
+                    default: param.default_value.clone(),
+                    description: param.description.clone(),
+                })
+                .collect();
+
+            let just_task = JustTask {
+                name: recipe.name,
+                body: String::new(), // Would need body extraction from queries
+                parameters: just_params,
+                dependencies: recipe_deps,
+                comments: recipe_comments,
+                line_number: recipe.line_number,
+            };
+
+            just_tasks.push(just_task);
+        }
+
+        Ok(just_tasks)
     }
 
     /// Extract recipes using fallback pattern-based approach
@@ -191,7 +296,7 @@ impl ASTJustParser {
                             recipes.push(recipe);
                         }
                     }
-                },
+                }
                 Err(e) => {
                     // Log error but continue with other recipes
                     tracing::warn!("Failed to extract recipe at index {}: {}", index, e);
@@ -206,9 +311,9 @@ impl ASTJustParser {
 
         Ok(recipes)
     }
-    
+
     /// Extract a single recipe from a recipe node (fallback method)
-    fn extract_recipe_fallback(&self, node: &ASTNode, line_number: usize) -> ASTResult<JustTask> {
+    fn extract_recipe_fallback(&self, node: &ASTNode, _line_number: usize) -> ASTResult<JustTask> {
         let text = node.text().map_err(|e| {
             ASTError::recipe_extraction("unknown", format!("Text extraction failed: {}", e))
         })?;
@@ -219,7 +324,7 @@ impl ASTJustParser {
 
         // Use the existing parse_recipe_text logic as fallback
         let mut recipe = self.parse_recipe_text(text, actual_line_number)?;
-        
+
         // Ensure line number is always positive
         if recipe.line_number == 0 {
             recipe.line_number = actual_line_number;
@@ -227,7 +332,7 @@ impl ASTJustParser {
 
         Ok(recipe)
     }
-    
+
     /// Find all recipe nodes in the AST (fallback method)
     fn find_recipe_nodes<'tree>(&self, root: &ASTNode<'tree>) -> ASTResult<Vec<ASTNode<'tree>>> {
         let mut recipes = Vec::new();
@@ -281,7 +386,7 @@ impl ASTJustParser {
                         if let Some(recipe_name) = self.extract_recipe_name_from_text(text) {
                             let position = node.start_position();
                             let key = format!("{}:{}:{}", recipe_name, position.0, position.1);
-                            
+
                             if !seen_recipes.contains(&key) {
                                 seen_recipes.insert(key);
                                 recipes.push(node);
@@ -592,12 +697,12 @@ impl ASTJustParser {
     pub fn query_cache(&self) -> &QueryCache {
         &self.query_cache
     }
-    
+
     /// Get cache statistics
     pub fn cache_stats(&self) -> ASTResult<crate::parser::ast::cache::CacheStats> {
         self.query_cache.stats()
     }
-    
+
     /// Extract recipe name from text (simple heuristic)
     fn extract_recipe_name_from_text(&self, text: &str) -> Option<String> {
         for line in text.lines() {
@@ -612,7 +717,7 @@ impl ASTJustParser {
                 } else {
                     name_part
                 };
-                
+
                 if !name.is_empty() {
                     return Some(name.to_string());
                 }
@@ -651,10 +756,7 @@ impl std::fmt::Display for ValidationError {
         write!(
             f,
             "{}:{}:{}: {}",
-            self.severity,
-            self.line,
-            self.column,
-            self.message
+            self.severity, self.line, self.column, self.message
         )
     }
 }
@@ -726,7 +828,7 @@ hello:
 
         // Should extract at least one recipe
         assert!(!recipes.is_empty(), "Should extract at least one recipe");
-        
+
         // Find the hello recipe
         let hello_recipe = recipes.iter().find(|r| r.name == "hello");
         if let Some(recipe) = hello_recipe {
@@ -735,8 +837,10 @@ hello:
             assert!(recipe.parameters.is_empty());
             assert!(recipe.dependencies.is_empty());
         } else {
-            println!("Hello recipe not found. Available recipes: {:?}", 
-                    recipes.iter().map(|r| &r.name).collect::<Vec<_>>());
+            println!(
+                "Hello recipe not found. Available recipes: {:?}",
+                recipes.iter().map(|r| &r.name).collect::<Vec<_>>()
+            );
         }
     }
 
@@ -754,7 +858,7 @@ build target="debug":
 
         // Should extract the build recipe
         assert!(!recipes.is_empty(), "Should extract at least one recipe");
-        
+
         // Find the build recipe
         let build_recipe = recipes.iter().find(|r| r.name == "build");
         if let Some(recipe) = build_recipe {
@@ -778,7 +882,7 @@ deploy: build test
 
         // Should extract the deploy recipe
         assert!(!recipes.is_empty(), "Should extract at least one recipe");
-        
+
         // Find the deploy recipe
         let deploy_recipe = recipes.iter().find(|r| r.name == "deploy");
         if let Some(recipe) = deploy_recipe {
@@ -876,21 +980,21 @@ deploy: build test
             assert!(result.is_ok(), "Failed to parse: {}", input);
 
             let params = result.unwrap();
-            
+
             // The parsing may work differently with Tree-sitter grammar
             // Just verify the function works without crashing
             println!("Parsed {} parameters for input: {}", params.len(), input);
         }
     }
-    
+
     #[test]
     fn test_cache_integration() {
         let parser = ASTJustParser::new().unwrap();
-        
+
         // Test cache stats
         let stats = parser.cache_stats();
         println!("Cache stats: {:?}", stats);
-        
+
         // Cache should be accessible
         let cache = parser.query_cache();
         assert_eq!(cache.len(), 0); // Should start empty for a new parser

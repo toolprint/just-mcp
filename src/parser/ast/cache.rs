@@ -21,7 +21,7 @@
 //!
 //! let mut cache = QueryCache::new();
 //! let compiler = QueryCompiler::new(language);
-//! 
+//!
 //! let query = cache.get_or_compile("recipe_query", pattern, &compiler)?;
 //! ```
 
@@ -121,16 +121,17 @@ impl QueryCache {
 
         // Update stats
         {
-            let mut stats = self.stats.write().map_err(|_| {
-                ASTError::internal("Failed to acquire stats write lock")
-            })?;
+            let mut stats = self
+                .stats
+                .write()
+                .map_err(|_| ASTError::internal("Failed to acquire stats write lock"))?;
             stats.misses += 1;
             stats.compilation_time_us += compilation_time;
         }
 
         let compiled_arc = Arc::new(compiled);
         self.insert(key.to_string(), compiled_arc.clone())?;
-        
+
         Ok(compiled_arc)
     }
 
@@ -151,9 +152,10 @@ impl QueryCache {
 
     /// Insert a compiled query into the cache
     pub fn insert(&self, key: String, query: Arc<CompiledQuery>) -> ASTResult<()> {
-        let mut cache = self.cache.write().map_err(|_| {
-            ASTError::internal("Failed to acquire cache write lock")
-        })?;
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|_| ASTError::internal("Failed to acquire cache write lock"))?;
 
         // Check if we need to evict items
         if cache.len() >= self.max_size {
@@ -172,18 +174,20 @@ impl QueryCache {
 
     /// Clear all cached queries
     pub fn clear(&self) -> ASTResult<()> {
-        let mut cache = self.cache.write().map_err(|_| {
-            ASTError::internal("Failed to acquire cache write lock")
-        })?;
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|_| ASTError::internal("Failed to acquire cache write lock"))?;
         cache.clear();
         Ok(())
     }
 
     /// Get cache statistics
     pub fn stats(&self) -> ASTResult<CacheStats> {
-        let stats = self.stats.read().map_err(|_| {
-            ASTError::internal("Failed to acquire stats read lock")
-        })?;
+        let stats = self
+            .stats
+            .read()
+            .map_err(|_| ASTError::internal("Failed to acquire stats read lock"))?;
         Ok(stats.clone())
     }
 
@@ -217,7 +221,7 @@ impl QueryCache {
         // In a production system, you'd implement proper LRU tracking
         if let Some(key) = cache.keys().next().cloned() {
             cache.remove(&key);
-            
+
             // Update eviction stats
             if let Ok(mut stats) = self.stats.write() {
                 stats.evictions += 1;
@@ -275,7 +279,7 @@ impl QueryCompiler {
                     depth -= 1;
                     if depth < 0 {
                         return Err(ASTError::internal(
-                            "Unbalanced parentheses in query pattern"
+                            "Unbalanced parentheses in query pattern",
                         ));
                     }
                 }
@@ -285,7 +289,7 @@ impl QueryCompiler {
 
         if depth != 0 {
             return Err(ASTError::internal(
-                "Unbalanced parentheses in query pattern"
+                "Unbalanced parentheses in query pattern",
             ));
         }
 
@@ -302,9 +306,10 @@ impl QueryCompiler {
                     let after_at = &line[at_pos + 1..];
                     if let Some(first_char) = after_at.chars().next() {
                         if !first_char.is_alphabetic() && first_char != '_' {
-                            return Err(ASTError::internal(
-                                format!("Invalid capture name starting with '{}'", first_char)
-                            ));
+                            return Err(ASTError::internal(format!(
+                                "Invalid capture name starting with '{}'",
+                                first_char
+                            )));
                         }
                     }
                 }
@@ -331,11 +336,13 @@ impl QueryCompiler {
     /// Compile all standard justfile queries into a bundle
     pub fn compile_standard_queries(&self) -> ASTResult<QueryBundle> {
         let patterns = QueryPatterns::new();
-        
+
         Ok(QueryBundle {
             recipes: Arc::new(self.compile(patterns.recipes, "recipes".to_string())?),
             parameters: Arc::new(self.compile(patterns.parameters, "parameters".to_string())?),
-            dependencies: Arc::new(self.compile(patterns.dependencies, "dependencies".to_string())?),
+            dependencies: Arc::new(
+                self.compile(patterns.dependencies, "dependencies".to_string())?,
+            ),
             comments: Arc::new(self.compile(patterns.comments, "comments".to_string())?),
             attributes: Arc::new(self.compile(patterns.attributes, "attributes".to_string())?),
             identifiers: Arc::new(self.compile(patterns.identifiers, "identifiers".to_string())?),
@@ -436,7 +443,11 @@ mod tests {
         let pattern = get_test_pattern();
 
         let result = compiler.compile(pattern, "test_query".to_string());
-        assert!(result.is_ok(), "Query compilation should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Query compilation should succeed: {:?}",
+            result.err()
+        );
 
         let compiled = result.unwrap();
         assert_eq!(compiled.name, "test_query");
@@ -460,8 +471,10 @@ mod tests {
 
         // Test balanced parentheses
         assert!(compiler.validate_pattern("(recipe) @rec").is_ok());
-        assert!(compiler.validate_pattern("(recipe (identifier) @name)").is_ok());
-        
+        assert!(compiler
+            .validate_pattern("(recipe (identifier) @name)")
+            .is_ok());
+
         // Test unbalanced parentheses
         assert!(compiler.validate_pattern("(recipe @rec").is_err());
         assert!(compiler.validate_pattern("recipe) @rec").is_err());
@@ -520,7 +533,7 @@ mod tests {
         let compiler = QueryCompiler::new(language);
 
         let result = compiler.compile_standard_queries();
-        
+
         // Some patterns might not compile with the current grammar
         // We'll verify the structure without requiring all patterns to be valid
         match result {

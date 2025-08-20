@@ -14,30 +14,59 @@ mod ast_parser_tests {
     #[test]
     fn test_recipe_name_extraction() {
         let mut parser = ASTJustParser::new().unwrap();
-        
+
         let test_cases = vec![
             ("simple", "hello:\n    echo world", vec!["hello"]),
-            ("with_params", "build target=\"debug\":\n    cargo build", vec!["build"]),
-            ("with_deps", "deploy: build test\n    echo deploying", vec!["deploy"]),
-            ("multiple", "hello:\n    echo hi\n\nbuild:\n    cargo build", vec!["hello", "build"]),
-            ("with_comments", "# Comment\nhello:\n    echo world", vec!["hello"]),
+            (
+                "with_params",
+                "build target=\"debug\":\n    cargo build",
+                vec!["build"],
+            ),
+            (
+                "with_deps",
+                "deploy: build test\n    echo deploying",
+                vec!["deploy"],
+            ),
+            (
+                "multiple",
+                "hello:\n    echo hi\n\nbuild:\n    cargo build",
+                vec!["hello", "build"],
+            ),
+            (
+                "with_comments",
+                "# Comment\nhello:\n    echo world",
+                vec!["hello"],
+            ),
         ];
 
         for (name, content, expected_names) in test_cases {
             let tree = parser.parse_content(content).unwrap();
             let recipes = parser.extract_recipes(&tree).unwrap();
-            
+
             let actual_names: Vec<&String> = recipes.iter().map(|r| &r.name).collect();
-            println!("Test '{}': expected {:?}, got {:?}", name, expected_names, actual_names);
-            
+            println!(
+                "Test '{}': expected {:?}, got {:?}",
+                name, expected_names, actual_names
+            );
+
             // Check that we extracted the expected number of recipes
-            assert_eq!(recipes.len(), expected_names.len(), 
-                      "Test '{}': expected {} recipes, got {}", name, expected_names.len(), recipes.len());
-            
+            assert_eq!(
+                recipes.len(),
+                expected_names.len(),
+                "Test '{}': expected {} recipes, got {}",
+                name,
+                expected_names.len(),
+                recipes.len()
+            );
+
             // Check that all expected recipe names are present
             for expected_name in &expected_names {
-                assert!(recipes.iter().any(|r| &r.name == expected_name), 
-                       "Test '{}': expected recipe '{}' not found", name, expected_name);
+                assert!(
+                    recipes.iter().any(|r| &r.name == expected_name),
+                    "Test '{}': expected recipe '{}' not found",
+                    name,
+                    expected_name
+                );
             }
         }
     }
@@ -46,7 +75,7 @@ mod ast_parser_tests {
     #[test]
     fn test_recipe_body_parsing() {
         let mut parser = ASTJustParser::new().unwrap();
-        
+
         let content = r#"
 # Simple recipe with body
 hello:
@@ -70,21 +99,31 @@ version:
 
         // Find the hello recipe
         let hello = recipes.iter().find(|r| r.name == "hello").unwrap();
-        assert!(hello.body.contains("echo \"Hello, World!\""), 
-               "Hello recipe body should contain echo command");
-        assert!(hello.body.contains("Another line"), 
-               "Hello recipe body should contain second line");
+        assert!(
+            hello.body.contains("echo \"Hello, World!\""),
+            "Hello recipe body should contain echo command"
+        );
+        assert!(
+            hello.body.contains("Another line"),
+            "Hello recipe body should contain second line"
+        );
 
         // Find the build recipe
         let build = recipes.iter().find(|r| r.name == "build").unwrap();
-        assert!(build.body.contains("cargo build"), 
-               "Build recipe body should contain cargo command");
-        assert!(build.body.contains("@echo"), 
-               "Build recipe body should preserve @ prefix");
+        assert!(
+            build.body.contains("cargo build"),
+            "Build recipe body should contain cargo command"
+        );
+        assert!(
+            build.body.contains("@echo"),
+            "Build recipe body should preserve @ prefix"
+        );
 
         // Check that bodies are cleaned (common indentation removed)
-        assert!(!hello.body.starts_with("    "), 
-               "Recipe body should have common indentation removed");
+        assert!(
+            !hello.body.starts_with("    "),
+            "Recipe body should have common indentation removed"
+        );
 
         println!("Hello recipe body:\n{}", hello.body);
         println!("Build recipe body:\n{}", build.body);
@@ -94,7 +133,7 @@ version:
     #[test]
     fn test_position_tracking() {
         let mut parser = ASTJustParser::new().unwrap();
-        
+
         let content = r#"# Just-MCP Demo Justfile
 
 # Default recipe
@@ -125,18 +164,24 @@ build target="debug":
         let build_recipe = recipes.iter().find(|r| r.name == "build");
 
         if let Some(default) = default_recipe {
-            assert!(default.line_number >= 3 && default.line_number <= 5, 
-                   "Default recipe should be around line 4");
+            assert!(
+                default.line_number >= 3 && default.line_number <= 5,
+                "Default recipe should be around line 4"
+            );
         }
 
         if let Some(hello) = hello_recipe {
-            assert!(hello.line_number >= 6 && hello.line_number <= 9, 
-                   "Hello recipe should be around line 7-8");
+            assert!(
+                hello.line_number >= 6 && hello.line_number <= 9,
+                "Hello recipe should be around line 7-8"
+            );
         }
 
         if let Some(build) = build_recipe {
-            assert!(build.line_number >= 10, 
-                   "Build recipe should be after line 10");
+            assert!(
+                build.line_number >= 10,
+                "Build recipe should be after line 10"
+            );
         }
     }
 
@@ -144,7 +189,7 @@ build target="debug":
     #[test]
     fn test_parameter_extraction() {
         let mut parser = ASTJustParser::new().unwrap();
-        
+
         let content = r#"
 # No parameters
 simple:
@@ -168,7 +213,10 @@ deploy env stage="staging":
 
         // Test simple recipe (no parameters)
         let simple = recipes.iter().find(|r| r.name == "simple").unwrap();
-        assert!(simple.parameters.is_empty(), "Simple recipe should have no parameters");
+        assert!(
+            simple.parameters.is_empty(),
+            "Simple recipe should have no parameters"
+        );
 
         // Test greet recipe (one parameter with default)
         let greet = recipes.iter().find(|r| r.name == "greet");
@@ -191,7 +239,7 @@ deploy env stage="staging":
     #[test]
     fn test_dependency_extraction() {
         let mut parser = ASTJustParser::new().unwrap();
-        
+
         let content = r#"
 # No dependencies
 clean:
@@ -215,7 +263,10 @@ full-pipeline: clean test build deploy
 
         // Test clean recipe (no dependencies)
         let clean = recipes.iter().find(|r| r.name == "clean").unwrap();
-        assert!(clean.dependencies.is_empty(), "Clean recipe should have no dependencies");
+        assert!(
+            clean.dependencies.is_empty(),
+            "Clean recipe should have no dependencies"
+        );
 
         // Test test recipe (depends on clean)
         let test = recipes.iter().find(|r| r.name == "test");
@@ -238,7 +289,7 @@ full-pipeline: clean test build deploy
     #[test]
     fn test_recipe_validation() {
         let mut parser = ASTJustParser::new().unwrap();
-        
+
         // Test valid content
         let valid_content = r#"
 hello:
@@ -250,20 +301,26 @@ build target="debug":
 
         let tree = parser.parse_content(valid_content).unwrap();
         let recipes = parser.extract_recipes(&tree).unwrap();
-        
+
         // Basic validation checks
         for recipe in &recipes {
             assert!(!recipe.name.is_empty(), "Recipe name should not be empty");
             assert!(recipe.line_number > 0, "Line number should be positive");
-            
+
             // Recipe names should be valid identifiers
-            assert!(recipe.name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-'), 
-                   "Recipe name '{}' should contain only valid characters", recipe.name);
+            assert!(
+                recipe
+                    .name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-'),
+                "Recipe name '{}' should contain only valid characters",
+                recipe.name
+            );
         }
 
         // Test that we can detect structure
         assert!(!recipes.is_empty(), "Should extract at least one recipe");
-        
+
         println!("Validated {} recipes successfully", recipes.len());
     }
 
@@ -271,18 +328,17 @@ build target="debug":
     #[test]
     fn test_demo_justfile_parsing() {
         let mut parser = ASTJustParser::new().unwrap();
-        
+
         // Read the demo justfile
         let demo_path = "demo/justfile";
-        let content = std::fs::read_to_string(demo_path)
-            .expect("Failed to read demo justfile");
+        let content = std::fs::read_to_string(demo_path).expect("Failed to read demo justfile");
 
         let tree = parser.parse_content(&content).unwrap();
         let recipes = parser.extract_recipes(&tree).unwrap();
 
         // The demo justfile should have many recipes
         assert!(!recipes.is_empty(), "Demo justfile should contain recipes");
-        
+
         println!("Demo justfile contains {} recipes:", recipes.len());
         for recipe in &recipes {
             println!("  - {} (line {})", recipe.name, recipe.line_number);
@@ -300,18 +356,21 @@ build target="debug":
         }
 
         // Verify we can parse at least some of the complex recipes
-        assert!(recipes.len() >= 5, "Should parse at least 5 recipes from demo");
+        assert!(
+            recipes.len() >= 5,
+            "Should parse at least 5 recipes from demo"
+        );
     }
 
     /// Test error handling and malformed input
     #[test]
     fn test_error_handling() {
         let mut parser = ASTJustParser::new().unwrap();
-        
+
         // Test completely invalid input
         let invalid_content = "this is not a justfile at all!!! {{{";
         let tree_result = parser.parse_content(invalid_content);
-        
+
         let recipes = match tree_result {
             Ok(tree) => parser.extract_recipes(&tree),
             Err(e) => {
@@ -320,7 +379,7 @@ build target="debug":
                 return; // Exit early, test passed
             }
         };
-        
+
         // Should either succeed with no recipes or fail gracefully
         match recipes {
             Ok(recipes) => {
@@ -349,9 +408,12 @@ goodbye:
 
         let tree = parser.parse_content(partial_content).unwrap();
         let recipes = parser.extract_recipes(&tree).unwrap();
-        
+
         // Should extract the valid recipes
-        println!("Partially valid content extracted {} recipes", recipes.len());
+        println!(
+            "Partially valid content extracted {} recipes",
+            recipes.len()
+        );
         for recipe in &recipes {
             println!("  - {}", recipe.name);
         }
@@ -361,17 +423,21 @@ goodbye:
     #[test]
     fn test_cache_integration() {
         let parser = ASTJustParser::new().unwrap();
-        
+
         // Test cache is initialized
         let cache = parser.query_cache();
         println!("Cache size: {}", cache.len());
-        
+
         // Test cache stats
         if let Ok(stats) = parser.cache_stats() {
-            println!("Cache stats: hits={}, misses={}, hit_rate={:.1}%", 
-                    stats.hits, stats.misses, stats.hit_rate());
+            println!(
+                "Cache stats: hits={}, misses={}, hit_rate={:.1}%",
+                stats.hits,
+                stats.misses,
+                stats.hit_rate()
+            );
         }
-        
+
         // Cache should start empty for a new parser
         assert_eq!(cache.len(), 0, "Cache should start empty");
     }

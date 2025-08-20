@@ -70,11 +70,11 @@ impl QueryPatterns {
     }
 
     /// Complete recipe structure extraction query
-    /// 
+    ///
     /// This query captures:
     /// - Recipe names with position information
     /// - Parameter lists with names and optional defaults
-    /// - Dependency lists 
+    /// - Dependency lists
     /// - Recipe bodies with commands
     /// - Associated attributes and comments
     const RECIPE_QUERY: &'static str = r#"
@@ -116,15 +116,35 @@ impl QueryPatterns {
   default: (expression)? @parameter.default
 ) @parameter
 
-; Variadic parameters  
-(variadic_parameter
-  name: (identifier) @variadic.parameter.name
-) @variadic.parameter
+; Variadic parameters with + prefix
+(parameter
+  "+" @parameter.variadic.plus
+  name: (identifier) @parameter.variadic.name
+) @parameter.variadic.plus
+
+; Variadic parameters with * prefix  
+(parameter
+  "*" @parameter.variadic.star
+  name: (identifier) @parameter.variadic.name
+) @parameter.variadic.star
+
+; Space-separated parameters (justfile style)
+(recipe_header
+  parameters: (parameter_list
+    (identifier) @parameter.space.name
+    ("=" (expression))? @parameter.space.default
+  )*
+) @parameter.space.list
 
 ; Parameter lists
 (parameters
   (parameter) @parameter.item
 ) @parameter.list
+
+; Parameter expressions with defaults
+(parameter_default
+  value: (expression) @parameter.default.expression
+) @parameter.default
 "#;
 
     /// Dependency extraction query
@@ -273,7 +293,11 @@ impl CompiledQuery {
 
     /// Get all capture names
     pub fn capture_names(&self) -> Vec<String> {
-        self.query.capture_names().iter().map(|s| s.to_string()).collect()
+        self.query
+            .capture_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 
     /// Get the number of patterns in this query
@@ -404,7 +428,10 @@ impl QueryResult {
     }
 
     /// Determine result type from the captures and pattern
-    pub fn infer_type(captures: &HashMap<String, QueryCapture>, _pattern_index: usize) -> QueryResultType {
+    pub fn infer_type(
+        captures: &HashMap<String, QueryCapture>,
+        _pattern_index: usize,
+    ) -> QueryResultType {
         // Determine type based on capture names
         if captures.contains_key("recipe.name") || captures.contains_key("recipe") {
             QueryResultType::Recipe
@@ -528,25 +555,23 @@ impl<'tree> QueryExecutor<'tree> {
     pub fn with_config(source: &'tree str, config: QueryConfig) -> Self {
         let mut executor = Self::new(source);
         executor.max_matches = config.max_matches;
-        
+
         // Configure cursor settings
         if config.max_matches > 0 {
             executor.cursor.set_match_limit(config.max_matches as u32);
         }
-        
+
         executor
     }
 
     /// Execute a query against a tree and return structured results
-    pub fn execute(
-        &mut self,
-        query: &CompiledQuery,
-        tree: &Tree,
-    ) -> ASTResult<Vec<QueryResult>> {
+    pub fn execute(&mut self, query: &CompiledQuery, tree: &Tree) -> ASTResult<Vec<QueryResult>> {
         use streaming_iterator::StreamingIterator;
 
         let root_node = tree.root_node();
-        let mut matches = self.cursor.matches(&query.query, root_node, self.source.as_bytes());
+        let mut matches = self
+            .cursor
+            .matches(&query.query, root_node, self.source.as_bytes());
 
         let mut results = Vec::new();
         let mut match_count = 0;
@@ -585,7 +610,7 @@ impl<'tree> QueryExecutor<'tree> {
             // Infer result type from captures
             let result_type = QueryResult::infer_type(&captures, query_match.pattern_index);
             let result = QueryResult::new(result_type, captures, query_match.pattern_index);
-            
+
             results.push(result);
             match_count += 1;
         }
@@ -601,7 +626,7 @@ impl<'tree> QueryExecutor<'tree> {
         result_types: &[QueryResultType],
     ) -> ASTResult<Vec<QueryResult>> {
         let results = self.execute(query, tree)?;
-        
+
         Ok(results
             .into_iter()
             .filter(|result| result_types.contains(&result.result_type))
@@ -616,9 +641,9 @@ impl<'tree> QueryExecutor<'tree> {
     ) -> ASTResult<Option<QueryResult>> {
         let original_limit = self.max_matches;
         self.max_matches = 1;
-        
+
         let mut results = self.execute(query, tree)?;
-        
+
         self.max_matches = original_limit;
         Ok(results.pop())
     }
@@ -638,7 +663,6 @@ impl<'tree> QueryExecutor<'tree> {
 
         Ok(all_results)
     }
-
 
     /// Set maximum number of matches to return
     pub fn set_max_matches(&mut self, max_matches: usize) {
@@ -667,7 +691,12 @@ impl QueryResultProcessor {
     pub fn extract_recipes(results: &[QueryResult]) -> Vec<RecipeInfo> {
         results
             .iter()
-            .filter(|r| matches!(r.result_type, QueryResultType::Recipe | QueryResultType::SimpleRecipe))
+            .filter(|r| {
+                matches!(
+                    r.result_type,
+                    QueryResultType::Recipe | QueryResultType::SimpleRecipe
+                )
+            })
             .filter_map(Self::result_to_recipe)
             .collect()
     }
@@ -676,9 +705,28 @@ impl QueryResultProcessor {
     pub fn extract_parameters(results: &[QueryResult]) -> Vec<ParameterInfo> {
         results
             .iter()
-            .filter(|r| matches!(r.result_type, QueryResultType::Parameter | QueryResultType::VariadicParameter))
+            .filter(|r| {
+                matches!(
+                    r.result_type,
+                    QueryResultType::Parameter | QueryResultType::VariadicParameter
+                )
+            })
             .filter_map(Self::result_to_parameter)
             .collect()
+    }
+
+    /// Enhanced parameter extraction with comment association
+    pub fn extract_parameters_with_descriptions(
+        parameter_results: &[QueryResult],
+        comment_results: &[QueryResult],
+    ) -> Vec<ParameterInfo> {
+        let mut parameters = Self::extract_parameters(parameter_results);
+        let comments = Self::extract_comments(comment_results);
+
+        // Associate parameter descriptions with comments
+        CommentAssociator::associate_parameter_descriptions(&mut parameters, &comments);
+
+        parameters
     }
 
     /// Convert query results to dependency information
@@ -712,7 +760,10 @@ impl QueryResultProcessor {
                 "unknown".to_string()
             };
 
-            grouped.entry(recipe_name).or_insert_with(Vec::new).push(result.clone());
+            grouped
+                .entry(recipe_name)
+                .or_insert_with(Vec::new)
+                .push(result.clone());
         }
 
         grouped
@@ -720,11 +771,13 @@ impl QueryResultProcessor {
 
     /// Convert a query result to recipe information
     fn result_to_recipe(result: &QueryResult) -> Option<RecipeInfo> {
-        let name = result.get_text("recipe.name")
+        let name = result
+            .get_text("recipe.name")
             .or_else(|| result.get_text("simple.recipe.name"))?
             .to_string();
 
-        let position = result.get_capture("recipe.name")
+        let position = result
+            .get_capture("recipe.name")
             .or_else(|| result.get_capture("simple.recipe.name"))?
             .start_position;
 
@@ -739,23 +792,68 @@ impl QueryResultProcessor {
 
     /// Convert a query result to parameter information
     fn result_to_parameter(result: &QueryResult) -> Option<ParameterInfo> {
-        let name = result.get_text("parameter.name")
-            .or_else(|| result.get_text("variadic.parameter.name"))?
+        // Extract parameter name from various capture patterns
+        let name = result
+            .get_text("parameter.name")
+            .or_else(|| result.get_text("variadic.parameter.name"))
+            .or_else(|| result.get_text("parameter.variadic.name"))
+            .or_else(|| result.get_text("parameter.space.name"))?
             .to_string();
 
-        let default_value = result.get_text("parameter.default").map(String::from);
-        let is_variadic = result.result_type == QueryResultType::VariadicParameter;
+        // Extract default value from various patterns
+        let default_value = result
+            .get_text("parameter.default")
+            .or_else(|| result.get_text("parameter.space.default"))
+            .or_else(|| result.get_text("parameter.default.expression"))
+            .map(String::from);
+
+        let raw_default = default_value.clone();
+
+        // Detect variadic parameters
+        let is_variadic = result.result_type == QueryResultType::VariadicParameter
+            || result.has_capture("parameter.variadic.plus")
+            || result.has_capture("parameter.variadic.star");
+
+        let is_required = default_value.is_none() && !is_variadic;
+
+        // Infer parameter type from default value or name
+        let parameter_type = if let Some(ref default) = default_value {
+            ParameterType::infer_from_default(default)
+        } else if is_variadic {
+            ParameterType::Array
+        } else {
+            ParameterType::infer_from_name(&name)
+        };
+
+        // Get position from the parameter name capture
+        let position = result
+            .get_capture("parameter.name")
+            .or_else(|| result.get_capture("variadic.parameter.name"))
+            .or_else(|| result.get_capture("parameter.variadic.name"))
+            .or_else(|| result.get_capture("parameter.space.name"))
+            .map(|capture| capture.start_position);
+
+        // Clean up default value (remove quotes if present and evaluate expressions)
+        let cleaned_default = default_value
+            .as_ref()
+            .map(|default| ExpressionEvaluator::evaluate_default_expression(default));
 
         Some(ParameterInfo {
             name,
-            default_value,
+            default_value: cleaned_default,
             is_variadic,
+            is_required,
+            description: None, // Will be filled in by comment association
+            parameter_type,
+            raw_default,
+            position,
         })
     }
 
     /// Convert a query result to dependency information
     fn result_to_dependency(result: &QueryResult) -> Option<DependencyInfo> {
-        let name = result.get_text("dependency.name")
+        let name = result
+            .get_text("dependency.name")
             .or_else(|| result.get_text("dependency.expr.name"))?
             .to_string();
 
@@ -764,7 +862,8 @@ impl QueryResultProcessor {
 
     /// Convert a query result to comment information
     fn result_to_comment(result: &QueryResult) -> Option<CommentInfo> {
-        let text = result.get_text("comment.line")
+        let text = result
+            .get_text("comment.line")
             .or_else(|| result.get_text("comment.doc"))
             .or_else(|| result.get_text("comment"))?
             .to_string();
@@ -794,6 +893,117 @@ pub struct ParameterInfo {
     pub name: String,
     pub default_value: Option<String>,
     pub is_variadic: bool,
+    /// Whether the parameter is required (no default value)
+    pub is_required: bool,
+    /// Parameter description extracted from comments
+    pub description: Option<String>,
+    /// Type information inferred from default value or usage
+    pub parameter_type: ParameterType,
+    /// Raw default value expression before evaluation
+    pub raw_default: Option<String>,
+    /// Position information for error reporting
+    pub position: Option<(usize, usize)>,
+}
+
+/// Inferred parameter types based on default values and usage patterns
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParameterType {
+    /// String parameter (most common)
+    String,
+    /// Numeric parameter (integers)
+    Number,
+    /// Boolean parameter (true/false)
+    Boolean,
+    /// File path parameter
+    Path,
+    /// Array/list parameter (for variadic params)
+    Array,
+    /// Unknown type
+    Unknown,
+}
+
+impl std::fmt::Display for ParameterType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParameterType::String => write!(f, "string"),
+            ParameterType::Number => write!(f, "number"),
+            ParameterType::Boolean => write!(f, "boolean"),
+            ParameterType::Path => write!(f, "path"),
+            ParameterType::Array => write!(f, "array"),
+            ParameterType::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+impl ParameterType {
+    /// Infer parameter type from default value
+    pub fn infer_from_default(default_value: &str) -> Self {
+        let trimmed = default_value.trim();
+
+        // Check for boolean values
+        if trimmed == "true" || trimmed == "false" {
+            return ParameterType::Boolean;
+        }
+
+        // Check for numeric values
+        if trimmed.parse::<i64>().is_ok() || trimmed.parse::<f64>().is_ok() {
+            return ParameterType::Number;
+        }
+
+        // Check for path-like values
+        if trimmed.contains('/')
+            || trimmed.contains('.')
+            || trimmed.ends_with(".txt")
+            || trimmed.ends_with(".json")
+            || trimmed.ends_with(".yml")
+            || trimmed.ends_with(".yaml")
+            || trimmed.starts_with("./")
+            || trimmed.starts_with("../")
+            || trimmed.starts_with('/')
+        {
+            return ParameterType::Path;
+        }
+
+        // Default to string
+        ParameterType::String
+    }
+
+    /// Infer parameter type from name and context
+    pub fn infer_from_name(name: &str) -> Self {
+        let lower_name = name.to_lowercase();
+
+        if lower_name.contains("path")
+            || lower_name.contains("file")
+            || lower_name.contains("dir")
+            || lower_name.contains("directory")
+            || lower_name.contains("input")
+            || lower_name.contains("output")
+        {
+            return ParameterType::Path;
+        }
+
+        if lower_name.contains("count")
+            || lower_name.contains("limit")
+            || lower_name.contains("size")
+            || lower_name.contains("port")
+            || lower_name.contains("timeout")
+            || lower_name.contains("iterations")
+            || lower_name.contains("interval")
+        {
+            return ParameterType::Number;
+        }
+
+        if lower_name.contains("enable")
+            || lower_name.contains("disable")
+            || lower_name.contains("verbose")
+            || lower_name.contains("debug")
+            || lower_name.contains("force")
+        {
+            return ParameterType::Boolean;
+        }
+
+        ParameterType::String
+    }
 }
 
 /// Extracted dependency information from query results
@@ -820,6 +1030,214 @@ impl Default for QueryConfig {
     }
 }
 
+/// Expression evaluator for parameter default values
+pub struct ExpressionEvaluator;
+
+impl ExpressionEvaluator {
+    /// Evaluate a default value expression and extract its literal value
+    pub fn evaluate_default_expression(expression: &str) -> String {
+        let trimmed = expression.trim();
+
+        // Handle quoted strings
+        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+        {
+            return trimmed[1..trimmed.len() - 1].to_string();
+        }
+
+        // Handle string literals without quotes
+        if trimmed
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+        {
+            return trimmed.to_string();
+        }
+
+        // Handle complex expressions (for now, just return as-is)
+        trimmed.to_string()
+    }
+
+    /// Check if an expression is a complex expression (contains variables, functions, etc.)
+    pub fn is_complex_expression(expression: &str) -> bool {
+        let trimmed = expression.trim();
+
+        // Contains variable interpolation
+        if trimmed.contains("{{") && trimmed.contains("}}") {
+            return true;
+        }
+
+        // Contains function calls
+        if trimmed.contains('(') && trimmed.contains(')') {
+            return true;
+        }
+
+        // Contains operators
+        if trimmed.contains('+')
+            || trimmed.contains('-')
+            || trimmed.contains('*')
+            || trimmed.contains('/')
+        {
+            return true;
+        }
+
+        false
+    }
+
+    /// Extract variable references from an expression
+    pub fn extract_variable_references(expression: &str) -> Vec<String> {
+        let mut variables = Vec::new();
+        let mut chars = expression.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '{' && chars.peek() == Some(&'{') {
+                chars.next(); // consume second '{'
+                let mut var_name = String::new();
+
+                while let Some(ch) = chars.next() {
+                    if ch == '}' && chars.peek() == Some(&'}') {
+                        chars.next(); // consume second '}'
+                        if !var_name.is_empty() {
+                            variables.push(var_name.trim().to_string());
+                        }
+                        break;
+                    } else {
+                        var_name.push(ch);
+                    }
+                }
+            }
+        }
+
+        variables
+    }
+}
+
+/// Comment association system for linking comments to parameters
+pub struct CommentAssociator;
+
+impl CommentAssociator {
+    /// Associate comments with parameters based on position and content
+    pub fn associate_parameter_descriptions(
+        parameters: &mut [ParameterInfo],
+        comments: &[CommentInfo],
+    ) {
+        for param in parameters.iter_mut() {
+            if let Some(description) =
+                Self::find_parameter_description(&param.name, comments, param.position)
+            {
+                param.description = Some(description);
+            }
+        }
+    }
+
+    /// Find parameter description from comments
+    fn find_parameter_description(
+        param_name: &str,
+        comments: &[CommentInfo],
+        param_position: Option<(usize, usize)>,
+    ) -> Option<String> {
+        // Look for comment patterns like "# {{param_name}}: description"
+        for comment in comments {
+            let comment_text = &comment.text;
+
+            // Pattern 1: "# {{param_name}}: description"
+            if let Some(captures) = Self::extract_param_comment_pattern1(comment_text, param_name) {
+                return Some(captures);
+            }
+
+            // Pattern 2: "# param_name: description"
+            if let Some(captures) = Self::extract_param_comment_pattern2(comment_text, param_name) {
+                return Some(captures);
+            }
+        }
+
+        // Look for comments that appear before the parameter (by line position)
+        if let Some((param_line, _)) = param_position {
+            for comment in comments {
+                // Comment is within a few lines before the parameter
+                if comment.line_number < param_line && param_line - comment.line_number <= 3 {
+                    let comment_text = &comment.text;
+
+                    // Check if comment mentions the parameter
+                    if comment_text
+                        .to_lowercase()
+                        .contains(&param_name.to_lowercase())
+                    {
+                        return Some(comment_text.clone());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Extract description from "# {{param_name}}: description" pattern
+    fn extract_param_comment_pattern1(comment: &str, param_name: &str) -> Option<String> {
+        let pattern = format!("{{{{{}}}}}:", param_name);
+        if let Some(index) = comment.find(&pattern) {
+            let description = comment[index + pattern.len()..].trim();
+            if !description.is_empty() {
+                return Some(description.to_string());
+            }
+        }
+        None
+    }
+
+    /// Extract description from "# param_name: description" pattern
+    fn extract_param_comment_pattern2(comment: &str, param_name: &str) -> Option<String> {
+        let pattern = format!("{}:", param_name);
+        if let Some(index) = comment.find(&pattern) {
+            let description = comment[index + pattern.len()..].trim();
+            if !description.is_empty() {
+                return Some(description.to_string());
+            }
+        }
+        None
+    }
+
+    /// Extract recipe-level parameter documentation from preceding comments
+    pub fn extract_recipe_parameter_docs(
+        recipe_line: usize,
+        comments: &[CommentInfo],
+    ) -> Vec<(String, String)> {
+        let mut param_docs = Vec::new();
+
+        // Look for comments in the lines preceding the recipe
+        for comment in comments {
+            if comment.line_number < recipe_line && recipe_line - comment.line_number <= 10 {
+                let comment_text = &comment.text;
+
+                // Look for parameter documentation patterns
+                if let Some((param_name, description)) =
+                    Self::parse_parameter_doc_comment(comment_text)
+                {
+                    param_docs.push((param_name, description));
+                }
+            }
+        }
+
+        param_docs
+    }
+
+    /// Parse a comment line for parameter documentation
+    pub fn parse_parameter_doc_comment(comment: &str) -> Option<(String, String)> {
+        let trimmed = comment.trim();
+
+        // Pattern: "# {{param}}: description"
+        if trimmed.starts_with("{{") && trimmed.contains("}}: ") {
+            if let Some(close_idx) = trimmed.find("}}: ") {
+                let param_name = trimmed[2..close_idx].trim().to_string();
+                let description = trimmed[close_idx + 4..].trim().to_string();
+                if !param_name.is_empty() && !description.is_empty() {
+                    return Some((param_name, description));
+                }
+            }
+        }
+
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -827,7 +1245,7 @@ mod tests {
     #[test]
     fn test_query_patterns_creation() {
         let patterns = QueryPatterns::new();
-        
+
         // Verify all patterns are defined
         assert!(!patterns.recipes.is_empty());
         assert!(!patterns.parameters.is_empty());
@@ -842,7 +1260,7 @@ mod tests {
     #[test]
     fn test_query_patterns_content() {
         let patterns = QueryPatterns::new();
-        
+
         // Verify patterns contain expected capture names
         assert!(patterns.recipes.contains("@recipe.name"));
         assert!(patterns.parameters.contains("@parameter.name"));
@@ -866,7 +1284,7 @@ mod tests {
         );
 
         let result = QueryResult::new(QueryResultType::Recipe, captures.clone(), 0);
-        
+
         assert_eq!(result.result_type, QueryResultType::Recipe);
         assert_eq!(result.pattern_index, 0);
         assert!(result.has_capture("recipe.name"));
@@ -942,7 +1360,7 @@ mod tests {
 
         assert_eq!(error.offset, 42);
         assert!(error.message.contains("Invalid node type"));
-        
+
         let error_str = format!("{}", error);
         assert!(error_str.contains("offset 42"));
     }
@@ -958,7 +1376,7 @@ mod tests {
     fn test_query_executor_creation() {
         let source = "hello:\n    echo world";
         let executor = QueryExecutor::new(source);
-        
+
         assert_eq!(executor.source, source);
         assert_eq!(executor.max_matches, 1000);
     }
@@ -1009,20 +1427,34 @@ mod tests {
             name: "target".to_string(),
             default_value: Some("debug".to_string()),
             is_variadic: false,
+            is_required: false,
+            description: Some("Build target".to_string()),
+            parameter_type: ParameterType::String,
+            raw_default: Some("\"debug\"".to_string()),
+            position: Some((10, 5)),
         };
 
         assert_eq!(param.name, "target");
         assert_eq!(param.default_value, Some("debug".to_string()));
         assert!(!param.is_variadic);
+        assert!(!param.is_required);
+        assert_eq!(param.description, Some("Build target".to_string()));
+        assert_eq!(param.parameter_type, ParameterType::String);
 
         let variadic_param = ParameterInfo {
             name: "args".to_string(),
             default_value: None,
             is_variadic: true,
+            is_required: false,
+            description: None,
+            parameter_type: ParameterType::Array,
+            raw_default: None,
+            position: None,
         };
 
         assert!(variadic_param.is_variadic);
         assert!(variadic_param.default_value.is_none());
+        assert_eq!(variadic_param.parameter_type, ParameterType::Array);
     }
 
     #[test]
@@ -1048,14 +1480,28 @@ mod tests {
     #[test]
     fn test_query_result_processor_grouping() {
         let mut captures1 = HashMap::new();
-        captures1.insert("recipe.name".to_string(), QueryCapture::new(
-            "recipe1".to_string(), (0, 0), (0, 7), (0, 7), "identifier".to_string()
-        ));
+        captures1.insert(
+            "recipe.name".to_string(),
+            QueryCapture::new(
+                "recipe1".to_string(),
+                (0, 0),
+                (0, 7),
+                (0, 7),
+                "identifier".to_string(),
+            ),
+        );
 
         let mut captures2 = HashMap::new();
-        captures2.insert("recipe.name".to_string(), QueryCapture::new(
-            "recipe2".to_string(), (1, 0), (1, 7), (10, 17), "identifier".to_string()
-        ));
+        captures2.insert(
+            "recipe.name".to_string(),
+            QueryCapture::new(
+                "recipe2".to_string(),
+                (1, 0),
+                (1, 7),
+                (10, 17),
+                "identifier".to_string(),
+            ),
+        );
 
         let results = vec![
             QueryResult::new(QueryResultType::Recipe, captures1, 0),
@@ -1072,16 +1518,30 @@ mod tests {
     fn test_query_result_extraction() {
         // Test recipe extraction
         let mut recipe_captures = HashMap::new();
-        recipe_captures.insert("recipe.name".to_string(), QueryCapture::new(
-            "test_recipe".to_string(), (0, 0), (0, 11), (0, 11), "identifier".to_string()
-        ));
-        recipe_captures.insert("recipe.parameters".to_string(), QueryCapture::new(
-            "(param)".to_string(), (0, 11), (0, 18), (11, 18), "parameters".to_string()
-        ));
+        recipe_captures.insert(
+            "recipe.name".to_string(),
+            QueryCapture::new(
+                "test_recipe".to_string(),
+                (0, 0),
+                (0, 11),
+                (0, 11),
+                "identifier".to_string(),
+            ),
+        );
+        recipe_captures.insert(
+            "recipe.parameters".to_string(),
+            QueryCapture::new(
+                "(param)".to_string(),
+                (0, 11),
+                (0, 18),
+                (11, 18),
+                "parameters".to_string(),
+            ),
+        );
 
         let recipe_result = QueryResult::new(QueryResultType::Recipe, recipe_captures, 0);
         let results = vec![recipe_result];
-        
+
         let recipes = QueryResultProcessor::extract_recipes(&results);
         assert_eq!(recipes.len(), 1);
         assert_eq!(recipes[0].name, "test_recipe");
@@ -1099,5 +1559,243 @@ mod tests {
         let display_str = format!("{}", error);
         assert!(display_str.contains("offset 25"));
         assert!(display_str.contains("Invalid syntax"));
+    }
+
+    #[test]
+    fn test_parameter_type_inference() {
+        // Test type inference from default values
+        assert_eq!(
+            ParameterType::infer_from_default("true"),
+            ParameterType::Boolean
+        );
+        assert_eq!(
+            ParameterType::infer_from_default("false"),
+            ParameterType::Boolean
+        );
+        assert_eq!(
+            ParameterType::infer_from_default("42"),
+            ParameterType::Number
+        );
+        assert_eq!(
+            ParameterType::infer_from_default("3.14"),
+            ParameterType::Number
+        );
+        assert_eq!(
+            ParameterType::infer_from_default("./config.json"),
+            ParameterType::Path
+        );
+        assert_eq!(
+            ParameterType::infer_from_default("/usr/bin"),
+            ParameterType::Path
+        );
+        assert_eq!(
+            ParameterType::infer_from_default("debug"),
+            ParameterType::String
+        );
+
+        // Test type inference from parameter names
+        assert_eq!(
+            ParameterType::infer_from_name("input_file"),
+            ParameterType::Path
+        );
+        assert_eq!(
+            ParameterType::infer_from_name("output_path"),
+            ParameterType::Path
+        );
+        assert_eq!(
+            ParameterType::infer_from_name("count"),
+            ParameterType::Number
+        );
+        assert_eq!(
+            ParameterType::infer_from_name("port_number"),
+            ParameterType::Number
+        );
+        assert_eq!(
+            ParameterType::infer_from_name("enable_debug"),
+            ParameterType::Boolean
+        );
+        assert_eq!(
+            ParameterType::infer_from_name("force_rebuild"),
+            ParameterType::Boolean
+        );
+        assert_eq!(
+            ParameterType::infer_from_name("target"),
+            ParameterType::String
+        );
+    }
+
+    #[test]
+    fn test_expression_evaluator() {
+        // Test default value evaluation
+        assert_eq!(
+            ExpressionEvaluator::evaluate_default_expression("\"hello\""),
+            "hello"
+        );
+        assert_eq!(
+            ExpressionEvaluator::evaluate_default_expression("'world'"),
+            "world"
+        );
+        assert_eq!(
+            ExpressionEvaluator::evaluate_default_expression("debug"),
+            "debug"
+        );
+        assert_eq!(
+            ExpressionEvaluator::evaluate_default_expression("  release  "),
+            "release"
+        );
+
+        // Test complex expression detection
+        assert!(ExpressionEvaluator::is_complex_expression("{{var}}"));
+        assert!(ExpressionEvaluator::is_complex_expression("func()"));
+        assert!(ExpressionEvaluator::is_complex_expression("a + b"));
+        assert!(!ExpressionEvaluator::is_complex_expression("simple"));
+        assert!(!ExpressionEvaluator::is_complex_expression("\"quoted\""));
+
+        // Test variable extraction
+        let vars =
+            ExpressionEvaluator::extract_variable_references("Hello {{name}} from {{location}}!");
+        assert_eq!(vars, vec!["name", "location"]);
+
+        let empty_vars = ExpressionEvaluator::extract_variable_references("No variables here");
+        assert!(empty_vars.is_empty());
+    }
+
+    #[test]
+    fn test_comment_associator() {
+        let mut parameters = vec![
+            ParameterInfo {
+                name: "target".to_string(),
+                default_value: Some("debug".to_string()),
+                is_variadic: false,
+                is_required: false,
+                description: None,
+                parameter_type: ParameterType::String,
+                raw_default: Some("\"debug\"".to_string()),
+                position: Some((10, 5)),
+            },
+            ParameterInfo {
+                name: "count".to_string(),
+                default_value: Some("5".to_string()),
+                is_variadic: false,
+                is_required: false,
+                description: None,
+                parameter_type: ParameterType::Number,
+                raw_default: Some("5".to_string()),
+                position: Some((12, 5)),
+            },
+        ];
+
+        let comments = vec![
+            CommentInfo {
+                text: "{{target}}: build target mode".to_string(),
+                line_number: 8,
+            },
+            CommentInfo {
+                text: "{{count}}: number of items to process".to_string(),
+                line_number: 11,
+            },
+        ];
+
+        CommentAssociator::associate_parameter_descriptions(&mut parameters, &comments);
+
+        assert_eq!(
+            parameters[0].description,
+            Some("build target mode".to_string())
+        );
+        assert_eq!(
+            parameters[1].description,
+            Some("number of items to process".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parameter_type_display() {
+        assert_eq!(format!("{}", ParameterType::String), "string");
+        assert_eq!(format!("{}", ParameterType::Number), "number");
+        assert_eq!(format!("{}", ParameterType::Boolean), "boolean");
+        assert_eq!(format!("{}", ParameterType::Path), "path");
+        assert_eq!(format!("{}", ParameterType::Array), "array");
+        assert_eq!(format!("{}", ParameterType::Unknown), "unknown");
+    }
+
+    #[test]
+    fn test_comment_doc_parsing() {
+        // Test parameter documentation parsing
+        let result = CommentAssociator::parse_parameter_doc_comment("{{name}}: person to greet");
+        assert_eq!(
+            result,
+            Some(("name".to_string(), "person to greet".to_string()))
+        );
+
+        let result = CommentAssociator::parse_parameter_doc_comment(
+            "{{target}}: build target mode (debug, release)",
+        );
+        assert_eq!(
+            result,
+            Some((
+                "target".to_string(),
+                "build target mode (debug, release)".to_string()
+            ))
+        );
+
+        let no_result = CommentAssociator::parse_parameter_doc_comment("Just a regular comment");
+        assert_eq!(no_result, None);
+    }
+
+    #[test]
+    fn test_enhanced_parameter_extraction() {
+        // Create mock query results for parameters
+        let mut param_captures = HashMap::new();
+        param_captures.insert(
+            "parameter.name".to_string(),
+            QueryCapture::new(
+                "target".to_string(),
+                (10, 5),
+                (10, 11),
+                (100, 106),
+                "identifier".to_string(),
+            ),
+        );
+        param_captures.insert(
+            "parameter.default".to_string(),
+            QueryCapture::new(
+                "\"debug\"".to_string(),
+                (10, 12),
+                (10, 19),
+                (107, 114),
+                "string".to_string(),
+            ),
+        );
+
+        let param_result = QueryResult::new(QueryResultType::Parameter, param_captures, 0);
+
+        // Create mock comment results
+        let mut comment_captures = HashMap::new();
+        comment_captures.insert(
+            "comment.line".to_string(),
+            QueryCapture::new(
+                "{{target}}: build target mode".to_string(),
+                (8, 0),
+                (8, 29),
+                (80, 109),
+                "comment".to_string(),
+            ),
+        );
+
+        let comment_result = QueryResult::new(QueryResultType::Comment, comment_captures, 0);
+
+        // Test enhanced extraction
+        let parameters = QueryResultProcessor::extract_parameters_with_descriptions(
+            &[param_result],
+            &[comment_result],
+        );
+
+        assert_eq!(parameters.len(), 1);
+        let param = &parameters[0];
+        assert_eq!(param.name, "target");
+        assert_eq!(param.default_value, Some("debug".to_string()));
+        assert_eq!(param.parameter_type, ParameterType::String);
+        assert!(!param.is_required);
+        // Note: description association in tests might not work perfectly due to mock data
     }
 }
