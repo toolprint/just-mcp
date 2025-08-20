@@ -52,6 +52,12 @@ pub struct QueryPatterns {
     pub bodies: &'static str,
     /// Query for extracting variable assignments
     pub assignments: &'static str,
+    /// Query for extracting string interpolation expressions
+    pub interpolations: &'static str,
+    /// Query for extracting string literals and processing
+    pub strings: &'static str,
+    /// Query for extracting complex expressions
+    pub expressions: &'static str,
 }
 
 impl QueryPatterns {
@@ -66,6 +72,9 @@ impl QueryPatterns {
             identifiers: Self::IDENTIFIER_QUERY,
             bodies: Self::BODY_QUERY,
             assignments: Self::ASSIGNMENT_QUERY,
+            interpolations: Self::INTERPOLATION_QUERY,
+            strings: Self::STRING_QUERY,
+            expressions: Self::EXPRESSION_QUERY,
         }
     }
 
@@ -250,6 +259,177 @@ impl QueryPatterns {
   name: (identifier) @assignment.export.name
 )
 "#;
+
+    /// String interpolation extraction
+    const INTERPOLATION_QUERY: &'static str = r#"
+; String interpolation expressions {{variable}}
+(interpolation
+  "{{" @interpolation.open
+  (expression) @interpolation.expression
+  "}}" @interpolation.close
+) @interpolation
+
+; Interpolation with simple variable
+(interpolation
+  "{{" @interpolation.var.open
+  (value
+    (identifier) @interpolation.var.name
+  ) @interpolation.var.value
+  "}}" @interpolation.var.close
+) @interpolation.variable
+
+; Interpolation with complex expression
+(interpolation
+  "{{" @interpolation.expr.open
+  (expression
+    (value) @interpolation.expr.value
+  ) @interpolation.expr.expression
+  "}}" @interpolation.expr.close
+) @interpolation.expression
+
+; Nested interpolation contexts
+(text
+  (interpolation) @interpolation.nested
+)
+
+; Recipe line interpolations
+(recipe_line
+  (text) @interpolation.context.text
+  (interpolation) @interpolation.context.expr
+)
+
+; Parameter default value interpolations
+(parameter
+  default: (value
+    (interpolation) @interpolation.default
+  )
+)
+"#;
+
+    /// String literal and processing extraction
+    const STRING_QUERY: &'static str = r#"
+; String literals in various contexts
+(string) @string.literal
+
+; String with interpolation
+(text
+  (string) @string.with_interpolation
+  (interpolation) @string.interpolation_part
+)
+
+; Quoted strings
+(value
+  (string) @string.quoted
+)
+
+; Multi-line strings (triple quotes)
+(text
+  "\"\"\"" @string.multiline.open
+  "\"\"\"" @string.multiline.close
+) @string.multiline
+
+; Raw string content
+(string
+  "\"" @string.quote.open
+  "\"" @string.quote.close
+) @string.content
+
+; External command strings (backticks)
+(external_command
+  "`" @string.command.open
+  (command_body) @string.command.body
+  "`" @string.command.close
+) @string.external
+
+; Escape sequences in strings
+(string
+  "\\" @string.escape.backslash
+) @string.with_escapes
+
+; String concatenation contexts
+(expression
+  (string) @string.concat.left
+  "+" @string.concat.operator
+  (string) @string.concat.right
+) @string.concatenation
+"#;
+
+    /// Complex expression extraction
+    const EXPRESSION_QUERY: &'static str = r#"
+; All expression types
+(expression) @expression
+
+; Simple value expressions
+(value
+  (identifier) @expression.value.identifier
+) @expression.value
+
+(value
+  (string) @expression.value.string
+) @expression.value
+
+; Function call expressions
+(expression
+  (identifier) @expression.function.name
+  "(" @expression.function.paren_open
+  ")" @expression.function.paren_close
+) @expression.function_call
+
+; Binary expressions (arithmetic, comparison)
+(expression
+  (value) @expression.binary.left
+  (identifier) @expression.binary.operator
+  (value) @expression.binary.right
+) @expression.binary
+
+; Conditional expressions
+(expression
+  "if" @expression.conditional.if
+  (expression) @expression.conditional.condition
+  "then" @expression.conditional.then
+  (expression) @expression.conditional.true_branch
+  "else" @expression.conditional.else
+  (expression) @expression.conditional.false_branch
+) @expression.conditional
+
+; Parenthesized expressions
+(expression
+  "(" @expression.paren.open
+  (expression) @expression.paren.inner
+  ")" @expression.paren.close
+) @expression.parenthesized
+
+; Variable reference expressions
+(expression
+  (identifier) @expression.variable
+) @expression.var_ref
+
+; External command expressions
+(expression
+  (external_command) @expression.external_cmd
+) @expression.command
+
+; String expressions with interpolation
+(expression
+  (text
+    (interpolation) @expression.string.interpolation
+  ) @expression.string.text
+) @expression.interpolated_string
+
+; Default value expressions in parameters
+(parameter
+  name: (identifier) @expression.param.name
+  "=" @expression.param.equals
+  default: (value) @expression.param.default
+) @expression.parameter_default
+
+; Assignment value expressions
+(assignment
+  name: (identifier) @expression.assign.name
+  ":=" @expression.assign.operator
+  value: (expression) @expression.assign.value
+) @expression.assignment_value
+"#;
 }
 
 impl Default for QueryPatterns {
@@ -340,6 +520,28 @@ pub enum QueryResultType {
     Identifier,
     /// Recipe body/command
     Body,
+    /// String interpolation expression
+    Interpolation,
+    /// Variable interpolation (simple)
+    VariableInterpolation,
+    /// Expression interpolation (complex)
+    ExpressionInterpolation,
+    /// String literal
+    StringLiteral,
+    /// String with interpolation
+    InterpolatedString,
+    /// Multi-line string
+    MultilineString,
+    /// External command string
+    ExternalCommand,
+    /// Simple expression
+    Expression,
+    /// Function call expression
+    FunctionCall,
+    /// Binary expression
+    BinaryExpression,
+    /// Conditional expression
+    ConditionalExpression,
     /// Unknown result type
     Unknown,
 }
@@ -432,15 +634,49 @@ impl QueryResult {
         captures: &HashMap<String, QueryCapture>,
         _pattern_index: usize,
     ) -> QueryResultType {
-        // Determine type based on capture names
-        if captures.contains_key("recipe.name") || captures.contains_key("recipe") {
+        // Determine type based on capture names (prioritize specific types first)
+        
+        // String interpolation types
+        if captures.contains_key("interpolation.variable") || captures.contains_key("interpolation.var.name") {
+            QueryResultType::VariableInterpolation
+        } else if captures.contains_key("interpolation.expression") || captures.contains_key("interpolation.expr.expression") {
+            QueryResultType::ExpressionInterpolation
+        } else if captures.contains_key("interpolation") || captures.contains_key("interpolation.open") {
+            QueryResultType::Interpolation
+        
+        // String types
+        } else if captures.contains_key("string.multiline") {
+            QueryResultType::MultilineString
+        } else if captures.contains_key("string.external") || captures.contains_key("string.command.body") {
+            QueryResultType::ExternalCommand
+        } else if captures.contains_key("string.with_interpolation") || captures.contains_key("string.interpolation_part") {
+            QueryResultType::InterpolatedString
+        } else if captures.contains_key("string.literal") || captures.contains_key("string.quoted") {
+            QueryResultType::StringLiteral
+        
+        // Expression types
+        } else if captures.contains_key("expression.function_call") || captures.contains_key("expression.function.name") {
+            QueryResultType::FunctionCall
+        } else if captures.contains_key("expression.binary") || captures.contains_key("expression.binary.operator") {
+            QueryResultType::BinaryExpression
+        } else if captures.contains_key("expression.conditional") || captures.contains_key("expression.conditional.if") {
+            QueryResultType::ConditionalExpression
+        } else if captures.contains_key("expression") || captures.contains_key("expression.value") {
+            QueryResultType::Expression
+        
+        // Recipe types
+        } else if captures.contains_key("recipe.name") || captures.contains_key("recipe") {
             QueryResultType::Recipe
         } else if captures.contains_key("simple.recipe.name") {
             QueryResultType::SimpleRecipe
+        
+        // Parameter types
         } else if captures.contains_key("parameter.name") || captures.contains_key("parameter") {
             QueryResultType::Parameter
         } else if captures.contains_key("variadic.parameter.name") {
             QueryResultType::VariadicParameter
+        
+        // Other types
         } else if captures.contains_key("dependency.name") || captures.contains_key("dependency") {
             QueryResultType::Dependency
         } else if captures.contains_key("comment") || captures.contains_key("comment.line") {
@@ -472,6 +708,17 @@ impl std::fmt::Display for QueryResultType {
             QueryResultType::Assignment => write!(f, "assignment"),
             QueryResultType::Identifier => write!(f, "identifier"),
             QueryResultType::Body => write!(f, "body"),
+            QueryResultType::Interpolation => write!(f, "interpolation"),
+            QueryResultType::VariableInterpolation => write!(f, "variable_interpolation"),
+            QueryResultType::ExpressionInterpolation => write!(f, "expression_interpolation"),
+            QueryResultType::StringLiteral => write!(f, "string_literal"),
+            QueryResultType::InterpolatedString => write!(f, "interpolated_string"),
+            QueryResultType::MultilineString => write!(f, "multiline_string"),
+            QueryResultType::ExternalCommand => write!(f, "external_command"),
+            QueryResultType::Expression => write!(f, "expression"),
+            QueryResultType::FunctionCall => write!(f, "function_call"),
+            QueryResultType::BinaryExpression => write!(f, "binary_expression"),
+            QueryResultType::ConditionalExpression => write!(f, "conditional_expression"),
             QueryResultType::Unknown => write!(f, "unknown"),
         }
     }
@@ -747,6 +994,92 @@ impl QueryResultProcessor {
             .collect()
     }
 
+    /// Extract interpolation information from query results
+    pub fn extract_interpolations(results: &[QueryResult]) -> Vec<InterpolationInfo> {
+        results
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r.result_type,
+                    QueryResultType::Interpolation
+                        | QueryResultType::VariableInterpolation
+                        | QueryResultType::ExpressionInterpolation
+                )
+            })
+            .filter_map(Self::result_to_interpolation)
+            .collect()
+    }
+
+    /// Extract string information from query results
+    pub fn extract_strings(results: &[QueryResult]) -> Vec<StringInfo> {
+        results
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r.result_type,
+                    QueryResultType::StringLiteral
+                        | QueryResultType::InterpolatedString
+                        | QueryResultType::MultilineString
+                        | QueryResultType::ExternalCommand
+                )
+            })
+            .filter_map(Self::result_to_string)
+            .collect()
+    }
+
+    /// Extract expression information from query results
+    pub fn extract_expressions(results: &[QueryResult]) -> Vec<ExpressionInfo> {
+        results
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r.result_type,
+                    QueryResultType::Expression
+                        | QueryResultType::FunctionCall
+                        | QueryResultType::BinaryExpression
+                        | QueryResultType::ConditionalExpression
+                )
+            })
+            .filter_map(Self::result_to_expression)
+            .collect()
+    }
+
+    /// Enhanced string extraction with interpolation processing
+    pub fn extract_strings_with_interpolations(
+        string_results: &[QueryResult],
+        interpolation_results: &[QueryResult],
+    ) -> Vec<StringInfo> {
+        let mut strings = Self::extract_strings(string_results);
+        let interpolations = Self::extract_interpolations(interpolation_results);
+
+        // Associate interpolations with strings based on position
+        for string in &mut strings {
+            if let Some(string_pos) = string.position {
+                string.interpolations = interpolations
+                    .iter()
+                    .filter(|interp| {
+                        if let Some(interp_pos) = interp.position {
+                            // Interpolation should be within the string's bounds
+                            interp_pos.0 >= string_pos.0
+                                && interp_pos.0 <= string_pos.0 + 5 // Allow some flexibility
+                        } else {
+                            false
+                        }
+                    })
+                    .cloned()
+                    .collect();
+
+                // Process the string content with interpolations
+                string.processed_content = Some(Self::process_string_with_interpolations(
+                    &string.content,
+                    &string.interpolations,
+                ));
+            }
+        }
+
+        strings
+    }
+
     /// Group results by recipe
     pub fn group_by_recipe(results: &[QueryResult]) -> HashMap<String, Vec<QueryResult>> {
         let mut grouped = HashMap::new();
@@ -897,7 +1230,7 @@ impl QueryResultProcessor {
     /// Parse dependency arguments from query result
     fn parse_dependency_arguments(result: &QueryResult) -> Vec<String> {
         let mut arguments = Vec::new();
-        
+
         // Look for argument patterns in the result
         for (capture_name, capture) in &result.captures {
             if capture_name.starts_with("dependency.arg") || capture_name.contains("argument") {
@@ -909,26 +1242,29 @@ impl QueryResultProcessor {
                 }
             }
         }
-        
+
         // If no specific argument captures found, try to parse from full text
         if arguments.is_empty() {
-            if let Some(full_text) = result.get_text("dependency.full") 
-                .or_else(|| result.get_text("dependency")) {
+            if let Some(full_text) = result
+                .get_text("dependency.full")
+                .or_else(|| result.get_text("dependency"))
+            {
                 arguments = Self::parse_arguments_from_text(full_text);
             }
         }
-        
+
         arguments
     }
 
     /// Clean argument text by removing quotes and trimming
     fn clean_argument_text(text: &str) -> String {
         let trimmed = text.trim();
-        
+
         // Remove surrounding quotes if present
-        if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
-           (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
-            trimmed[1..trimmed.len()-1].to_string()
+        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+        {
+            trimmed[1..trimmed.len() - 1].to_string()
         } else {
             trimmed.to_string()
         }
@@ -943,7 +1279,7 @@ impl QueryResultProcessor {
                 return Self::split_arguments(args_text);
             }
         }
-        
+
         // Fall back to space-separated arguments
         let parts: Vec<&str> = text.split_whitespace().collect();
         if parts.len() > 1 {
@@ -1005,6 +1341,300 @@ impl QueryResultProcessor {
             text: text.trim_start_matches('#').trim().to_string(),
             line_number: position.0 + 1,
         })
+    }
+
+    /// Convert a query result to interpolation information
+    fn result_to_interpolation(result: &QueryResult) -> Option<InterpolationInfo> {
+        // Extract the expression content
+        let expression = result
+            .get_text("interpolation.expression")
+            .or_else(|| result.get_text("interpolation.var.name"))
+            .or_else(|| result.get_text("interpolation.expr.value"))?
+            .to_string();
+
+        // Extract the full interpolation text
+        let full_text = result
+            .get_text("interpolation")
+            .or_else(|| result.get_text("interpolation.variable"))
+            .or_else(|| result.get_text("interpolation.expression"))?
+            .to_string();
+
+        // Determine interpolation type
+        let interpolation_type = Self::infer_interpolation_type(&expression, result);
+
+        // Extract position
+        let position = result
+            .get_capture("interpolation")
+            .or_else(|| result.get_capture("interpolation.variable"))
+            .or_else(|| result.get_capture("interpolation.expression"))
+            .map(|capture| capture.start_position);
+
+        // Check if it's nested
+        let is_nested = result.has_capture("interpolation.nested");
+
+        // Determine context
+        let context = Self::infer_interpolation_context(result);
+
+        Some(InterpolationInfo {
+            expression,
+            full_text,
+            interpolation_type,
+            position,
+            is_nested,
+            context,
+        })
+    }
+
+    /// Convert a query result to string information
+    fn result_to_string(result: &QueryResult) -> Option<StringInfo> {
+        // Extract the string content
+        let raw_text = result
+            .get_text("string.literal")
+            .or_else(|| result.get_text("string.quoted"))
+            .or_else(|| result.get_text("string.multiline"))
+            .or_else(|| result.get_text("string.external"))?
+            .to_string();
+
+        // Process the content (remove quotes, handle escapes)
+        let content = Self::process_string_content(&raw_text, result);
+
+        // Determine string type
+        let string_type = Self::infer_string_type(result);
+
+        // Check for escape sequences
+        let has_escapes = result.has_capture("string.with_escapes") || raw_text.contains('\\');
+
+        // Extract position
+        let position = result.captures.values().next().map(|capture| capture.start_position);
+
+        Some(StringInfo {
+            content,
+            raw_text,
+            string_type,
+            interpolations: Vec::new(), // Will be filled by enhanced extraction
+            has_escapes,
+            position,
+            processed_content: None, // Will be filled by enhanced extraction
+        })
+    }
+
+    /// Convert a query result to expression information
+    fn result_to_expression(result: &QueryResult) -> Option<ExpressionInfo> {
+        // Extract the expression text
+        let expression = result
+            .get_text("expression")
+            .or_else(|| result.get_text("expression.value"))
+            .or_else(|| result.get_text("expression.function.name"))
+            .or_else(|| result.get_text("expression.binary.left"))?
+            .to_string();
+
+        // Determine expression type
+        let expression_type = Self::infer_expression_type(result);
+
+        // Extract variable references
+        let variable_references = Self::extract_expression_variables(&expression, result);
+
+        // Extract position
+        let position = result.captures.values().next().map(|capture| capture.start_position);
+
+        // Check if static (can be evaluated at parse time)
+        let is_static = Self::is_static_expression(&expression, &expression_type);
+
+        // Determine context
+        let context = Self::infer_expression_context(result);
+
+        Some(ExpressionInfo {
+            expression,
+            expression_type,
+            sub_expressions: Vec::new(), // Could be enhanced to parse sub-expressions
+            variable_references,
+            position,
+            is_static,
+            context,
+        })
+    }
+
+    /// Process string content with interpolations
+    fn process_string_with_interpolations(
+        content: &str,
+        interpolations: &[InterpolationInfo],
+    ) -> String {
+        let mut processed = content.to_string();
+
+        // For now, just mark interpolation locations
+        // In a full implementation, this would resolve variables
+        for interp in interpolations {
+            let placeholder = format!("[INTERPOLATION:{}]", interp.expression);
+            processed = processed.replace(&interp.full_text, &placeholder);
+        }
+
+        processed
+    }
+
+    /// Infer interpolation type from content and context
+    fn infer_interpolation_type(expression: &str, result: &QueryResult) -> InterpolationType {
+        if result.result_type == QueryResultType::VariableInterpolation {
+            InterpolationType::Variable
+        } else if expression.contains('(') && expression.contains(')') {
+            InterpolationType::FunctionCall
+        } else if expression.contains("if") && expression.contains("then") {
+            InterpolationType::Conditional
+        } else if expression.contains('+') || expression.contains('-') || expression.contains('*') || expression.contains('/') {
+            InterpolationType::Arithmetic
+        } else if result.result_type == QueryResultType::ExpressionInterpolation {
+            InterpolationType::Expression
+        } else {
+            InterpolationType::Variable
+        }
+    }
+
+    /// Infer interpolation context from query result
+    fn infer_interpolation_context(result: &QueryResult) -> InterpolationContext {
+        if result.has_capture("interpolation.default") {
+            InterpolationContext::ParameterDefault
+        } else if result.has_capture("interpolation.context.text") {
+            InterpolationContext::RecipeBody
+        } else if result.has_capture("interpolation.nested") {
+            InterpolationContext::StringLiteral
+        } else {
+            InterpolationContext::Unknown
+        }
+    }
+
+    /// Process string content (remove quotes, handle basic escapes)
+    fn process_string_content(raw_text: &str, result: &QueryResult) -> String {
+        let mut content = raw_text.to_string();
+
+        // Remove quotes for different string types
+        if result.has_capture("string.multiline") {
+            // Remove triple quotes
+            if content.starts_with("\"\"\"") && content.ends_with("\"\"\"") {
+                content = content[3..content.len() - 3].to_string();
+            }
+        } else if result.has_capture("string.external") {
+            // Remove backticks
+            if content.starts_with('`') && content.ends_with('`') {
+                content = content[1..content.len() - 1].to_string();
+            }
+        } else if content.starts_with('"') && content.ends_with('"') {
+            // Remove regular quotes
+            content = content[1..content.len() - 1].to_string();
+        } else if content.starts_with('\'') && content.ends_with('\'') {
+            // Remove single quotes
+            content = content[1..content.len() - 1].to_string();
+        }
+
+        // Process basic escape sequences
+        content = Self::process_escape_sequences(&content);
+
+        content
+    }
+
+    /// Process escape sequences in strings
+    fn process_escape_sequences(content: &str) -> String {
+        content
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\r", "\r")
+            .replace("\\\\", "\\")
+            .replace("\\\"", "\"")
+            .replace("\\'", "'")
+    }
+
+    /// Infer string type from query result
+    fn infer_string_type(result: &QueryResult) -> StringType {
+        if result.has_capture("string.multiline") {
+            StringType::Multiline
+        } else if result.has_capture("string.external") || result.has_capture("string.command.body") {
+            StringType::ExternalCommand
+        } else if result.has_capture("string.with_interpolation") {
+            StringType::Interpolated
+        } else if result.has_capture("string.quoted") || result.has_capture("string.literal") {
+            StringType::Quoted
+        } else {
+            StringType::Raw
+        }
+    }
+
+    /// Infer expression type from query result
+    fn infer_expression_type(result: &QueryResult) -> ExpressionType {
+        match result.result_type {
+            QueryResultType::FunctionCall => ExpressionType::FunctionCall,
+            QueryResultType::BinaryExpression => ExpressionType::BinaryOperation,
+            QueryResultType::ConditionalExpression => ExpressionType::Conditional,
+            _ => {
+                if result.has_capture("expression.value.string") {
+                    ExpressionType::StringLiteral
+                } else if result.has_capture("expression.value.identifier") {
+                    ExpressionType::Variable
+                } else if result.has_capture("expression.external_cmd") {
+                    ExpressionType::ExternalCommand
+                } else if result.has_capture("expression.paren") {
+                    ExpressionType::Parenthesized
+                } else {
+                    ExpressionType::Unknown
+                }
+            }
+        }
+    }
+
+    /// Extract variable references from expression
+    fn extract_expression_variables(expression: &str, _result: &QueryResult) -> Vec<String> {
+        // Simple extraction - look for identifier patterns
+        // In a full implementation, this would use proper parsing
+        let mut variables = Vec::new();
+        
+        // Basic regex-like extraction for identifiers
+        let mut chars = expression.chars().peekable();
+        let mut current_word = String::new();
+        
+        while let Some(ch) = chars.next() {
+            if ch.is_alphabetic() || ch == '_' {
+                current_word.push(ch);
+            } else if ch.is_numeric() && !current_word.is_empty() {
+                current_word.push(ch);
+            } else {
+                if !current_word.is_empty() && !Self::is_keyword(&current_word) {
+                    variables.push(current_word.clone());
+                }
+                current_word.clear();
+            }
+        }
+        
+        if !current_word.is_empty() && !Self::is_keyword(&current_word) {
+            variables.push(current_word);
+        }
+        
+        variables.sort();
+        variables.dedup();
+        variables
+    }
+
+    /// Check if a word is a keyword (not a variable)
+    fn is_keyword(word: &str) -> bool {
+        matches!(word, "if" | "then" | "else" | "true" | "false" | "null")
+    }
+
+    /// Check if expression can be evaluated at parse time
+    fn is_static_expression(expression: &str, expr_type: &ExpressionType) -> bool {
+        match expr_type {
+            ExpressionType::StringLiteral | ExpressionType::NumericLiteral | ExpressionType::BooleanLiteral => true,
+            ExpressionType::Variable | ExpressionType::FunctionCall | ExpressionType::ExternalCommand => false,
+            _ => !expression.chars().any(|c| c.is_alphabetic()) // No variables
+        }
+    }
+
+    /// Infer expression context from query result
+    fn infer_expression_context(result: &QueryResult) -> ExpressionContext {
+        if result.has_capture("expression.param.default") {
+            ExpressionContext::ParameterDefault
+        } else if result.has_capture("expression.assign.value") {
+            ExpressionContext::Assignment
+        } else if result.has_capture("expression.string.interpolation") {
+            ExpressionContext::Interpolation
+        } else {
+            ExpressionContext::Unknown
+        }
     }
 }
 
@@ -1240,25 +1870,24 @@ impl DependencyInfo {
     /// Get a formatted string representation for debugging
     pub fn format_dependency(&self) -> String {
         let mut formatted = self.name.clone();
-        
+
         if self.has_arguments() {
             formatted.push('(');
             formatted.push_str(&self.arguments.join(", "));
             formatted.push(')');
         }
-        
+
         if let Some(ref condition) = self.condition {
             formatted.push_str(" if ");
             formatted.push_str(condition);
         }
-        
+
         formatted
     }
 
     /// Validate that this dependency has required information
     pub fn is_valid(&self) -> bool {
-        !self.name.is_empty() && 
-        (!self.is_conditional || self.condition.is_some())
+        !self.name.is_empty() && (!self.is_conditional || self.condition.is_some())
     }
 }
 
@@ -1267,6 +1896,160 @@ impl DependencyInfo {
 pub struct CommentInfo {
     pub text: String,
     pub line_number: usize,
+}
+
+/// Extracted interpolation information from query results
+#[derive(Debug, Clone)]
+pub struct InterpolationInfo {
+    /// The expression within the interpolation (e.g., "variable" from {{variable}})
+    pub expression: String,
+    /// The full interpolation text including braces (e.g., "{{variable}}")
+    pub full_text: String,
+    /// Type of interpolation (simple variable or complex expression)
+    pub interpolation_type: InterpolationType,
+    /// Position information for error reporting
+    pub position: Option<(usize, usize)>,
+    /// Whether this is a nested interpolation
+    pub is_nested: bool,
+    /// Context where the interpolation appears (recipe body, parameter default, etc.)
+    pub context: InterpolationContext,
+}
+
+/// Types of interpolation expressions
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InterpolationType {
+    /// Simple variable reference like {{var}}
+    Variable,
+    /// Complex expression like {{func(arg)}}
+    Expression,
+    /// Function call like {{upper(text)}}
+    FunctionCall,
+    /// Arithmetic expression like {{a + b}}
+    Arithmetic,
+    /// Conditional expression like {{if condition then value else alt}}
+    Conditional,
+}
+
+/// Context where interpolation appears
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InterpolationContext {
+    /// In recipe command body
+    RecipeBody,
+    /// In parameter default value
+    ParameterDefault,
+    /// In variable assignment
+    Assignment,
+    /// In dependency specification
+    Dependency,
+    /// In string literal
+    StringLiteral,
+    /// In comment or documentation
+    Comment,
+    /// Unknown context
+    Unknown,
+}
+
+/// Extracted string information from query results
+#[derive(Debug, Clone)]
+pub struct StringInfo {
+    /// The string content (without quotes for normal strings)
+    pub content: String,
+    /// The raw string text as it appears in source
+    pub raw_text: String,
+    /// Type of string
+    pub string_type: StringType,
+    /// List of interpolations within this string
+    pub interpolations: Vec<InterpolationInfo>,
+    /// Whether the string contains escape sequences
+    pub has_escapes: bool,
+    /// Position information for error reporting
+    pub position: Option<(usize, usize)>,
+    /// The processed content with interpolations resolved (if possible)
+    pub processed_content: Option<String>,
+}
+
+/// Types of string literals
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StringType {
+    /// Regular quoted string "text"
+    Quoted,
+    /// Multi-line string """text"""
+    Multiline,
+    /// External command string `command`
+    ExternalCommand,
+    /// Raw string without quotes
+    Raw,
+    /// String with interpolation
+    Interpolated,
+}
+
+/// Extracted expression information from query results
+#[derive(Debug, Clone)]
+pub struct ExpressionInfo {
+    /// The expression text
+    pub expression: String,
+    /// Type of expression
+    pub expression_type: ExpressionType,
+    /// Sub-expressions (for complex expressions)
+    pub sub_expressions: Vec<ExpressionInfo>,
+    /// Variable references in this expression
+    pub variable_references: Vec<String>,
+    /// Position information for error reporting
+    pub position: Option<(usize, usize)>,
+    /// Whether this expression can be evaluated at parse time
+    pub is_static: bool,
+    /// Context where the expression appears
+    pub context: ExpressionContext,
+}
+
+/// Types of expressions
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpressionType {
+    /// Simple variable reference
+    Variable,
+    /// String literal
+    StringLiteral,
+    /// Numeric literal
+    NumericLiteral,
+    /// Boolean literal
+    BooleanLiteral,
+    /// Function call
+    FunctionCall,
+    /// Binary operation (arithmetic, comparison)
+    BinaryOperation,
+    /// Unary operation
+    UnaryOperation,
+    /// Conditional expression (if-then-else)
+    Conditional,
+    /// Parenthesized expression
+    Parenthesized,
+    /// External command
+    ExternalCommand,
+    /// Interpolated string
+    InterpolatedString,
+    /// Unknown expression type
+    Unknown,
+}
+
+/// Context where expression appears
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpressionContext {
+    /// Parameter default value
+    ParameterDefault,
+    /// Variable assignment value
+    Assignment,
+    /// Interpolation content
+    Interpolation,
+    /// Function argument
+    FunctionArgument,
+    /// Conditional condition
+    ConditionalCondition,
+    /// Dependency specification
+    Dependency,
+    /// Recipe body
+    RecipeBody,
+    /// Unknown context
+    Unknown,
 }
 
 impl Default for QueryConfig {
@@ -1280,7 +2063,7 @@ impl Default for QueryConfig {
     }
 }
 
-/// Expression evaluator for parameter default values
+/// Advanced expression evaluator for parameter default values and string interpolation
 pub struct ExpressionEvaluator;
 
 impl ExpressionEvaluator {
@@ -1292,7 +2075,23 @@ impl ExpressionEvaluator {
         if (trimmed.starts_with('"') && trimmed.ends_with('"'))
             || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
         {
-            return trimmed[1..trimmed.len() - 1].to_string();
+            let content = &trimmed[1..trimmed.len() - 1];
+            return Self::process_string_escapes(content);
+        }
+
+        // Handle external commands (backticks)
+        if trimmed.starts_with('`') && trimmed.ends_with('`') {
+            return format!("[EXTERNAL_COMMAND: {}]", &trimmed[1..trimmed.len() - 1]);
+        }
+
+        // Handle boolean literals
+        if trimmed == "true" || trimmed == "false" {
+            return trimmed.to_string();
+        }
+
+        // Handle numeric literals
+        if Self::is_numeric_literal(trimmed) {
+            return trimmed.to_string();
         }
 
         // Handle string literals without quotes
@@ -1326,7 +2125,20 @@ impl ExpressionEvaluator {
             || trimmed.contains('-')
             || trimmed.contains('*')
             || trimmed.contains('/')
+            || trimmed.contains("&&")
+            || trimmed.contains("||")
+            || trimmed.contains("==")
+            || trimmed.contains("!=")
+            || trimmed.contains("<=")
+            || trimmed.contains(">=")
+            || trimmed.contains('<')
+            || trimmed.contains('>')
         {
+            return true;
+        }
+
+        // Contains conditionals
+        if trimmed.contains("if") && trimmed.contains("then") {
             return true;
         }
 
@@ -1347,7 +2159,10 @@ impl ExpressionEvaluator {
                     if ch == '}' && chars.peek() == Some(&'}') {
                         chars.next(); // consume second '}'
                         if !var_name.is_empty() {
-                            variables.push(var_name.trim().to_string());
+                            let variable = var_name.trim().to_string();
+                            // Extract the variable name from complex expressions
+                            let simple_var = Self::extract_variable_from_expression(&variable);
+                            variables.push(simple_var);
                         }
                         break;
                     } else {
@@ -1357,7 +2172,706 @@ impl ExpressionEvaluator {
             }
         }
 
+        // Also extract variables from non-interpolated contexts
+        variables.extend(Self::extract_bare_variables(expression));
+
+        variables.sort();
+        variables.dedup();
         variables
+    }
+
+    /// Process string escape sequences
+    pub fn process_string_escapes(content: &str) -> String {
+        let mut result = String::new();
+        let mut chars = content.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                if let Some(&next_ch) = chars.peek() {
+                    chars.next(); // consume the next character
+                    match next_ch {
+                        'n' => result.push('\n'),
+                        't' => result.push('\t'),
+                        'r' => result.push('\r'),
+                        '\\' => result.push('\\'),
+                        '"' => result.push('"'),
+                        '\'' => result.push('\''),
+                        '0' => result.push('\0'),
+                        'x' => {
+                            // Handle hex escapes like \x41
+                            if let (Some(d1), Some(d2)) = (chars.next(), chars.next()) {
+                                if let Ok(byte_val) = u8::from_str_radix(&format!("{}{}", d1, d2), 16) {
+                                    result.push(byte_val as char);
+                                } else {
+                                    // Invalid hex escape, treat literally
+                                    result.push('\\');
+                                    result.push('x');
+                                    result.push(d1);
+                                    result.push(d2);
+                                }
+                            } else {
+                                result.push('\\');
+                                result.push('x');
+                            }
+                        }
+                        'u' => {
+                            // Handle unicode escapes like \u{41}
+                            if chars.peek() == Some(&'{') {
+                                chars.next(); // consume '{'
+                                let mut hex_digits = String::new();
+                                while let Some(&digit) = chars.peek() {
+                                    if digit == '}' {
+                                        chars.next(); // consume '}'
+                                        break;
+                                    } else if digit.is_ascii_hexdigit() {
+                                        hex_digits.push(chars.next().unwrap());
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                
+                                if let Ok(code_point) = u32::from_str_radix(&hex_digits, 16) {
+                                    if let Some(unicode_char) = char::from_u32(code_point) {
+                                        result.push(unicode_char);
+                                    } else {
+                                        // Invalid unicode
+                                        result.push_str(&format!("\\u{{{}}}", hex_digits));
+                                    }
+                                } else {
+                                    result.push_str(&format!("\\u{{{}}}", hex_digits));
+                                }
+                            } else {
+                                result.push('\\');
+                                result.push('u');
+                            }
+                        }
+                        _ => {
+                            // Unknown escape, treat literally
+                            result.push('\\');
+                            result.push(next_ch);
+                        }
+                    }
+                } else {
+                    // Backslash at end of string
+                    result.push('\\');
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+
+        result
+    }
+
+    /// Check if a string is a numeric literal
+    pub fn is_numeric_literal(s: &str) -> bool {
+        if s.is_empty() {
+            return false;
+        }
+
+        // Handle negative numbers
+        let s = if s.starts_with('-') { &s[1..] } else { s };
+        
+        // Integer
+        if s.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+
+        // Float
+        if let Some(dot_pos) = s.find('.') {
+            let before_dot = &s[..dot_pos];
+            let after_dot = &s[dot_pos + 1..];
+            
+            return (before_dot.is_empty() || before_dot.chars().all(|c| c.is_ascii_digit()))
+                && (after_dot.is_empty() || after_dot.chars().all(|c| c.is_ascii_digit()))
+                && !(before_dot.is_empty() && after_dot.is_empty());
+        }
+
+        false
+    }
+
+    /// Evaluate interpolated strings by resolving variables and expressions
+    pub fn evaluate_interpolated_string(
+        template: &str,
+        variables: &HashMap<String, String>,
+        allow_missing: bool,
+    ) -> Result<String, String> {
+        let mut result = String::new();
+        let mut chars = template.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '{' && chars.peek() == Some(&'{') {
+                chars.next(); // consume second '{'
+                let mut expr = String::new();
+                let mut brace_count = 1;
+
+                // Handle nested braces
+                while let Some(ch) = chars.next() {
+                    if ch == '{' && chars.peek() == Some(&'{') {
+                        brace_count += 1;
+                        expr.push(ch);
+                        expr.push(chars.next().unwrap()); // consume second '{'
+                    } else if ch == '}' && chars.peek() == Some(&'}') {
+                        brace_count -= 1;
+                        if brace_count == 0 {
+                            chars.next(); // consume second '}'
+                            break;
+                        } else {
+                            expr.push(ch);
+                            expr.push(chars.next().unwrap()); // consume second '}'
+                        }
+                    } else {
+                        expr.push(ch);
+                    }
+                }
+
+                // Evaluate the expression
+                match Self::evaluate_expression(&expr, variables, allow_missing) {
+                    Ok(value) => result.push_str(&value),
+                    Err(e) => {
+                        if allow_missing {
+                            result.push_str(&format!("{{{{ {} }}}}", expr));
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Evaluate a single expression within interpolation
+    pub fn evaluate_expression(
+        expr: &str,
+        variables: &HashMap<String, String>,
+        allow_missing: bool,
+    ) -> Result<String, String> {
+        let expr = expr.trim();
+
+        // Boolean literals
+        if expr == "true" || expr == "false" {
+            return Ok(expr.to_string());
+        }
+
+        // Simple variable reference
+        if expr.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return variables
+                .get(expr)
+                .cloned()
+                .ok_or_else(|| format!("Variable '{}' not found", expr));
+        }
+
+        // Function calls (basic support)
+        if let Some(func_result) = Self::evaluate_function_call(expr, variables, allow_missing)? {
+            return Ok(func_result);
+        }
+
+        // Arithmetic expressions (basic support)
+        if let Some(arith_result) = Self::evaluate_arithmetic(expr, variables, allow_missing)? {
+            return Ok(arith_result);
+        }
+
+        // Conditional expressions (basic support)
+        if let Some(cond_result) = Self::evaluate_conditional(expr, variables, allow_missing)? {
+            return Ok(cond_result);
+        }
+
+        // String literals
+        if (expr.starts_with('"') && expr.ends_with('"'))
+            || (expr.starts_with('\'') && expr.ends_with('\''))
+        {
+            return Ok(Self::process_string_escapes(&expr[1..expr.len() - 1]));
+        }
+
+        // Numeric literals
+        if Self::is_numeric_literal(expr) {
+            return Ok(expr.to_string());
+        }
+
+        // Boolean literals
+        if expr == "true" || expr == "false" {
+            return Ok(expr.to_string());
+        }
+
+        // Default: treat as literal
+        if allow_missing {
+            Ok(expr.to_string())
+        } else {
+            Err(format!("Cannot evaluate expression: {}", expr))
+        }
+    }
+
+    /// Extract variable name from complex expressions
+    fn extract_variable_from_expression(expr: &str) -> String {
+        // For simple cases, just return the expression
+        if expr.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return expr.to_string();
+        }
+
+        // For function calls, extract the base variable if any
+        if let Some(paren_pos) = expr.find('(') {
+            let func_name = expr[..paren_pos].trim();
+            if func_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                return func_name.to_string();
+            }
+        }
+
+        // For other complex expressions, try to extract the first identifier
+        let mut result = String::new();
+        for ch in expr.chars() {
+            if ch.is_alphabetic() || ch == '_' || (!result.is_empty() && ch.is_numeric()) {
+                result.push(ch);
+            } else if !result.is_empty() {
+                break;
+            }
+        }
+
+        if result.is_empty() {
+            expr.to_string()
+        } else {
+            result
+        }
+    }
+
+    /// Extract bare variables (not in interpolation context)
+    fn extract_bare_variables(_expression: &str) -> Vec<String> {
+        // This is a simplified implementation
+        // In a full implementation, this would parse the expression properly
+        Vec::new()
+    }
+
+    /// Evaluate function calls (basic implementation)
+    fn evaluate_function_call(
+        expr: &str,
+        variables: &HashMap<String, String>,
+        allow_missing: bool,
+    ) -> Result<Option<String>, String> {
+        if !expr.contains('(') || !expr.contains(')') {
+            return Ok(None);
+        }
+
+        // Simple function call pattern: func(arg)
+        if let Some(paren_start) = expr.find('(') {
+            if let Some(paren_end) = expr.rfind(')') {
+                let func_name = expr[..paren_start].trim();
+                let args_str = &expr[paren_start + 1..paren_end];
+                
+                match func_name {
+                    "upper" | "uppercase" => {
+                        let arg = Self::evaluate_expression(args_str, variables, allow_missing)?;
+                        return Ok(Some(arg.to_uppercase()));
+                    }
+                    "lower" | "lowercase" => {
+                        let arg = Self::evaluate_expression(args_str, variables, allow_missing)?;
+                        return Ok(Some(arg.to_lowercase()));
+                    }
+                    "trim" => {
+                        let arg = Self::evaluate_expression(args_str, variables, allow_missing)?;
+                        return Ok(Some(arg.trim().to_string()));
+                    }
+                    "len" | "length" => {
+                        let arg = Self::evaluate_expression(args_str, variables, allow_missing)?;
+                        return Ok(Some(arg.len().to_string()));
+                    }
+                    _ => {
+                        // Unknown function
+                        if allow_missing {
+                            return Ok(Some(format!("{}({})", func_name, args_str)));
+                        } else {
+                            return Err(format!("Unknown function: {}", func_name));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Evaluate arithmetic expressions (basic implementation)
+    fn evaluate_arithmetic(
+        expr: &str,
+        variables: &HashMap<String, String>,
+        allow_missing: bool,
+    ) -> Result<Option<String>, String> {
+        // Very basic arithmetic - just handle simple cases
+        for op in &["+", "-", "*", "/"] {
+            if let Some(op_pos) = expr.find(op) {
+                // Skip if this might be a negative number (e.g., "-5")
+                if *op == "-" && op_pos == 0 {
+                    continue;
+                }
+                
+                let left = expr[..op_pos].trim();
+                let right = expr[op_pos + op.len()..].trim();
+                
+                // Skip empty parts
+                if left.is_empty() || right.is_empty() {
+                    continue;
+                }
+                
+                let left_val = Self::evaluate_expression(left, variables, allow_missing)?;
+                let right_val = Self::evaluate_expression(right, variables, allow_missing)?;
+                
+                // Try to parse as numbers
+                if let (Ok(left_num), Ok(right_num)) = (left_val.parse::<f64>(), right_val.parse::<f64>()) {
+                    let result = match *op {
+                        "+" => left_num + right_num,
+                        "-" => left_num - right_num,
+                        "*" => left_num * right_num,
+                        "/" => {
+                            if right_num == 0.0 {
+                                return Err("Division by zero".to_string());
+                            }
+                            left_num / right_num
+                        }
+                        _ => unreachable!(),
+                    };
+                    
+                    // Format as integer if possible
+                    if result.fract() == 0.0 {
+                        return Ok(Some((result as i64).to_string()));
+                    } else {
+                        return Ok(Some(result.to_string()));
+                    }
+                } else if *op == "+" {
+                    // String concatenation
+                    return Ok(Some(format!("{}{}", left_val, right_val)));
+                }
+            }
+        }
+        
+        Ok(None)
+    }
+
+    /// Evaluate conditional expressions (basic implementation)
+    fn evaluate_conditional(
+        expr: &str,
+        variables: &HashMap<String, String>,
+        allow_missing: bool,
+    ) -> Result<Option<String>, String> {
+        if !expr.contains("if") || !expr.contains("then") {
+            return Ok(None);
+        }
+
+        // Simple pattern: if condition then value else alt
+        let parts: Vec<&str> = expr.split_whitespace().collect();
+        if parts.len() >= 5 && parts[0] == "if" {
+            if let (Some(then_pos), Some(else_pos)) = (
+                parts.iter().position(|&x| x == "then"),
+                parts.iter().position(|&x| x == "else"),
+            ) {
+                let condition = parts[1..then_pos].join(" ");
+                let true_branch = parts[then_pos + 1..else_pos].join(" ");
+                let false_branch = parts[else_pos + 1..].join(" ");
+                
+                // Evaluate condition (very basic)
+                let cond_result = Self::evaluate_expression(&condition, variables, allow_missing)?;
+                let is_true = cond_result == "true" || cond_result == "1" || (!cond_result.is_empty() && cond_result != "false" && cond_result != "0");
+                
+                if is_true {
+                    return Ok(Some(Self::evaluate_expression(&true_branch, variables, allow_missing)?));
+                } else {
+                    return Ok(Some(Self::evaluate_expression(&false_branch, variables, allow_missing)?));
+                }
+            }
+        }
+        
+        Ok(None)
+    }
+}
+
+/// Nested interpolation and complex expression handler
+pub struct NestedInterpolationProcessor;
+
+impl NestedInterpolationProcessor {
+    /// Process nested interpolations within a string
+    /// Handles cases like "{{outer {{inner}} expression}}"
+    pub fn process_nested_interpolations(
+        template: &str,
+        variables: &HashMap<String, String>,
+        max_depth: usize,
+    ) -> Result<String, String> {
+        if max_depth == 0 {
+            return Err("Maximum interpolation depth exceeded".to_string());
+        }
+
+        let mut result = String::new();
+        let mut chars = template.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '{' && chars.peek() == Some(&'{') {
+                chars.next(); // consume second '{'
+                
+                let mut expr = String::new();
+                let mut brace_count = 1;
+
+                // Collect the complete interpolation expression, handling nested braces
+                while let Some(ch) = chars.next() {
+                    if ch == '{' && chars.peek() == Some(&'{') {
+                        brace_count += 1;
+                        expr.push(ch);
+                        expr.push(chars.next().unwrap()); // consume second '{'
+                    } else if ch == '}' && chars.peek() == Some(&'}') {
+                        brace_count -= 1;
+                        if brace_count == 0 {
+                            chars.next(); // consume second '}'
+                            break;
+                        } else {
+                            expr.push(ch);
+                            expr.push(chars.next().unwrap()); // consume second '}'
+                        }
+                    } else {
+                        expr.push(ch);
+                    }
+                }
+
+                // Process the expression, which may contain nested interpolations
+                let processed_expr = if expr.contains("{{") {
+                    // Recursively process nested interpolations
+                    Self::process_nested_interpolations(&expr, variables, max_depth - 1)?
+                } else {
+                    expr.clone()
+                };
+
+                // Evaluate the processed expression
+                match ExpressionEvaluator::evaluate_expression(&processed_expr, variables, false) {
+                    Ok(value) => result.push_str(&value),
+                    Err(_) => {
+                        // Fall back to partial evaluation or literal inclusion
+                        result.push_str(&format!("{{{{ {} }}}}", processed_expr));
+                    }
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Extract all interpolation expressions from a template, including nested ones
+    pub fn extract_all_interpolations(template: &str) -> Vec<InterpolationInfo> {
+        let mut interpolations = Vec::new();
+        let mut chars = template.chars().enumerate().peekable();
+
+        while let Some((pos, ch)) = chars.next() {
+            if ch == '{' && chars.peek().map(|(_, c)| *c) == Some('{') {
+                chars.next(); // consume second '{'
+                let start_pos = pos;
+                
+                let mut expr = String::new();
+                let mut full_text = String::from("{{");
+                let mut brace_count = 1;
+                let mut nesting_level: usize = 0;
+
+                while let Some((_, ch)) = chars.next() {
+                    full_text.push(ch);
+                    
+                    if ch == '{' && chars.peek().map(|(_, c)| *c) == Some('{') {
+                        brace_count += 1;
+                        nesting_level += 1;
+                        expr.push(ch);
+                        let (_, next_char) = chars.next().unwrap(); // consume second '{'
+                        full_text.push(next_char);
+                        expr.push(next_char);
+                    } else if ch == '}' && chars.peek().map(|(_, c)| *c) == Some('}') {
+                        brace_count -= 1;
+                        if brace_count == 0 {
+                            let (end_pos, _) = chars.next().unwrap(); // consume second '}'
+                            full_text.push('}');
+                            
+                            // Create interpolation info
+                            let interpolation_type = Self::classify_interpolation_type(&expr);
+                            let is_nested = nesting_level > 0;
+                            
+                            interpolations.push(InterpolationInfo {
+                                expression: expr.clone(),
+                                full_text: full_text.clone(),
+                                interpolation_type,
+                                position: Some((start_pos / 80, start_pos % 80)), // Rough line/col estimate
+                                is_nested,
+                                context: InterpolationContext::StringLiteral,
+                            });
+                            
+                            // If this expression contains nested interpolations, extract them too
+                            if expr.contains("{{") {
+                                let nested = Self::extract_all_interpolations(&expr);
+                                interpolations.extend(nested);
+                            }
+                            
+                            break;
+                        } else {
+                            nesting_level = nesting_level.saturating_sub(1);
+                            expr.push(ch);
+                            let (_, next_char) = chars.next().unwrap(); // consume second '}'
+                            full_text.push(next_char);
+                            expr.push(next_char);
+                        }
+                    } else {
+                        expr.push(ch);
+                    }
+                }
+            }
+        }
+
+        interpolations
+    }
+
+    /// Classify the type of interpolation based on its content
+    fn classify_interpolation_type(expr: &str) -> InterpolationType {
+        let trimmed = expr.trim();
+        
+        // Function call
+        if trimmed.contains('(') && trimmed.contains(')') {
+            InterpolationType::FunctionCall
+        }
+        // Conditional
+        else if trimmed.contains("if") && trimmed.contains("then") {
+            InterpolationType::Conditional
+        }
+        // Arithmetic
+        else if trimmed.chars().any(|c| "+-*/".contains(c)) {
+            InterpolationType::Arithmetic
+        }
+        // Complex expression (contains nested interpolations or operators)
+        else if trimmed.contains("{{") || trimmed.chars().any(|c| "()[]{}".contains(c)) {
+            InterpolationType::Expression
+        }
+        // Simple variable
+        else {
+            InterpolationType::Variable
+        }
+    }
+
+    /// Validate nested interpolation syntax
+    pub fn validate_nested_syntax(template: &str) -> Result<(), String> {
+        let mut brace_stack = Vec::new();
+        let mut chars = template.chars().enumerate().peekable();
+
+        while let Some((pos, ch)) = chars.next() {
+            if ch == '{' && chars.peek().map(|(_, c)| *c) == Some('{') {
+                chars.next(); // consume second '{'
+                brace_stack.push(pos);
+            } else if ch == '}' && chars.peek().map(|(_, c)| *c) == Some('}') {
+                chars.next(); // consume second '}'
+                if brace_stack.is_empty() {
+                    return Err(format!("Unmatched '}}' at position {}", pos));
+                }
+                brace_stack.pop();
+            }
+        }
+
+        if !brace_stack.is_empty() {
+            let unclosed_pos = brace_stack[0];
+            return Err(format!("Unclosed '{{{{' at position {}", unclosed_pos));
+        }
+
+        Ok(())
+    }
+
+    /// Check if an expression has valid nesting depth
+    pub fn check_nesting_depth(expr: &str, max_depth: usize) -> Result<usize, String> {
+        let mut current_depth = 0;
+        let mut max_found = 0;
+        let mut chars = expr.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '{' && chars.peek() == Some(&'{') {
+                chars.next(); // consume second '{'
+                current_depth += 1;
+                max_found = max_found.max(current_depth);
+                
+                if current_depth > max_depth {
+                    return Err(format!(
+                        "Nesting depth {} exceeds maximum allowed depth {}",
+                        current_depth, max_depth
+                    ));
+                }
+            } else if ch == '}' && chars.peek() == Some(&'}') {
+                chars.next(); // consume second '}'
+                current_depth = current_depth.saturating_sub(1);
+            }
+        }
+
+        Ok(max_found)
+    }
+
+    /// Resolve complex expressions with multiple variable references
+    pub fn resolve_complex_expression(
+        expr: &str,
+        variables: &HashMap<String, String>,
+        functions: &HashMap<String, fn(&[String]) -> Result<String, String>>,
+    ) -> Result<String, String> {
+        // First, resolve all simple variable references
+        let mut resolved = expr.to_string();
+        
+        // Extract all variables and replace them
+        let vars = ExpressionEvaluator::extract_variable_references(expr);
+        for var in vars {
+            if let Some(value) = variables.get(&var) {
+                resolved = resolved.replace(&format!("{{{{{}}}}}", var), value);
+            }
+        }
+
+        // Then try to evaluate any remaining expressions
+        if resolved.contains("{{") {
+            // Still has interpolations, try to resolve them
+            return ExpressionEvaluator::evaluate_interpolated_string(&resolved, variables, true);
+        }
+
+        // Try to evaluate as a complex expression (arithmetic, function calls, etc.)
+        if let Some(result) = Self::try_evaluate_complex(&resolved, variables, functions)? {
+            Ok(result)
+        } else {
+            Ok(resolved)
+        }
+    }
+
+    /// Try to evaluate complex expressions (arithmetic, function calls)
+    fn try_evaluate_complex(
+        expr: &str,
+        variables: &HashMap<String, String>,
+        functions: &HashMap<String, fn(&[String]) -> Result<String, String>>,
+    ) -> Result<Option<String>, String> {
+        let trimmed = expr.trim();
+
+        // Function calls
+        if let Some(paren_start) = trimmed.find('(') {
+            if let Some(paren_end) = trimmed.rfind(')') {
+                let func_name = trimmed[..paren_start].trim();
+                let args_str = &trimmed[paren_start + 1..paren_end];
+                
+                if let Some(func) = functions.get(func_name) {
+                    // Parse arguments (simple comma-separated for now)
+                    let args: Vec<String> = if args_str.trim().is_empty() {
+                        Vec::new()
+                    } else {
+                        args_str.split(',')
+                            .map(|arg| arg.trim().to_string())
+                            .collect()
+                    };
+                    
+                    return Ok(Some(func(&args)?));
+                }
+            }
+        }
+
+        // Arithmetic expressions - delegate to ExpressionEvaluator
+        if let Some(result) = ExpressionEvaluator::evaluate_arithmetic(expr, variables, true)? {
+            return Ok(Some(result));
+        }
+
+        // Conditional expressions - delegate to ExpressionEvaluator
+        if let Some(result) = ExpressionEvaluator::evaluate_conditional(expr, variables, true)? {
+            return Ok(Some(result));
+        }
+
+        Ok(None)
     }
 }
 
@@ -1498,16 +3012,16 @@ impl DependencyValidator {
         dependencies: &[DependencyInfo],
     ) -> DependencyValidationResult {
         let mut result = DependencyValidationResult::new();
-        
+
         // Build dependency graph
         let dependency_graph = Self::build_dependency_graph(recipes, dependencies);
-        
+
         // Check for circular dependencies
         result.circular_dependencies = Self::detect_circular_dependencies(&dependency_graph);
-        
+
         // Check for missing dependencies
         result.missing_dependencies = Self::find_missing_dependencies(recipes, dependencies);
-        
+
         // Validate individual dependencies
         for dependency in dependencies {
             if !dependency.is_valid() {
@@ -1519,7 +3033,7 @@ impl DependencyValidator {
                 });
             }
         }
-        
+
         result
     }
 
@@ -1529,12 +3043,12 @@ impl DependencyValidator {
         dependencies: &[DependencyInfo],
     ) -> HashMap<String, Vec<String>> {
         let mut graph = HashMap::new();
-        
+
         // Initialize all recipes as nodes
         for recipe in recipes {
             graph.insert(recipe.name.clone(), Vec::new());
         }
-        
+
         // Add dependency edges
         for dependency in dependencies {
             // For now, we assume the dependency belongs to the recipe at the same line
@@ -1544,12 +3058,13 @@ impl DependencyValidator {
                     (r.line_number as i32 - line as i32).abs() <= 3
                 })
             }) {
-                graph.entry(recipe.name.clone())
+                graph
+                    .entry(recipe.name.clone())
                     .or_insert_with(Vec::new)
                     .push(dependency.name.clone());
             }
         }
-        
+
         graph
     }
 
@@ -1558,7 +3073,7 @@ impl DependencyValidator {
         let mut circular_deps = Vec::new();
         let mut visited = HashSet::new();
         let mut rec_stack = HashSet::new();
-        
+
         for recipe in graph.keys() {
             if !visited.contains(recipe) {
                 if let Some(cycle) = Self::dfs_detect_cycle(
@@ -1572,7 +3087,7 @@ impl DependencyValidator {
                 }
             }
         }
-        
+
         circular_deps
     }
 
@@ -1587,11 +3102,13 @@ impl DependencyValidator {
         visited.insert(node.to_string());
         rec_stack.insert(node.to_string());
         path.push(node.to_string());
-        
+
         if let Some(dependencies) = graph.get(node) {
             for dep in dependencies {
                 if !visited.contains(dep) {
-                    if let Some(cycle) = Self::dfs_detect_cycle(graph, dep, visited, rec_stack, path) {
+                    if let Some(cycle) =
+                        Self::dfs_detect_cycle(graph, dep, visited, rec_stack, path)
+                    {
                         return Some(cycle);
                     }
                 } else if rec_stack.contains(dep) {
@@ -1603,7 +3120,7 @@ impl DependencyValidator {
                 }
             }
         }
-        
+
         path.pop();
         rec_stack.remove(node);
         None
@@ -1615,7 +3132,7 @@ impl DependencyValidator {
         dependencies: &[DependencyInfo],
     ) -> Vec<String> {
         let recipe_names: HashSet<_> = recipes.iter().map(|r| &r.name).collect();
-        
+
         dependencies
             .iter()
             .filter(|dep| !recipe_names.contains(&dep.name))
@@ -1629,7 +3146,7 @@ impl DependencyValidator {
         available_recipes: &[String],
     ) -> Vec<DependencyValidationError> {
         let mut errors = Vec::new();
-        
+
         // Check if dependency name is valid
         if dependency.name.is_empty() {
             errors.push(DependencyValidationError {
@@ -1639,7 +3156,7 @@ impl DependencyValidator {
                 position: dependency.position,
             });
         }
-        
+
         // Check if referenced recipe exists
         if !available_recipes.contains(&dependency.name) {
             errors.push(DependencyValidationError {
@@ -1649,7 +3166,7 @@ impl DependencyValidator {
                 position: dependency.position,
             });
         }
-        
+
         // Validate arguments syntax if present
         for (i, arg) in dependency.arguments.iter().enumerate() {
             if arg.is_empty() {
@@ -1661,7 +3178,7 @@ impl DependencyValidator {
                 });
             }
         }
-        
+
         // Validate condition syntax if present
         if let Some(ref condition) = dependency.condition {
             if condition.trim().is_empty() {
@@ -1673,7 +3190,7 @@ impl DependencyValidator {
                 });
             }
         }
-        
+
         errors
     }
 }
@@ -1700,16 +3217,16 @@ impl DependencyValidationResult {
 
     /// Check if validation found any errors
     pub fn has_errors(&self) -> bool {
-        !self.circular_dependencies.is_empty() ||
-        !self.missing_dependencies.is_empty() ||
-        !self.invalid_dependencies.is_empty()
+        !self.circular_dependencies.is_empty()
+            || !self.missing_dependencies.is_empty()
+            || !self.invalid_dependencies.is_empty()
     }
 
     /// Get total error count
     pub fn error_count(&self) -> usize {
-        self.circular_dependencies.len() +
-        self.missing_dependencies.len() +
-        self.invalid_dependencies.len()
+        self.circular_dependencies.len()
+            + self.missing_dependencies.len()
+            + self.invalid_dependencies.len()
     }
 }
 

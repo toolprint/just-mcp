@@ -47,11 +47,10 @@ pub use nodes::{ASTNode, NodeIterator, NodeType};
 pub use parser::{ASTJustParser, ParseTree};
 #[cfg(feature = "ast-parser")]
 pub use queries::{
-    CommentInfo, CompiledQuery, DependencyInfo, DependencyType, DependencyValidator, 
-    DependencyValidationResult, DependencyValidationError, DependencyErrorType,
-    ParameterInfo, ParameterType, QueryCapture, QueryCompilationError,
-    QueryConfig, QueryExecutor, QueryPatterns, QueryResult, QueryResultProcessor, QueryResultType,
-    RecipeInfo,
+    CommentInfo, CompiledQuery, DependencyErrorType, DependencyInfo, DependencyType,
+    DependencyValidationError, DependencyValidationResult, DependencyValidator, ParameterInfo,
+    ParameterType, QueryCapture, QueryCompilationError, QueryConfig, QueryExecutor, QueryPatterns,
+    QueryResult, QueryResultProcessor, QueryResultType, RecipeInfo,
 };
 
 // Re-export for convenience when feature is enabled

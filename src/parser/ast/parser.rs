@@ -742,7 +742,8 @@ impl ASTJustParser {
             .collect();
 
         // Validate all dependencies
-        let validation_result = DependencyValidator::validate_all_dependencies(&recipe_infos, dependencies);
+        let validation_result =
+            DependencyValidator::validate_all_dependencies(&recipe_infos, dependencies);
 
         // Log validation results for debugging
         if validation_result.has_errors() {

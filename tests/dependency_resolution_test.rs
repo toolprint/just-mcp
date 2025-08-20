@@ -5,8 +5,8 @@
 #[cfg(feature = "ast-parser")]
 mod dependency_resolution_tests {
     use just_mcp::parser::ast::{
-        DependencyInfo, DependencyType, DependencyValidator, DependencyValidationResult,
-        DependencyErrorType, RecipeInfo, ASTJustParser,
+        ASTJustParser, DependencyErrorType, DependencyInfo, DependencyType,
+        DependencyValidationResult, DependencyValidator, RecipeInfo,
     };
 
     /// Test basic dependency creation and validation
@@ -33,10 +33,8 @@ mod dependency_resolution_tests {
         assert!(param_dep.is_valid());
 
         // Test conditional dependency
-        let cond_dep = DependencyInfo::conditional(
-            "cleanup".to_string(),
-            "env == 'test'".to_string(),
-        );
+        let cond_dep =
+            DependencyInfo::conditional("cleanup".to_string(), "env == 'test'".to_string());
         assert_eq!(cond_dep.name, "cleanup");
         assert_eq!(cond_dep.dependency_type, DependencyType::Conditional);
         assert!(!cond_dep.has_arguments());
@@ -68,10 +66,7 @@ mod dependency_resolution_tests {
         );
         assert_eq!(param_dep.format_dependency(), "deploy(prod, us-east-1)");
 
-        let cond_dep = DependencyInfo::conditional(
-            "test".to_string(),
-            "CI == true".to_string(),
-        );
+        let cond_dep = DependencyInfo::conditional("test".to_string(), "CI == true".to_string());
         assert_eq!(cond_dep.format_dependency(), "test if CI == true");
 
         let complex_dep = DependencyInfo::complex(
@@ -138,10 +133,13 @@ mod dependency_resolution_tests {
         ];
 
         let result = DependencyValidator::validate_all_dependencies(&recipes, &dependencies);
-        
+
         assert!(result.has_errors());
         assert!(!result.circular_dependencies.is_empty());
-        println!("Detected circular dependencies: {:?}", result.circular_dependencies);
+        println!(
+            "Detected circular dependencies: {:?}",
+            result.circular_dependencies
+        );
     }
 
     /// Test missing dependency detection
@@ -165,13 +163,13 @@ mod dependency_resolution_tests {
         ];
 
         let dependencies = vec![
-            DependencyInfo::simple("build".to_string()),    // Valid dependency
-            DependencyInfo::simple("deploy".to_string()),   // Missing dependency
-            DependencyInfo::simple("cleanup".to_string()),  // Missing dependency
+            DependencyInfo::simple("build".to_string()), // Valid dependency
+            DependencyInfo::simple("deploy".to_string()), // Missing dependency
+            DependencyInfo::simple("cleanup".to_string()), // Missing dependency
         ];
 
         let result = DependencyValidator::validate_all_dependencies(&recipes, &dependencies);
-        
+
         assert!(result.has_errors());
         assert_eq!(result.missing_dependencies.len(), 2);
         assert!(result.missing_dependencies.contains(&"deploy".to_string()));
@@ -202,14 +200,17 @@ mod dependency_resolution_tests {
         let empty_dep = DependencyInfo::simple("".to_string());
         let errors = DependencyValidator::validate_dependency(&empty_dep, &available_recipes);
         assert_eq!(errors.len(), 2); // Both invalid name and missing target
-        assert!(errors.iter().any(|e| e.error_type == DependencyErrorType::InvalidName));
+        assert!(errors
+            .iter()
+            .any(|e| e.error_type == DependencyErrorType::InvalidName));
 
         // Invalid dependency - empty arguments
         let mut dep_with_empty_args = DependencyInfo::parameterized(
             "deploy".to_string(),
             vec!["staging".to_string(), "".to_string()],
         );
-        let errors = DependencyValidator::validate_dependency(&dep_with_empty_args, &available_recipes);
+        let errors =
+            DependencyValidator::validate_dependency(&dep_with_empty_args, &available_recipes);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].error_type, DependencyErrorType::InvalidArgument);
 
@@ -217,9 +218,12 @@ mod dependency_resolution_tests {
         dep_with_empty_args.condition = Some("".to_string());
         dep_with_empty_args.is_conditional = true;
         dep_with_empty_args.dependency_type = DependencyType::Complex;
-        let errors = DependencyValidator::validate_dependency(&dep_with_empty_args, &available_recipes);
+        let errors =
+            DependencyValidator::validate_dependency(&dep_with_empty_args, &available_recipes);
         assert!(errors.len() >= 2); // Empty argument + empty condition
-        assert!(errors.iter().any(|e| e.error_type == DependencyErrorType::InvalidCondition));
+        assert!(errors
+            .iter()
+            .any(|e| e.error_type == DependencyErrorType::InvalidCondition));
     }
 
     /// Test dependency type inference and display
@@ -239,9 +243,11 @@ mod dependency_resolution_tests {
         assert_eq!(result.error_count(), 0);
 
         // Add some errors
-        result.circular_dependencies.push(vec!["a".to_string(), "b".to_string(), "a".to_string()]);
+        result
+            .circular_dependencies
+            .push(vec!["a".to_string(), "b".to_string(), "a".to_string()]);
         result.missing_dependencies.push("missing".to_string());
-        
+
         assert!(result.has_errors());
         assert_eq!(result.error_count(), 2);
     }
@@ -265,7 +271,10 @@ mod dependency_resolution_tests {
             .filter(|r| !r.dependencies.is_empty())
             .collect();
 
-        println!("Found {} recipes with dependencies:", recipes_with_deps.len());
+        println!(
+            "Found {} recipes with dependencies:",
+            recipes_with_deps.len()
+        );
         for recipe in &recipes_with_deps {
             println!("  {} depends on: {:?}", recipe.name, recipe.dependencies);
         }
@@ -276,9 +285,10 @@ mod dependency_resolution_tests {
             let dep_infos: Vec<DependencyInfo> = recipes
                 .iter()
                 .flat_map(|recipe| {
-                    recipe.dependencies.iter().map(|dep_name| {
-                        DependencyInfo::simple(dep_name.clone())
-                    })
+                    recipe
+                        .dependencies
+                        .iter()
+                        .map(|dep_name| DependencyInfo::simple(dep_name.clone()))
                 })
                 .collect();
 
@@ -293,15 +303,22 @@ mod dependency_resolution_tests {
                 })
                 .collect();
 
-            let validation_result = DependencyValidator::validate_all_dependencies(
-                &recipe_infos,
-                &dep_infos,
-            );
+            let validation_result =
+                DependencyValidator::validate_all_dependencies(&recipe_infos, &dep_infos);
 
             println!("Dependency validation results:");
-            println!("  Circular dependencies: {}", validation_result.circular_dependencies.len());
-            println!("  Missing dependencies: {}", validation_result.missing_dependencies.len());
-            println!("  Invalid dependencies: {}", validation_result.invalid_dependencies.len());
+            println!(
+                "  Circular dependencies: {}",
+                validation_result.circular_dependencies.len()
+            );
+            println!(
+                "  Missing dependencies: {}",
+                validation_result.missing_dependencies.len()
+            );
+            println!(
+                "  Invalid dependencies: {}",
+                validation_result.invalid_dependencies.len()
+            );
 
             if !validation_result.missing_dependencies.is_empty() {
                 println!("  Missing: {:?}", validation_result.missing_dependencies);
@@ -358,27 +375,26 @@ setup: deploy
         let dep_infos: Vec<DependencyInfo> = recipes
             .iter()
             .flat_map(|recipe| {
-                recipe.dependencies.iter().map(|dep_name| {
-                    DependencyInfo::simple(dep_name.clone())
-                })
+                recipe
+                    .dependencies
+                    .iter()
+                    .map(|dep_name| DependencyInfo::simple(dep_name.clone()))
             })
             .collect();
 
-        let validation_result = DependencyValidator::validate_all_dependencies(
-            &recipe_infos,
-            &dep_infos,
-        );
+        let validation_result =
+            DependencyValidator::validate_all_dependencies(&recipe_infos, &dep_infos);
 
         println!("Complex scenario validation:");
         println!("  Total dependencies: {}", dep_infos.len());
         println!("  Validation errors: {}", validation_result.error_count());
-        
+
         // This scenario should not have circular dependencies or missing dependencies
         // since all referenced recipes exist in the same file
         for cycle in &validation_result.circular_dependencies {
             println!("  Circular dependency detected: {:?}", cycle);
         }
-        
+
         for missing in &validation_result.missing_dependencies {
             println!("  Missing dependency: {}", missing);
         }

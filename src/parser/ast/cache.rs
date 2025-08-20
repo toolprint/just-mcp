@@ -85,6 +85,12 @@ pub struct QueryBundle {
     pub bodies: Arc<CompiledQuery>,
     /// Assignment extraction query
     pub assignments: Arc<CompiledQuery>,
+    /// String interpolation extraction query
+    pub interpolations: Arc<CompiledQuery>,
+    /// String literal extraction query
+    pub strings: Arc<CompiledQuery>,
+    /// Expression extraction query
+    pub expressions: Arc<CompiledQuery>,
 }
 
 impl QueryCache {
@@ -348,6 +354,9 @@ impl QueryCompiler {
             identifiers: Arc::new(self.compile(patterns.identifiers, "identifiers".to_string())?),
             bodies: Arc::new(self.compile(patterns.bodies, "bodies".to_string())?),
             assignments: Arc::new(self.compile(patterns.assignments, "assignments".to_string())?),
+            interpolations: Arc::new(self.compile(patterns.interpolations, "interpolations".to_string())?),
+            strings: Arc::new(self.compile(patterns.strings, "strings".to_string())?),
+            expressions: Arc::new(self.compile(patterns.expressions, "expressions".to_string())?),
         })
     }
 }
