@@ -73,10 +73,17 @@ chrono = { version = "0.4", features = ["serde"], optional = true }
 # Directory walking for CLI
 walkdir = "2.5"
 
+# Tree-sitter for AST parsing
+tree-sitter = { version = "0.24", optional = true }
+tree-sitter-just = { version = "0.1", optional = true }
+
 [dev-dependencies]
 mockall = "0.13"
 insta = "1.41"
 futures = "0.3"
+
+[build-dependencies]
+cc = "1.0"
 
 [features]
 default = ["stdio"]
@@ -84,7 +91,8 @@ stdio = []
 http = ["axum", "tower", "hyper"]
 vector-search = ["libsql", "rusqlite", "ndarray", "sqlite-vss", "reqwest"]
 local-embeddings = ["candle-core", "candle-nn", "candle-transformers", "hf-hub", "tokenizers", "dirs", "chrono"]
-all = ["stdio", "http", "vector-search", "local-embeddings"]
+ast-parser = ["tree-sitter", "tree-sitter-just"]
+all = ["stdio", "http", "vector-search", "local-embeddings", "ast-parser"]
 
 [[bin]]
 name = "just-mcp"
