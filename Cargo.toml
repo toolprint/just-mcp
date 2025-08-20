@@ -76,6 +76,7 @@ walkdir = "2.5"
 # Tree-sitter for AST parsing
 tree-sitter = { version = "0.24", optional = true }
 tree-sitter-just = { version = "0.1", optional = true }
+streaming-iterator = { version = "0.1", optional = true }
 
 [dev-dependencies]
 mockall = "0.13"
@@ -91,7 +92,7 @@ stdio = []
 http = ["axum", "tower", "hyper"]
 vector-search = ["libsql", "rusqlite", "ndarray", "sqlite-vss", "reqwest"]
 local-embeddings = ["candle-core", "candle-nn", "candle-transformers", "hf-hub", "tokenizers", "dirs", "chrono"]
-ast-parser = ["tree-sitter", "tree-sitter-just"]
+ast-parser = ["tree-sitter", "tree-sitter-just", "streaming-iterator"]
 all = ["stdio", "http", "vector-search", "local-embeddings", "ast-parser"]
 
 [[bin]]

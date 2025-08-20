@@ -32,6 +32,10 @@ pub mod errors;
 pub mod nodes;
 #[cfg(feature = "ast-parser")]
 pub mod parser;
+#[cfg(feature = "ast-parser")]
+pub mod queries;
+#[cfg(feature = "ast-parser")]
+pub mod cache;
 
 #[cfg(feature = "ast-parser")]
 pub use errors::{ASTError, ASTResult};
@@ -39,6 +43,14 @@ pub use errors::{ASTError, ASTResult};
 pub use nodes::{ASTNode, NodeIterator, NodeType};
 #[cfg(feature = "ast-parser")]
 pub use parser::{ASTJustParser, ParseTree};
+#[cfg(feature = "ast-parser")]
+pub use queries::{
+    QueryPatterns, CompiledQuery, QueryResult, QueryResultType, QueryCapture,
+    QueryExecutor, QueryResultProcessor, QueryConfig, RecipeInfo, ParameterInfo,
+    DependencyInfo, CommentInfo, QueryCompilationError
+};
+#[cfg(feature = "ast-parser")]
+pub use cache::{QueryCache, QueryCompiler, QueryBundle, CacheStats};
 
 // Re-export for convenience when feature is enabled
 #[cfg(feature = "ast-parser")]
