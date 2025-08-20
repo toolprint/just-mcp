@@ -231,14 +231,28 @@ impl ASTJustParser {
                 .cloned()
                 .collect();
 
-            // Find dependencies for this recipe
+            // Find dependencies for this recipe (improved position-based filtering)
             let recipe_deps: Vec<_> = dependencies
                 .iter()
-                .filter(|_dep| {
-                    // Simple heuristic: dependencies appear on same line as recipe
-                    true // For now, include all dependencies - more complex logic could filter by position
+                .filter(|dep| {
+                    // More sophisticated heuristic: dependencies should be within reasonable proximity
+                    if let Some((dep_line, _)) = dep.position {
+                        // Dependency should be on the same line as recipe or within a few lines
+                        let line_diff = (recipe.line_number as i32 - dep_line as i32).abs();
+                        line_diff <= 2 // Dependencies should be very close to recipe declaration
+                    } else {
+                        // If no position info, use a broader heuristic
+                        true
+                    }
                 })
-                .map(|dep| dep.name.clone())
+                .map(|dep| {
+                    // Format dependency with arguments if present for better debugging
+                    if dep.has_arguments() || dep.has_condition() {
+                        dep.format_dependency()
+                    } else {
+                        dep.name.clone()
+                    }
+                })
                 .collect();
 
             // Find comments for this recipe (preceding comments)
@@ -271,6 +285,11 @@ impl ASTJustParser {
             };
 
             just_tasks.push(just_task);
+        }
+
+        // Validate dependencies and log any issues (for debugging and development)
+        if !dependencies.is_empty() {
+            Self::validate_and_log_dependencies(&just_tasks, &dependencies);
         }
 
         Ok(just_tasks)
@@ -701,6 +720,60 @@ impl ASTJustParser {
     /// Get cache statistics
     pub fn cache_stats(&self) -> ASTResult<crate::parser::ast::cache::CacheStats> {
         self.query_cache.stats()
+    }
+
+    /// Validate dependencies and log any issues for development/debugging
+    fn validate_and_log_dependencies(
+        just_tasks: &[JustTask],
+        dependencies: &[crate::parser::ast::queries::DependencyInfo],
+    ) {
+        use crate::parser::ast::queries::{DependencyValidator, RecipeInfo};
+
+        // Convert JustTask to RecipeInfo for validation
+        let recipe_infos: Vec<RecipeInfo> = just_tasks
+            .iter()
+            .map(|task| RecipeInfo {
+                name: task.name.clone(),
+                line_number: task.line_number,
+                has_parameters: !task.parameters.is_empty(),
+                has_dependencies: !task.dependencies.is_empty(),
+                has_body: !task.body.is_empty(),
+            })
+            .collect();
+
+        // Validate all dependencies
+        let validation_result = DependencyValidator::validate_all_dependencies(&recipe_infos, dependencies);
+
+        // Log validation results for debugging
+        if validation_result.has_errors() {
+            tracing::warn!(
+                "Dependency validation found {} issues",
+                validation_result.error_count()
+            );
+
+            for cycle in &validation_result.circular_dependencies {
+                tracing::warn!("Circular dependency detected: {:?}", cycle);
+            }
+
+            for missing in &validation_result.missing_dependencies {
+                tracing::warn!("Missing dependency target: {}", missing);
+            }
+
+            for invalid in &validation_result.invalid_dependencies {
+                tracing::warn!(
+                    "Invalid dependency '{}': {} ({})",
+                    invalid.dependency_name,
+                    invalid.message,
+                    invalid.error_type
+                );
+            }
+        } else {
+            tracing::debug!(
+                "Dependency validation passed for {} dependencies across {} recipes",
+                dependencies.len(),
+                just_tasks.len()
+            );
+        }
     }
 
     /// Extract recipe name from text (simple heuristic)

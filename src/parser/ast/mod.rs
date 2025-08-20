@@ -47,7 +47,9 @@ pub use nodes::{ASTNode, NodeIterator, NodeType};
 pub use parser::{ASTJustParser, ParseTree};
 #[cfg(feature = "ast-parser")]
 pub use queries::{
-    CommentInfo, CompiledQuery, DependencyInfo, ParameterInfo, QueryCapture, QueryCompilationError,
+    CommentInfo, CompiledQuery, DependencyInfo, DependencyType, DependencyValidator, 
+    DependencyValidationResult, DependencyValidationError, DependencyErrorType,
+    ParameterInfo, ParameterType, QueryCapture, QueryCompilationError,
     QueryConfig, QueryExecutor, QueryPatterns, QueryResult, QueryResultProcessor, QueryResultType,
     RecipeInfo,
 };

@@ -31,7 +31,7 @@
 //! ```
 
 use crate::parser::ast::errors::{ASTError, ASTResult};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tree_sitter::{Query, QueryCursor, Tree};
 
 /// Predefined query patterns for justfile parsing
@@ -854,10 +854,141 @@ impl QueryResultProcessor {
     fn result_to_dependency(result: &QueryResult) -> Option<DependencyInfo> {
         let name = result
             .get_text("dependency.name")
-            .or_else(|| result.get_text("dependency.expr.name"))?
+            .or_else(|| result.get_text("dependency.expr.name"))
+            .or_else(|| result.get_text("dependency"))?
             .to_string();
 
-        Some(DependencyInfo { name })
+        // Extract position information
+        let position = result
+            .get_capture("dependency.name")
+            .or_else(|| result.get_capture("dependency.expr.name"))
+            .or_else(|| result.get_capture("dependency"))
+            .map(|capture| capture.start_position);
+
+        // Parse arguments if present
+        let arguments = Self::parse_dependency_arguments(result);
+
+        // Check for conditional dependency
+        let condition = result
+            .get_text("dependency.condition")
+            .or_else(|| result.get_text("condition"))
+            .map(|c| c.to_string());
+
+        let is_conditional = condition.is_some();
+
+        // Determine dependency type
+        let dependency_type = match (arguments.is_empty(), is_conditional) {
+            (true, false) => DependencyType::Simple,
+            (false, false) => DependencyType::Parameterized,
+            (true, true) => DependencyType::Conditional,
+            (false, true) => DependencyType::Complex,
+        };
+
+        Some(DependencyInfo {
+            name,
+            arguments,
+            is_conditional,
+            condition,
+            position,
+            dependency_type,
+        })
+    }
+
+    /// Parse dependency arguments from query result
+    fn parse_dependency_arguments(result: &QueryResult) -> Vec<String> {
+        let mut arguments = Vec::new();
+        
+        // Look for argument patterns in the result
+        for (capture_name, capture) in &result.captures {
+            if capture_name.starts_with("dependency.arg") || capture_name.contains("argument") {
+                let arg_text = &capture.text;
+                // Clean up the argument text (remove quotes, trim whitespace)
+                let cleaned = Self::clean_argument_text(arg_text);
+                if !cleaned.is_empty() {
+                    arguments.push(cleaned);
+                }
+            }
+        }
+        
+        // If no specific argument captures found, try to parse from full text
+        if arguments.is_empty() {
+            if let Some(full_text) = result.get_text("dependency.full") 
+                .or_else(|| result.get_text("dependency")) {
+                arguments = Self::parse_arguments_from_text(full_text);
+            }
+        }
+        
+        arguments
+    }
+
+    /// Clean argument text by removing quotes and trimming
+    fn clean_argument_text(text: &str) -> String {
+        let trimmed = text.trim();
+        
+        // Remove surrounding quotes if present
+        if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
+           (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
+            trimmed[1..trimmed.len()-1].to_string()
+        } else {
+            trimmed.to_string()
+        }
+    }
+
+    /// Parse arguments from full dependency text (fallback method)
+    fn parse_arguments_from_text(text: &str) -> Vec<String> {
+        // Look for patterns like "recipe(arg1, arg2)" or "recipe arg1 arg2"
+        if let Some(paren_start) = text.find('(') {
+            if let Some(paren_end) = text.rfind(')') {
+                let args_text = &text[paren_start + 1..paren_end];
+                return Self::split_arguments(args_text);
+            }
+        }
+        
+        // Fall back to space-separated arguments
+        let parts: Vec<&str> = text.split_whitespace().collect();
+        if parts.len() > 1 {
+            parts[1..].iter().map(|s| s.to_string()).collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Split argument string by commas, respecting quotes
+    fn split_arguments(args_text: &str) -> Vec<String> {
+        let mut arguments = Vec::new();
+        let mut current_arg = String::new();
+        let mut in_quotes = false;
+        let mut quote_char = ' ';
+
+        for ch in args_text.chars() {
+            match ch {
+                '"' | '\'' if !in_quotes => {
+                    in_quotes = true;
+                    quote_char = ch;
+                    current_arg.push(ch);
+                }
+                '"' | '\'' if in_quotes && ch == quote_char => {
+                    in_quotes = false;
+                    current_arg.push(ch);
+                }
+                ',' if !in_quotes => {
+                    let cleaned = Self::clean_argument_text(&current_arg);
+                    if !cleaned.is_empty() {
+                        arguments.push(cleaned);
+                    }
+                    current_arg.clear();
+                }
+                _ => current_arg.push(ch),
+            }
+        }
+
+        // Don't forget the last argument
+        let cleaned = Self::clean_argument_text(&current_arg);
+        if !cleaned.is_empty() {
+            arguments.push(cleaned);
+        }
+
+        arguments
     }
 
     /// Convert a query result to comment information
@@ -1009,7 +1140,126 @@ impl ParameterType {
 /// Extracted dependency information from query results
 #[derive(Debug, Clone)]
 pub struct DependencyInfo {
+    /// Name of the dependency (recipe to execute first)
     pub name: String,
+    /// Arguments passed to the dependency (for parameterized dependencies)
+    pub arguments: Vec<String>,
+    /// Whether this dependency is conditional (executed only under certain conditions)
+    pub is_conditional: bool,
+    /// Condition expression for conditional dependencies
+    pub condition: Option<String>,
+    /// Position information for error reporting
+    pub position: Option<(usize, usize)>,
+    /// Type of dependency (simple, parameterized, conditional)
+    pub dependency_type: DependencyType,
+}
+
+/// Types of dependencies supported in Just recipes
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencyType {
+    /// Simple dependency: just the recipe name
+    Simple,
+    /// Parameterized dependency: recipe with arguments
+    Parameterized,
+    /// Conditional dependency: executed only if condition is met
+    Conditional,
+    /// Complex dependency: combination of parameters and conditions
+    Complex,
+}
+
+impl std::fmt::Display for DependencyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DependencyType::Simple => write!(f, "simple"),
+            DependencyType::Parameterized => write!(f, "parameterized"),
+            DependencyType::Conditional => write!(f, "conditional"),
+            DependencyType::Complex => write!(f, "complex"),
+        }
+    }
+}
+
+impl DependencyInfo {
+    /// Create a simple dependency with just a name
+    pub fn simple(name: String) -> Self {
+        Self {
+            name,
+            arguments: Vec::new(),
+            is_conditional: false,
+            condition: None,
+            position: None,
+            dependency_type: DependencyType::Simple,
+        }
+    }
+
+    /// Create a parameterized dependency with arguments
+    pub fn parameterized(name: String, arguments: Vec<String>) -> Self {
+        Self {
+            name,
+            arguments,
+            is_conditional: false,
+            condition: None,
+            position: None,
+            dependency_type: DependencyType::Parameterized,
+        }
+    }
+
+    /// Create a conditional dependency
+    pub fn conditional(name: String, condition: String) -> Self {
+        Self {
+            name,
+            arguments: Vec::new(),
+            is_conditional: true,
+            condition: Some(condition),
+            position: None,
+            dependency_type: DependencyType::Conditional,
+        }
+    }
+
+    /// Create a complex dependency with both arguments and conditions
+    pub fn complex(name: String, arguments: Vec<String>, condition: String) -> Self {
+        Self {
+            name,
+            arguments,
+            is_conditional: true,
+            condition: Some(condition),
+            position: None,
+            dependency_type: DependencyType::Complex,
+        }
+    }
+
+    /// Check if this dependency has arguments
+    pub fn has_arguments(&self) -> bool {
+        !self.arguments.is_empty()
+    }
+
+    /// Check if this dependency is conditional
+    pub fn has_condition(&self) -> bool {
+        self.is_conditional && self.condition.is_some()
+    }
+
+    /// Get a formatted string representation for debugging
+    pub fn format_dependency(&self) -> String {
+        let mut formatted = self.name.clone();
+        
+        if self.has_arguments() {
+            formatted.push('(');
+            formatted.push_str(&self.arguments.join(", "));
+            formatted.push(')');
+        }
+        
+        if let Some(ref condition) = self.condition {
+            formatted.push_str(" if ");
+            formatted.push_str(condition);
+        }
+        
+        formatted
+    }
+
+    /// Validate that this dependency has required information
+    pub fn is_valid(&self) -> bool {
+        !self.name.is_empty() && 
+        (!self.is_conditional || self.condition.is_some())
+    }
 }
 
 /// Extracted comment information from query results
@@ -1238,6 +1488,270 @@ impl CommentAssociator {
     }
 }
 
+/// Dependency validation utilities for circular dependency detection and validation
+pub struct DependencyValidator;
+
+impl DependencyValidator {
+    /// Validate dependencies across all recipes and detect circular dependencies
+    pub fn validate_all_dependencies(
+        recipes: &[RecipeInfo],
+        dependencies: &[DependencyInfo],
+    ) -> DependencyValidationResult {
+        let mut result = DependencyValidationResult::new();
+        
+        // Build dependency graph
+        let dependency_graph = Self::build_dependency_graph(recipes, dependencies);
+        
+        // Check for circular dependencies
+        result.circular_dependencies = Self::detect_circular_dependencies(&dependency_graph);
+        
+        // Check for missing dependencies
+        result.missing_dependencies = Self::find_missing_dependencies(recipes, dependencies);
+        
+        // Validate individual dependencies
+        for dependency in dependencies {
+            if !dependency.is_valid() {
+                result.invalid_dependencies.push(DependencyValidationError {
+                    dependency_name: dependency.name.clone(),
+                    error_type: DependencyErrorType::InvalidStructure,
+                    message: "Dependency has invalid structure".to_string(),
+                    position: dependency.position,
+                });
+            }
+        }
+        
+        result
+    }
+
+    /// Build a dependency graph from recipes and dependencies
+    fn build_dependency_graph(
+        recipes: &[RecipeInfo],
+        dependencies: &[DependencyInfo],
+    ) -> HashMap<String, Vec<String>> {
+        let mut graph = HashMap::new();
+        
+        // Initialize all recipes as nodes
+        for recipe in recipes {
+            graph.insert(recipe.name.clone(), Vec::new());
+        }
+        
+        // Add dependency edges
+        for dependency in dependencies {
+            // For now, we assume the dependency belongs to the recipe at the same line
+            // In a more sophisticated implementation, we'd track recipe-dependency associations
+            if let Some(recipe) = recipes.iter().find(|r| {
+                dependency.position.map_or(false, |(line, _)| {
+                    (r.line_number as i32 - line as i32).abs() <= 3
+                })
+            }) {
+                graph.entry(recipe.name.clone())
+                    .or_insert_with(Vec::new)
+                    .push(dependency.name.clone());
+            }
+        }
+        
+        graph
+    }
+
+    /// Detect circular dependencies using depth-first search
+    fn detect_circular_dependencies(graph: &HashMap<String, Vec<String>>) -> Vec<Vec<String>> {
+        let mut circular_deps = Vec::new();
+        let mut visited = HashSet::new();
+        let mut rec_stack = HashSet::new();
+        
+        for recipe in graph.keys() {
+            if !visited.contains(recipe) {
+                if let Some(cycle) = Self::dfs_detect_cycle(
+                    graph,
+                    recipe,
+                    &mut visited,
+                    &mut rec_stack,
+                    &mut Vec::new(),
+                ) {
+                    circular_deps.push(cycle);
+                }
+            }
+        }
+        
+        circular_deps
+    }
+
+    /// Depth-first search to detect cycles
+    fn dfs_detect_cycle(
+        graph: &HashMap<String, Vec<String>>,
+        node: &str,
+        visited: &mut HashSet<String>,
+        rec_stack: &mut HashSet<String>,
+        path: &mut Vec<String>,
+    ) -> Option<Vec<String>> {
+        visited.insert(node.to_string());
+        rec_stack.insert(node.to_string());
+        path.push(node.to_string());
+        
+        if let Some(dependencies) = graph.get(node) {
+            for dep in dependencies {
+                if !visited.contains(dep) {
+                    if let Some(cycle) = Self::dfs_detect_cycle(graph, dep, visited, rec_stack, path) {
+                        return Some(cycle);
+                    }
+                } else if rec_stack.contains(dep) {
+                    // Found a cycle - return the cycle path
+                    let cycle_start = path.iter().position(|x| x == dep).unwrap();
+                    let mut cycle = path[cycle_start..].to_vec();
+                    cycle.push(dep.to_string()); // Complete the cycle
+                    return Some(cycle);
+                }
+            }
+        }
+        
+        path.pop();
+        rec_stack.remove(node);
+        None
+    }
+
+    /// Find dependencies that reference non-existent recipes
+    fn find_missing_dependencies(
+        recipes: &[RecipeInfo],
+        dependencies: &[DependencyInfo],
+    ) -> Vec<String> {
+        let recipe_names: HashSet<_> = recipes.iter().map(|r| &r.name).collect();
+        
+        dependencies
+            .iter()
+            .filter(|dep| !recipe_names.contains(&dep.name))
+            .map(|dep| dep.name.clone())
+            .collect()
+    }
+
+    /// Validate a single dependency
+    pub fn validate_dependency(
+        dependency: &DependencyInfo,
+        available_recipes: &[String],
+    ) -> Vec<DependencyValidationError> {
+        let mut errors = Vec::new();
+        
+        // Check if dependency name is valid
+        if dependency.name.is_empty() {
+            errors.push(DependencyValidationError {
+                dependency_name: dependency.name.clone(),
+                error_type: DependencyErrorType::InvalidName,
+                message: "Dependency name cannot be empty".to_string(),
+                position: dependency.position,
+            });
+        }
+        
+        // Check if referenced recipe exists
+        if !available_recipes.contains(&dependency.name) {
+            errors.push(DependencyValidationError {
+                dependency_name: dependency.name.clone(),
+                error_type: DependencyErrorType::MissingTarget,
+                message: format!("Recipe '{}' does not exist", dependency.name),
+                position: dependency.position,
+            });
+        }
+        
+        // Validate arguments syntax if present
+        for (i, arg) in dependency.arguments.iter().enumerate() {
+            if arg.is_empty() {
+                errors.push(DependencyValidationError {
+                    dependency_name: dependency.name.clone(),
+                    error_type: DependencyErrorType::InvalidArgument,
+                    message: format!("Argument {} is empty", i + 1),
+                    position: dependency.position,
+                });
+            }
+        }
+        
+        // Validate condition syntax if present
+        if let Some(ref condition) = dependency.condition {
+            if condition.trim().is_empty() {
+                errors.push(DependencyValidationError {
+                    dependency_name: dependency.name.clone(),
+                    error_type: DependencyErrorType::InvalidCondition,
+                    message: "Condition cannot be empty".to_string(),
+                    position: dependency.position,
+                });
+            }
+        }
+        
+        errors
+    }
+}
+
+/// Result of dependency validation
+#[derive(Debug, Clone)]
+pub struct DependencyValidationResult {
+    /// List of circular dependency chains
+    pub circular_dependencies: Vec<Vec<String>>,
+    /// List of dependencies that reference missing recipes
+    pub missing_dependencies: Vec<String>,
+    /// List of invalid dependency structures
+    pub invalid_dependencies: Vec<DependencyValidationError>,
+}
+
+impl DependencyValidationResult {
+    pub fn new() -> Self {
+        Self {
+            circular_dependencies: Vec::new(),
+            missing_dependencies: Vec::new(),
+            invalid_dependencies: Vec::new(),
+        }
+    }
+
+    /// Check if validation found any errors
+    pub fn has_errors(&self) -> bool {
+        !self.circular_dependencies.is_empty() ||
+        !self.missing_dependencies.is_empty() ||
+        !self.invalid_dependencies.is_empty()
+    }
+
+    /// Get total error count
+    pub fn error_count(&self) -> usize {
+        self.circular_dependencies.len() +
+        self.missing_dependencies.len() +
+        self.invalid_dependencies.len()
+    }
+}
+
+/// Validation error for dependencies
+#[derive(Debug, Clone)]
+pub struct DependencyValidationError {
+    pub dependency_name: String,
+    pub error_type: DependencyErrorType,
+    pub message: String,
+    pub position: Option<(usize, usize)>,
+}
+
+/// Types of dependency validation errors
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencyErrorType {
+    /// Circular dependency detected
+    CircularDependency,
+    /// Referenced recipe does not exist
+    MissingTarget,
+    /// Invalid dependency name
+    InvalidName,
+    /// Invalid argument syntax
+    InvalidArgument,
+    /// Invalid condition syntax
+    InvalidCondition,
+    /// Invalid dependency structure
+    InvalidStructure,
+}
+
+impl std::fmt::Display for DependencyErrorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DependencyErrorType::CircularDependency => write!(f, "circular_dependency"),
+            DependencyErrorType::MissingTarget => write!(f, "missing_target"),
+            DependencyErrorType::InvalidName => write!(f, "invalid_name"),
+            DependencyErrorType::InvalidArgument => write!(f, "invalid_argument"),
+            DependencyErrorType::InvalidCondition => write!(f, "invalid_condition"),
+            DependencyErrorType::InvalidStructure => write!(f, "invalid_structure"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1459,11 +1973,12 @@ mod tests {
 
     #[test]
     fn test_dependency_info_creation() {
-        let dep = DependencyInfo {
-            name: "build".to_string(),
-        };
-
+        let dep = DependencyInfo::simple("build".to_string());
         assert_eq!(dep.name, "build");
+        assert_eq!(dep.dependency_type, DependencyType::Simple);
+        assert!(!dep.has_arguments());
+        assert!(!dep.has_condition());
+        assert!(dep.is_valid());
     }
 
     #[test]
