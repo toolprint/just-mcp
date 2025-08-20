@@ -35,6 +35,8 @@ pub mod nodes;
 #[cfg(feature = "ast-parser")]
 pub mod parser;
 #[cfg(feature = "ast-parser")]
+pub mod parser_pool;
+#[cfg(feature = "ast-parser")]
 pub mod queries;
 
 #[cfg(feature = "ast-parser")]

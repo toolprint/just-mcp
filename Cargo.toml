@@ -82,6 +82,7 @@ streaming-iterator = { version = "0.1", optional = true }
 mockall = "0.13"
 insta = "1.41"
 futures = "0.3"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [build-dependencies]
 cc = "1.0"
@@ -98,3 +99,12 @@ all = ["stdio", "http", "vector-search", "local-embeddings", "ast-parser"]
 [[bin]]
 name = "just-mcp"
 path = "src/main.rs"
+
+[[bin]]
+name = "perf-analysis"
+path = "src/bin/perf_analysis.rs"
+required-features = ["ast-parser"]
+
+[[bench]]
+name = "ast_parser_bench"
+harness = false
