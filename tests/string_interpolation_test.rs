@@ -6,9 +6,9 @@
 #[cfg(feature = "ast-parser")]
 mod string_interpolation_tests {
     use just_mcp::parser::ast::queries::{
-        ExpressionEvaluator, InterpolationInfo, InterpolationType, InterpolationContext,
-        NestedInterpolationProcessor, QueryResultProcessor, QueryExecutor, StringInfo, StringType,
-        ExpressionInfo, ExpressionType, QueryPatterns
+        ExpressionEvaluator, ExpressionInfo, ExpressionType, InterpolationContext,
+        InterpolationInfo, InterpolationType, NestedInterpolationProcessor, QueryExecutor,
+        QueryPatterns, QueryResultProcessor, StringInfo, StringType,
     };
     use std::collections::HashMap;
     use tree_sitter::Parser;
@@ -16,7 +16,9 @@ mod string_interpolation_tests {
     fn create_parser() -> Parser {
         let mut parser = Parser::new();
         let language = tree_sitter_just::language();
-        parser.set_language(&language).expect("Error loading just grammar");
+        parser
+            .set_language(&language)
+            .expect("Error loading just grammar");
         parser
     }
 
@@ -25,7 +27,7 @@ mod string_interpolation_tests {
         let template = "Hello {{name}}!";
         let mut variables = HashMap::new();
         variables.insert("name".to_string(), "World".to_string());
-        
+
         let result = ExpressionEvaluator::evaluate_interpolated_string(template, &variables, false);
         assert_eq!(result.unwrap(), "Hello World!");
     }
@@ -36,7 +38,7 @@ mod string_interpolation_tests {
         let mut variables = HashMap::new();
         variables.insert("database".to_string(), "postgres".to_string());
         variables.insert("port".to_string(), "5432".to_string());
-        
+
         let result = ExpressionEvaluator::evaluate_interpolated_string(template, &variables, false);
         assert_eq!(result.unwrap(), "Starting postgres on port 5432");
     }
@@ -104,7 +106,10 @@ mod string_interpolation_tests {
     fn test_variable_extraction() {
         let test_cases = vec![
             ("Hello {{name}}!", vec!["name"]),
-            ("{{user}} at {{host}}:{{port}}", vec!["host", "port", "user"]),
+            (
+                "{{user}} at {{host}}:{{port}}",
+                vec!["host", "port", "user"],
+            ),
             ("No variables here", vec![]),
             ("{{func(arg)}} and {{var}}", vec!["func", "var"]),
         ];
@@ -112,7 +117,10 @@ mod string_interpolation_tests {
         for (expr, expected) in test_cases {
             let mut result = ExpressionEvaluator::extract_variable_references(expr);
             result.sort();
-            let mut expected = expected.into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
+            let mut expected = expected
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>();
             expected.sort();
             assert_eq!(result, expected, "Failed for expression: {}", expr);
         }
@@ -168,7 +176,7 @@ mod string_interpolation_tests {
             ("a + b", "13"),
             ("a - b", "7"),
             ("a * b", "30"),
-            ("a / b", "3.3333333333333335"), // Float division
+            ("a / b", "3.3333333333333335"),         // Float division
             ("\"hello\" + \"world\"", "helloworld"), // String concatenation
         ];
 
@@ -188,7 +196,7 @@ mod string_interpolation_tests {
         let result = ExpressionEvaluator::evaluate_expression(
             "if true then value1 else value2",
             &variables,
-            false
+            false,
         );
         assert_eq!(result.unwrap(), "yes");
 
@@ -196,7 +204,7 @@ mod string_interpolation_tests {
         let result = ExpressionEvaluator::evaluate_expression(
             "if false then value1 else value2",
             &variables,
-            false
+            false,
         );
         assert_eq!(result.unwrap(), "no");
     }
@@ -208,9 +216,8 @@ mod string_interpolation_tests {
         variables.insert("inner".to_string(), "middle".to_string());
         variables.insert("outer middle expression".to_string(), "result".to_string());
 
-        let result = NestedInterpolationProcessor::process_nested_interpolations(
-            template, &variables, 3
-        );
+        let result =
+            NestedInterpolationProcessor::process_nested_interpolations(template, &variables, 3);
         // This test demonstrates the concept - actual result may vary based on implementation
         assert!(result.is_ok());
     }
@@ -219,12 +226,18 @@ mod string_interpolation_tests {
     fn test_interpolation_extraction() {
         let template = "Hello {{name}} from {{location}}!";
         let interpolations = NestedInterpolationProcessor::extract_all_interpolations(template);
-        
+
         assert_eq!(interpolations.len(), 2);
         assert_eq!(interpolations[0].expression, "name");
         assert_eq!(interpolations[1].expression, "location");
-        assert_eq!(interpolations[0].interpolation_type, InterpolationType::Variable);
-        assert_eq!(interpolations[1].interpolation_type, InterpolationType::Variable);
+        assert_eq!(
+            interpolations[0].interpolation_type,
+            InterpolationType::Variable
+        );
+        assert_eq!(
+            interpolations[1].interpolation_type,
+            InterpolationType::Variable
+        );
     }
 
     #[test]
@@ -236,12 +249,7 @@ mod string_interpolation_tests {
             "{{a}} and {{b}}",
         ];
 
-        let invalid_cases = vec![
-            "{{unclosed",
-            "unclosed}}",
-            "{{outer {{unclosed}}",
-            "{{}}}}",
-        ];
+        let invalid_cases = vec!["{{unclosed", "unclosed}}", "{{outer {{unclosed}}", "{{}}}}"];
 
         for case in valid_cases {
             let result = NestedInterpolationProcessor::validate_nested_syntax(case);
@@ -278,7 +286,7 @@ mod string_interpolation_tests {
     fn test_interpolation_type_classification() {
         // This is a white-box test accessing the internal classification method
         use just_mcp::parser::ast::queries::NestedInterpolationProcessor;
-        
+
         // We'll test through the public interface
         let test_cases = vec![
             ("variable", "simple variable"),
@@ -290,9 +298,14 @@ mod string_interpolation_tests {
 
         for (expr, description) in test_cases {
             let interpolations = NestedInterpolationProcessor::extract_all_interpolations(
-                &format!("{{{{{}}}}}", expr)
+                &format!("{{{{{}}}}}", expr),
             );
-            assert!(!interpolations.is_empty(), "Should extract interpolation for: {} ({})", expr, description);
+            assert!(
+                !interpolations.is_empty(),
+                "Should extract interpolation for: {} ({})",
+                expr,
+                description
+            );
             // The specific type depends on implementation details
         }
     }
@@ -304,7 +317,8 @@ mod string_interpolation_tests {
         variables.insert("y".to_string(), "3".to_string());
         variables.insert("name".to_string(), "test".to_string());
 
-        let mut functions: HashMap<String, fn(&[String]) -> Result<String, String>> = HashMap::new();
+        let mut functions: HashMap<String, fn(&[String]) -> Result<String, String>> =
+            HashMap::new();
         functions.insert("add".to_string(), |args: &[String]| {
             if args.len() != 2 {
                 return Err("add requires 2 arguments".to_string());
@@ -315,7 +329,9 @@ mod string_interpolation_tests {
         });
 
         let result = NestedInterpolationProcessor::resolve_complex_expression(
-            "{{x}} + {{y}}", &variables, &functions
+            "{{x}} + {{y}}",
+            &variables,
+            &functions,
         );
         // This should return some result - either OK or an error, but not panic
         let _output = result; // Don't assert on the specific result, just that it doesn't panic
@@ -336,14 +352,14 @@ deploy env="staging" region="us-west-2":
 
         let tree = parser.parse(source, None).unwrap();
         let root_node = tree.root_node();
-        
+
         // Verify the tree parses successfully
         assert!(!root_node.has_error());
-        
+
         // Test that we can extract interpolations from the parsed content
         let serve_line = "echo \"Starting {{database}} on port {{port}}\"";
         let interpolations = NestedInterpolationProcessor::extract_all_interpolations(serve_line);
-        
+
         assert_eq!(interpolations.len(), 2);
         assert_eq!(interpolations[0].expression, "database");
         assert_eq!(interpolations[1].expression, "port");
@@ -372,7 +388,7 @@ Environment: {{env}}
     #[test]
     fn test_error_handling() {
         let mut variables = HashMap::new();
-        
+
         // Missing variable
         let result = ExpressionEvaluator::evaluate_expression("missing_var", &variables, false);
         assert!(result.is_err());
@@ -385,14 +401,19 @@ Environment: {{env}}
         if result.is_err() {
             let error = result.unwrap_err();
             // Various possible error messages are acceptable
-            assert!(error.contains("Division by zero") || error.contains("not found") || error.contains("evaluate"));
+            assert!(
+                error.contains("Division by zero")
+                    || error.contains("not found")
+                    || error.contains("evaluate")
+            );
         } else {
             // Some implementations might handle this differently
             println!("Division by zero handled as: {:?}", result);
         }
 
         // Unknown function
-        let result = ExpressionEvaluator::evaluate_expression("unknown_func(arg)", &variables, false);
+        let result =
+            ExpressionEvaluator::evaluate_expression("unknown_func(arg)", &variables, false);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown function"));
     }
@@ -400,11 +421,11 @@ Environment: {{env}}
     #[test]
     fn test_escape_sequence_edge_cases() {
         let test_cases = vec![
-            ("\\", "\\"), // Single backslash at end
-            ("\\z", "\\z"), // Unknown escape sequence
-            ("\\x", "\\x"), // Incomplete hex escape
+            ("\\", "\\"),       // Single backslash at end
+            ("\\z", "\\z"),     // Unknown escape sequence
+            ("\\x", "\\x"),     // Incomplete hex escape
             ("\\xGG", "\\xGG"), // Invalid hex escape
-            ("\\u", "\\u"), // Incomplete unicode escape
+            ("\\u", "\\u"),     // Incomplete unicode escape
         ];
 
         for (input, expected) in test_cases {
@@ -415,15 +436,27 @@ Environment: {{env}}
         // Special cases for incomplete escapes - be flexible about the result
         let result = ExpressionEvaluator::process_string_escapes("\\x4");
         // Either "\\x4" or "\\x" would be acceptable depending on implementation
-        assert!(result == "\\x4" || result == "\\x", "Unexpected result for \\x4: {}", result);
+        assert!(
+            result == "\\x4" || result == "\\x",
+            "Unexpected result for \\x4: {}",
+            result
+        );
 
         let result = ExpressionEvaluator::process_string_escapes("\\u{");
         // Either "\\u{}" or "\\u{" would be acceptable depending on implementation
-        assert!(result == "\\u{}" || result == "\\u{", "Unexpected result for \\u{{: {}", result);
+        assert!(
+            result == "\\u{}" || result == "\\u{",
+            "Unexpected result for \\u{{: {}",
+            result
+        );
 
         let result = ExpressionEvaluator::process_string_escapes("\\u{GGGG}");
         // Either "\\u{}GGGG}" or "\\u{GGGG}" would be acceptable depending on implementation
-        assert!(result == "\\u{}GGGG}" || result == "\\u{GGGG}", "Unexpected result for \\u{{GGGG}}: {}", result);
+        assert!(
+            result == "\\u{}GGGG}" || result == "\\u{GGGG}",
+            "Unexpected result for \\u{{GGGG}}: {}",
+            result
+        );
     }
 
     #[test]
@@ -437,8 +470,12 @@ Environment: {{env}}
 
         for (context_name, template) in test_contexts {
             let interpolations = NestedInterpolationProcessor::extract_all_interpolations(template);
-            assert!(!interpolations.is_empty(), "Should find interpolation in {}", context_name);
-            
+            assert!(
+                !interpolations.is_empty(),
+                "Should find interpolation in {}",
+                context_name
+            );
+
             // All extracted interpolations should have some context
             for interp in &interpolations {
                 // Context detection depends on how the interpolation is parsed
@@ -462,11 +499,15 @@ Environment: {{env}}
         }
 
         let start = std::time::Instant::now();
-        let result = ExpressionEvaluator::evaluate_interpolated_string(&template, &variables, false);
+        let result =
+            ExpressionEvaluator::evaluate_interpolated_string(&template, &variables, false);
         let duration = start.elapsed();
 
         assert!(result.is_ok());
-        assert!(duration.as_millis() < 1000, "Should complete within 1 second"); // Performance check
+        assert!(
+            duration.as_millis() < 1000,
+            "Should complete within 1 second"
+        ); // Performance check
     }
 }
 

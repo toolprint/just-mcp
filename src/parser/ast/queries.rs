@@ -635,47 +635,64 @@ impl QueryResult {
         _pattern_index: usize,
     ) -> QueryResultType {
         // Determine type based on capture names (prioritize specific types first)
-        
+
         // String interpolation types
-        if captures.contains_key("interpolation.variable") || captures.contains_key("interpolation.var.name") {
+        if captures.contains_key("interpolation.variable")
+            || captures.contains_key("interpolation.var.name")
+        {
             QueryResultType::VariableInterpolation
-        } else if captures.contains_key("interpolation.expression") || captures.contains_key("interpolation.expr.expression") {
+        } else if captures.contains_key("interpolation.expression")
+            || captures.contains_key("interpolation.expr.expression")
+        {
             QueryResultType::ExpressionInterpolation
-        } else if captures.contains_key("interpolation") || captures.contains_key("interpolation.open") {
+        } else if captures.contains_key("interpolation")
+            || captures.contains_key("interpolation.open")
+        {
             QueryResultType::Interpolation
-        
+
         // String types
         } else if captures.contains_key("string.multiline") {
             QueryResultType::MultilineString
-        } else if captures.contains_key("string.external") || captures.contains_key("string.command.body") {
+        } else if captures.contains_key("string.external")
+            || captures.contains_key("string.command.body")
+        {
             QueryResultType::ExternalCommand
-        } else if captures.contains_key("string.with_interpolation") || captures.contains_key("string.interpolation_part") {
+        } else if captures.contains_key("string.with_interpolation")
+            || captures.contains_key("string.interpolation_part")
+        {
             QueryResultType::InterpolatedString
-        } else if captures.contains_key("string.literal") || captures.contains_key("string.quoted") {
+        } else if captures.contains_key("string.literal") || captures.contains_key("string.quoted")
+        {
             QueryResultType::StringLiteral
-        
+
         // Expression types
-        } else if captures.contains_key("expression.function_call") || captures.contains_key("expression.function.name") {
+        } else if captures.contains_key("expression.function_call")
+            || captures.contains_key("expression.function.name")
+        {
             QueryResultType::FunctionCall
-        } else if captures.contains_key("expression.binary") || captures.contains_key("expression.binary.operator") {
+        } else if captures.contains_key("expression.binary")
+            || captures.contains_key("expression.binary.operator")
+        {
             QueryResultType::BinaryExpression
-        } else if captures.contains_key("expression.conditional") || captures.contains_key("expression.conditional.if") {
+        } else if captures.contains_key("expression.conditional")
+            || captures.contains_key("expression.conditional.if")
+        {
             QueryResultType::ConditionalExpression
         } else if captures.contains_key("expression") || captures.contains_key("expression.value") {
             QueryResultType::Expression
-        
+
         // Recipe types
         } else if captures.contains_key("recipe.name") || captures.contains_key("recipe") {
             QueryResultType::Recipe
         } else if captures.contains_key("simple.recipe.name") {
             QueryResultType::SimpleRecipe
-        
+
         // Parameter types
         } else if captures.contains_key("parameter.name") || captures.contains_key("parameter") {
             QueryResultType::Parameter
         } else if captures.contains_key("variadic.parameter.name") {
             QueryResultType::VariadicParameter
-        
+
         // Other types
         } else if captures.contains_key("dependency.name") || captures.contains_key("dependency") {
             QueryResultType::Dependency
@@ -994,6 +1011,72 @@ impl QueryResultProcessor {
             .collect()
     }
 
+    /// Extract attribute information from query results
+    pub fn extract_attributes(results: &[QueryResult]) -> Vec<AttributeInfo> {
+        results
+            .iter()
+            .filter(|r| r.result_type == QueryResultType::Attribute)
+            .filter_map(Self::result_to_attribute)
+            .collect()
+    }
+
+    /// Validate attributes and return validation errors
+    pub fn validate_attributes(attributes: &[AttributeInfo]) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        for attr in attributes {
+            // Check individual attribute validation
+            let attr_errors = attr.validation_errors();
+            errors.extend(attr_errors);
+
+            // Check for conflicting attributes
+            if attr.attribute_type == AttributeType::Private {
+                // Private recipes shouldn't have confirm attributes (pointless)
+                if attributes
+                    .iter()
+                    .any(|a| matches!(a.attribute_type, AttributeType::Confirm))
+                {
+                    errors.push(format!(
+                        "Private recipe has confirm attribute, which is unnecessary"
+                    ));
+                }
+            }
+
+            // Check for duplicate group attributes
+            if attr.attribute_type == AttributeType::Group {
+                let group_count = attributes
+                    .iter()
+                    .filter(|a| matches!(a.attribute_type, AttributeType::Group))
+                    .count();
+                if group_count > 1 {
+                    errors.push(format!(
+                        "Recipe has multiple group attributes, only one is allowed"
+                    ));
+                }
+            }
+
+            // Check for platform conflicts
+            if attr.attribute_type.is_platform_specific() {
+                let platform_attrs: Vec<_> = attributes
+                    .iter()
+                    .filter(|a| a.attribute_type.is_platform_specific())
+                    .collect();
+                if platform_attrs.len() > 1 {
+                    let platform_names: Vec<_> = platform_attrs
+                        .iter()
+                        .map(|a| a.attribute_type.to_string())
+                        .collect();
+                    errors.push(format!(
+                        "Recipe has conflicting platform attributes: {}",
+                        platform_names.join(", ")
+                    ));
+                }
+            }
+        }
+
+        errors
+    }
+
     /// Extract interpolation information from query results
     pub fn extract_interpolations(results: &[QueryResult]) -> Vec<InterpolationInfo> {
         results
@@ -1060,8 +1143,8 @@ impl QueryResultProcessor {
                     .filter(|interp| {
                         if let Some(interp_pos) = interp.position {
                             // Interpolation should be within the string's bounds
-                            interp_pos.0 >= string_pos.0
-                                && interp_pos.0 <= string_pos.0 + 5 // Allow some flexibility
+                            interp_pos.0 >= string_pos.0 && interp_pos.0 <= string_pos.0 + 5
+                        // Allow some flexibility
                         } else {
                             false
                         }
@@ -1326,7 +1409,83 @@ impl QueryResultProcessor {
 
         arguments
     }
+}
 
+/// Parse attribute arguments from value text (e.g., "'test'" -> ["test"])
+fn parse_attribute_arguments(value: &str) -> Vec<String> {
+    let value = value.trim();
+
+    // If it looks like a function call with parentheses, parse the arguments
+    if value.starts_with('(') && value.ends_with(')') {
+        let inner = &value[1..value.len() - 1];
+        return parse_function_arguments(inner);
+    }
+
+    // If it's a simple quoted string, extract the content
+    if (value.starts_with('"') && value.ends_with('"'))
+        || (value.starts_with('\'') && value.ends_with('\''))
+    {
+        let content = &value[1..value.len() - 1];
+        return vec![content.to_string()];
+    }
+
+    // If it's an unquoted value, return as-is
+    if !value.is_empty() {
+        return vec![value.to_string()];
+    }
+
+    Vec::new()
+}
+
+/// Parse function-style arguments (e.g., "'test', 'value'" -> ["test", "value"])
+fn parse_function_arguments(args: &str) -> Vec<String> {
+    let mut arguments = Vec::new();
+    let mut current_arg = String::new();
+    let mut in_quotes = false;
+    let mut quote_char = '"';
+    let mut escape_next = false;
+
+    for ch in args.chars() {
+        if escape_next {
+            current_arg.push(ch);
+            escape_next = false;
+            continue;
+        }
+
+        match ch {
+            '\\' if in_quotes => {
+                escape_next = true;
+            }
+            '"' | '\'' if !in_quotes => {
+                in_quotes = true;
+                quote_char = ch;
+            }
+            c if in_quotes && c == quote_char => {
+                in_quotes = false;
+            }
+            ',' if !in_quotes => {
+                let cleaned = current_arg.trim();
+                if !cleaned.is_empty() {
+                    arguments.push(cleaned.to_string());
+                }
+                current_arg.clear();
+            }
+            _ => {
+                current_arg.push(ch);
+            }
+        }
+    }
+
+    // Add the last argument
+    let cleaned = current_arg.trim();
+    if !cleaned.is_empty() {
+        arguments.push(cleaned.to_string());
+    }
+
+    arguments
+}
+
+impl QueryResultProcessor {
     /// Convert a query result to comment information
     fn result_to_comment(result: &QueryResult) -> Option<CommentInfo> {
         let text = result
@@ -1341,6 +1500,42 @@ impl QueryResultProcessor {
             text: text.trim_start_matches('#').trim().to_string(),
             line_number: position.0 + 1,
         })
+    }
+
+    /// Convert a query result to attribute information
+    fn result_to_attribute(result: &QueryResult) -> Option<AttributeInfo> {
+        // Extract the attribute name
+        let name = result
+            .get_text("attribute.name")
+            .or_else(|| result.get_text("attribute"))?
+            .to_string();
+
+        let position = result.captures.values().next()?.start_position;
+        let line_number = position.0 + 1;
+
+        // Check if there's a value/argument
+        let value = result.get_text("attribute.value").map(|v| v.to_string());
+
+        // Parse arguments if the value is a function call-like expression
+        let arguments = if let Some(ref val) = value {
+            parse_attribute_arguments(val)
+        } else {
+            Vec::new()
+        };
+
+        // Create the attribute info
+        let mut attr_info = if !arguments.is_empty() {
+            AttributeInfo::with_arguments(name, arguments, line_number)
+        } else if let Some(val) = value {
+            AttributeInfo::with_value(name, val, line_number)
+        } else {
+            AttributeInfo::new(name, line_number)
+        };
+
+        // Set position information
+        attr_info.position = Some(position);
+
+        Some(attr_info)
     }
 
     /// Convert a query result to interpolation information
@@ -1405,7 +1600,11 @@ impl QueryResultProcessor {
         let has_escapes = result.has_capture("string.with_escapes") || raw_text.contains('\\');
 
         // Extract position
-        let position = result.captures.values().next().map(|capture| capture.start_position);
+        let position = result
+            .captures
+            .values()
+            .next()
+            .map(|capture| capture.start_position);
 
         Some(StringInfo {
             content,
@@ -1435,7 +1634,11 @@ impl QueryResultProcessor {
         let variable_references = Self::extract_expression_variables(&expression, result);
 
         // Extract position
-        let position = result.captures.values().next().map(|capture| capture.start_position);
+        let position = result
+            .captures
+            .values()
+            .next()
+            .map(|capture| capture.start_position);
 
         // Check if static (can be evaluated at parse time)
         let is_static = Self::is_static_expression(&expression, &expression_type);
@@ -1479,7 +1682,11 @@ impl QueryResultProcessor {
             InterpolationType::FunctionCall
         } else if expression.contains("if") && expression.contains("then") {
             InterpolationType::Conditional
-        } else if expression.contains('+') || expression.contains('-') || expression.contains('*') || expression.contains('/') {
+        } else if expression.contains('+')
+            || expression.contains('-')
+            || expression.contains('*')
+            || expression.contains('/')
+        {
             InterpolationType::Arithmetic
         } else if result.result_type == QueryResultType::ExpressionInterpolation {
             InterpolationType::Expression
@@ -1545,7 +1752,8 @@ impl QueryResultProcessor {
     fn infer_string_type(result: &QueryResult) -> StringType {
         if result.has_capture("string.multiline") {
             StringType::Multiline
-        } else if result.has_capture("string.external") || result.has_capture("string.command.body") {
+        } else if result.has_capture("string.external") || result.has_capture("string.command.body")
+        {
             StringType::ExternalCommand
         } else if result.has_capture("string.with_interpolation") {
             StringType::Interpolated
@@ -1583,11 +1791,11 @@ impl QueryResultProcessor {
         // Simple extraction - look for identifier patterns
         // In a full implementation, this would use proper parsing
         let mut variables = Vec::new();
-        
+
         // Basic regex-like extraction for identifiers
         let mut chars = expression.chars().peekable();
         let mut current_word = String::new();
-        
+
         while let Some(ch) = chars.next() {
             if ch.is_alphabetic() || ch == '_' {
                 current_word.push(ch);
@@ -1600,11 +1808,11 @@ impl QueryResultProcessor {
                 current_word.clear();
             }
         }
-        
+
         if !current_word.is_empty() && !Self::is_keyword(&current_word) {
             variables.push(current_word);
         }
-        
+
         variables.sort();
         variables.dedup();
         variables
@@ -1618,9 +1826,13 @@ impl QueryResultProcessor {
     /// Check if expression can be evaluated at parse time
     fn is_static_expression(expression: &str, expr_type: &ExpressionType) -> bool {
         match expr_type {
-            ExpressionType::StringLiteral | ExpressionType::NumericLiteral | ExpressionType::BooleanLiteral => true,
-            ExpressionType::Variable | ExpressionType::FunctionCall | ExpressionType::ExternalCommand => false,
-            _ => !expression.chars().any(|c| c.is_alphabetic()) // No variables
+            ExpressionType::StringLiteral
+            | ExpressionType::NumericLiteral
+            | ExpressionType::BooleanLiteral => true,
+            ExpressionType::Variable
+            | ExpressionType::FunctionCall
+            | ExpressionType::ExternalCommand => false,
+            _ => !expression.chars().any(|c| c.is_alphabetic()), // No variables
         }
     }
 
@@ -1888,6 +2100,276 @@ impl DependencyInfo {
     /// Validate that this dependency has required information
     pub fn is_valid(&self) -> bool {
         !self.name.is_empty() && (!self.is_conditional || self.condition.is_some())
+    }
+}
+
+/// Extracted attribute information from query results
+#[derive(Debug, Clone, PartialEq)]
+pub struct AttributeInfo {
+    /// Name of the attribute (e.g., "group", "private", "confirm")
+    pub name: String,
+    /// Arguments passed to the attribute (for parameterized attributes)
+    pub arguments: Vec<String>,
+    /// Raw value for simple string arguments (e.g., "test" for [group('test')])
+    pub value: Option<String>,
+    /// Line number where the attribute appears
+    pub line_number: usize,
+    /// Whether this is a boolean attribute (no arguments)
+    pub is_boolean: bool,
+    /// Position information for error reporting
+    pub position: Option<(usize, usize)>,
+    /// Type of attribute based on name and structure
+    pub attribute_type: AttributeType,
+}
+
+/// Types of attributes supported in Just recipes
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttributeType {
+    /// Group attribute: [group('name')] - organizes recipes into groups
+    Group,
+    /// Private attribute: [private] - marks recipe as private (not shown in list)
+    Private,
+    /// Confirm attribute: [confirm] or [confirm("message")] - requires confirmation
+    Confirm,
+    /// Doc attribute: [doc("description")] - adds documentation to recipe
+    Doc,
+    /// No-cd attribute: [no-cd] - don't change directory before running
+    NoCD,
+    /// Windows attribute: [windows] - only run on Windows
+    Windows,
+    /// Unix attribute: [unix] - only run on Unix-like systems
+    Unix,
+    /// Linux attribute: [linux] - only run on Linux
+    Linux,
+    /// MacOS attribute: [macos] - only run on macOS
+    MacOS,
+    /// No-exit-message attribute: [no-exit-message] - suppress exit message
+    NoExitMessage,
+    /// Unknown or custom attribute type
+    Unknown(String),
+}
+
+impl std::fmt::Display for AttributeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AttributeType::Group => write!(f, "group"),
+            AttributeType::Private => write!(f, "private"),
+            AttributeType::Confirm => write!(f, "confirm"),
+            AttributeType::Doc => write!(f, "doc"),
+            AttributeType::NoCD => write!(f, "no-cd"),
+            AttributeType::Windows => write!(f, "windows"),
+            AttributeType::Unix => write!(f, "unix"),
+            AttributeType::Linux => write!(f, "linux"),
+            AttributeType::MacOS => write!(f, "macos"),
+            AttributeType::NoExitMessage => write!(f, "no-exit-message"),
+            AttributeType::Unknown(name) => write!(f, "{}", name),
+        }
+    }
+}
+
+impl AttributeInfo {
+    /// Create a new attribute with basic information
+    pub fn new(name: String, line_number: usize) -> Self {
+        let attribute_type = AttributeType::from_name(&name);
+        let is_boolean = matches!(
+            attribute_type,
+            AttributeType::Private
+                | AttributeType::NoCD
+                | AttributeType::Windows
+                | AttributeType::Unix
+                | AttributeType::Linux
+                | AttributeType::MacOS
+                | AttributeType::NoExitMessage
+        );
+
+        Self {
+            name,
+            arguments: Vec::new(),
+            value: None,
+            line_number,
+            is_boolean,
+            position: None,
+            attribute_type,
+        }
+    }
+
+    /// Create a parameterized attribute with a value
+    pub fn with_value(name: String, value: String, line_number: usize) -> Self {
+        let mut attr = Self::new(name, line_number);
+        attr.value = Some(value.clone());
+        attr.arguments = vec![value];
+        attr.is_boolean = false;
+        attr
+    }
+
+    /// Create an attribute from arguments list
+    pub fn with_arguments(name: String, arguments: Vec<String>, line_number: usize) -> Self {
+        let mut attr = Self::new(name, line_number);
+        attr.arguments = arguments.clone();
+        attr.value = arguments.first().cloned();
+        attr.is_boolean = arguments.is_empty();
+        attr
+    }
+
+    /// Get the primary value (first argument) of the attribute
+    pub fn get_value(&self) -> Option<&str> {
+        self.value.as_deref()
+    }
+
+    /// Get all arguments as string slices
+    pub fn get_arguments(&self) -> Vec<&str> {
+        self.arguments.iter().map(|s| s.as_str()).collect()
+    }
+
+    /// Check if this is a valid attribute structure
+    pub fn is_valid(&self) -> bool {
+        !self.name.is_empty()
+            && (self.is_boolean || !self.arguments.is_empty())
+            && self.validate_type()
+    }
+
+    /// Validate that the attribute type matches its arguments
+    pub fn validate_type(&self) -> bool {
+        match &self.attribute_type {
+            AttributeType::Group => !self.arguments.is_empty() && self.arguments.len() == 1,
+            AttributeType::Confirm => self.arguments.is_empty() || self.arguments.len() == 1,
+            AttributeType::Doc => self.arguments.len() == 1,
+            AttributeType::Private
+            | AttributeType::NoCD
+            | AttributeType::Windows
+            | AttributeType::Unix
+            | AttributeType::Linux
+            | AttributeType::MacOS
+            | AttributeType::NoExitMessage => self.arguments.is_empty(),
+            AttributeType::Unknown(_) => true, // Allow unknown attributes with any arguments
+        }
+    }
+
+    /// Get a description of validation errors if any
+    pub fn validation_errors(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        if self.name.is_empty() {
+            errors.push("Attribute name cannot be empty".to_string());
+        }
+
+        if !self.validate_type() {
+            match &self.attribute_type {
+                AttributeType::Group => {
+                    if self.arguments.is_empty() {
+                        errors.push("Group attribute requires exactly one argument".to_string());
+                    } else if self.arguments.len() > 1 {
+                        errors.push("Group attribute accepts only one argument".to_string());
+                    }
+                }
+                AttributeType::Doc => {
+                    if self.arguments.is_empty() {
+                        errors.push("Doc attribute requires exactly one argument".to_string());
+                    } else if self.arguments.len() > 1 {
+                        errors.push("Doc attribute accepts only one argument".to_string());
+                    }
+                }
+                AttributeType::Confirm => {
+                    if self.arguments.len() > 1 {
+                        errors.push("Confirm attribute accepts at most one argument".to_string());
+                    }
+                }
+                AttributeType::Private
+                | AttributeType::NoCD
+                | AttributeType::Windows
+                | AttributeType::Unix
+                | AttributeType::Linux
+                | AttributeType::MacOS
+                | AttributeType::NoExitMessage => {
+                    if !self.arguments.is_empty() {
+                        errors.push(format!(
+                            "{} attribute does not accept arguments",
+                            self.attribute_type
+                        ));
+                    }
+                }
+                AttributeType::Unknown(_) => {
+                    // No specific validation for unknown attributes
+                }
+            }
+        }
+
+        errors
+    }
+
+    /// Format attribute for display (e.g., "[group('test')]")
+    pub fn format_display(&self) -> String {
+        if self.is_boolean {
+            format!("[{}]", self.name)
+        } else if let Some(value) = &self.value {
+            format!("[{}('{}')]", self.name, value)
+        } else if !self.arguments.is_empty() {
+            let args = self
+                .arguments
+                .iter()
+                .map(|arg| format!("'{}'", arg))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{}({})]", self.name, args)
+        } else {
+            format!("[{}]", self.name)
+        }
+    }
+}
+
+impl AttributeType {
+    /// Determine attribute type from name
+    pub fn from_name(name: &str) -> Self {
+        match name.to_lowercase().as_str() {
+            "group" => AttributeType::Group,
+            "private" => AttributeType::Private,
+            "confirm" => AttributeType::Confirm,
+            "doc" => AttributeType::Doc,
+            "no-cd" | "no_cd" => AttributeType::NoCD,
+            "windows" => AttributeType::Windows,
+            "unix" => AttributeType::Unix,
+            "linux" => AttributeType::Linux,
+            "macos" | "mac" => AttributeType::MacOS,
+            "no-exit-message" | "no_exit_message" => AttributeType::NoExitMessage,
+            _ => AttributeType::Unknown(name.to_string()),
+        }
+    }
+
+    /// Check if this is a platform-specific attribute
+    pub fn is_platform_specific(&self) -> bool {
+        matches!(
+            self,
+            AttributeType::Windows
+                | AttributeType::Unix
+                | AttributeType::Linux
+                | AttributeType::MacOS
+        )
+    }
+
+    /// Check if this attribute affects recipe visibility
+    pub fn affects_visibility(&self) -> bool {
+        matches!(self, AttributeType::Private)
+    }
+
+    /// Check if this attribute requires user interaction
+    pub fn requires_interaction(&self) -> bool {
+        matches!(self, AttributeType::Confirm)
+    }
+
+    /// Get all known attribute types
+    pub fn all_known_types() -> Vec<AttributeType> {
+        vec![
+            AttributeType::Group,
+            AttributeType::Private,
+            AttributeType::Confirm,
+            AttributeType::Doc,
+            AttributeType::NoCD,
+            AttributeType::Windows,
+            AttributeType::Unix,
+            AttributeType::Linux,
+            AttributeType::MacOS,
+            AttributeType::NoExitMessage,
+        ]
     }
 }
 
@@ -2200,7 +2682,9 @@ impl ExpressionEvaluator {
                         'x' => {
                             // Handle hex escapes like \x41
                             if let (Some(d1), Some(d2)) = (chars.next(), chars.next()) {
-                                if let Ok(byte_val) = u8::from_str_radix(&format!("{}{}", d1, d2), 16) {
+                                if let Ok(byte_val) =
+                                    u8::from_str_radix(&format!("{}{}", d1, d2), 16)
+                                {
                                     result.push(byte_val as char);
                                 } else {
                                     // Invalid hex escape, treat literally
@@ -2229,7 +2713,7 @@ impl ExpressionEvaluator {
                                         break;
                                     }
                                 }
-                                
+
                                 if let Ok(code_point) = u32::from_str_radix(&hex_digits, 16) {
                                     if let Some(unicode_char) = char::from_u32(code_point) {
                                         result.push(unicode_char);
@@ -2271,7 +2755,7 @@ impl ExpressionEvaluator {
 
         // Handle negative numbers
         let s = if s.starts_with('-') { &s[1..] } else { s };
-        
+
         // Integer
         if s.chars().all(|c| c.is_ascii_digit()) {
             return true;
@@ -2281,7 +2765,7 @@ impl ExpressionEvaluator {
         if let Some(dot_pos) = s.find('.') {
             let before_dot = &s[..dot_pos];
             let after_dot = &s[dot_pos + 1..];
-            
+
             return (before_dot.is_empty() || before_dot.chars().all(|c| c.is_ascii_digit()))
                 && (after_dot.is_empty() || after_dot.chars().all(|c| c.is_ascii_digit()))
                 && !(before_dot.is_empty() && after_dot.is_empty());
@@ -2459,7 +2943,7 @@ impl ExpressionEvaluator {
             if let Some(paren_end) = expr.rfind(')') {
                 let func_name = expr[..paren_start].trim();
                 let args_str = &expr[paren_start + 1..paren_end];
-                
+
                 match func_name {
                     "upper" | "uppercase" => {
                         let arg = Self::evaluate_expression(args_str, variables, allow_missing)?;
@@ -2505,20 +2989,22 @@ impl ExpressionEvaluator {
                 if *op == "-" && op_pos == 0 {
                     continue;
                 }
-                
+
                 let left = expr[..op_pos].trim();
                 let right = expr[op_pos + op.len()..].trim();
-                
+
                 // Skip empty parts
                 if left.is_empty() || right.is_empty() {
                     continue;
                 }
-                
+
                 let left_val = Self::evaluate_expression(left, variables, allow_missing)?;
                 let right_val = Self::evaluate_expression(right, variables, allow_missing)?;
-                
+
                 // Try to parse as numbers
-                if let (Ok(left_num), Ok(right_num)) = (left_val.parse::<f64>(), right_val.parse::<f64>()) {
+                if let (Ok(left_num), Ok(right_num)) =
+                    (left_val.parse::<f64>(), right_val.parse::<f64>())
+                {
                     let result = match *op {
                         "+" => left_num + right_num,
                         "-" => left_num - right_num,
@@ -2531,7 +3017,7 @@ impl ExpressionEvaluator {
                         }
                         _ => unreachable!(),
                     };
-                    
+
                     // Format as integer if possible
                     if result.fract() == 0.0 {
                         return Ok(Some((result as i64).to_string()));
@@ -2544,7 +3030,7 @@ impl ExpressionEvaluator {
                 }
             }
         }
-        
+
         Ok(None)
     }
 
@@ -2568,19 +3054,29 @@ impl ExpressionEvaluator {
                 let condition = parts[1..then_pos].join(" ");
                 let true_branch = parts[then_pos + 1..else_pos].join(" ");
                 let false_branch = parts[else_pos + 1..].join(" ");
-                
+
                 // Evaluate condition (very basic)
                 let cond_result = Self::evaluate_expression(&condition, variables, allow_missing)?;
-                let is_true = cond_result == "true" || cond_result == "1" || (!cond_result.is_empty() && cond_result != "false" && cond_result != "0");
-                
+                let is_true = cond_result == "true"
+                    || cond_result == "1"
+                    || (!cond_result.is_empty() && cond_result != "false" && cond_result != "0");
+
                 if is_true {
-                    return Ok(Some(Self::evaluate_expression(&true_branch, variables, allow_missing)?));
+                    return Ok(Some(Self::evaluate_expression(
+                        &true_branch,
+                        variables,
+                        allow_missing,
+                    )?));
                 } else {
-                    return Ok(Some(Self::evaluate_expression(&false_branch, variables, allow_missing)?));
+                    return Ok(Some(Self::evaluate_expression(
+                        &false_branch,
+                        variables,
+                        allow_missing,
+                    )?));
                 }
             }
         }
-        
+
         Ok(None)
     }
 }
@@ -2606,7 +3102,7 @@ impl NestedInterpolationProcessor {
         while let Some(ch) = chars.next() {
             if ch == '{' && chars.peek() == Some(&'{') {
                 chars.next(); // consume second '{'
-                
+
                 let mut expr = String::new();
                 let mut brace_count = 1;
 
@@ -2663,7 +3159,7 @@ impl NestedInterpolationProcessor {
             if ch == '{' && chars.peek().map(|(_, c)| *c) == Some('{') {
                 chars.next(); // consume second '{'
                 let start_pos = pos;
-                
+
                 let mut expr = String::new();
                 let mut full_text = String::from("{{");
                 let mut brace_count = 1;
@@ -2671,7 +3167,7 @@ impl NestedInterpolationProcessor {
 
                 while let Some((_, ch)) = chars.next() {
                     full_text.push(ch);
-                    
+
                     if ch == '{' && chars.peek().map(|(_, c)| *c) == Some('{') {
                         brace_count += 1;
                         nesting_level += 1;
@@ -2684,11 +3180,11 @@ impl NestedInterpolationProcessor {
                         if brace_count == 0 {
                             let (end_pos, _) = chars.next().unwrap(); // consume second '}'
                             full_text.push('}');
-                            
+
                             // Create interpolation info
                             let interpolation_type = Self::classify_interpolation_type(&expr);
                             let is_nested = nesting_level > 0;
-                            
+
                             interpolations.push(InterpolationInfo {
                                 expression: expr.clone(),
                                 full_text: full_text.clone(),
@@ -2697,13 +3193,13 @@ impl NestedInterpolationProcessor {
                                 is_nested,
                                 context: InterpolationContext::StringLiteral,
                             });
-                            
+
                             // If this expression contains nested interpolations, extract them too
                             if expr.contains("{{") {
                                 let nested = Self::extract_all_interpolations(&expr);
                                 interpolations.extend(nested);
                             }
-                            
+
                             break;
                         } else {
                             nesting_level = nesting_level.saturating_sub(1);
@@ -2725,7 +3221,7 @@ impl NestedInterpolationProcessor {
     /// Classify the type of interpolation based on its content
     fn classify_interpolation_type(expr: &str) -> InterpolationType {
         let trimmed = expr.trim();
-        
+
         // Function call
         if trimmed.contains('(') && trimmed.contains(')') {
             InterpolationType::FunctionCall
@@ -2785,7 +3281,7 @@ impl NestedInterpolationProcessor {
                 chars.next(); // consume second '{'
                 current_depth += 1;
                 max_found = max_found.max(current_depth);
-                
+
                 if current_depth > max_depth {
                     return Err(format!(
                         "Nesting depth {} exceeds maximum allowed depth {}",
@@ -2809,7 +3305,7 @@ impl NestedInterpolationProcessor {
     ) -> Result<String, String> {
         // First, resolve all simple variable references
         let mut resolved = expr.to_string();
-        
+
         // Extract all variables and replace them
         let vars = ExpressionEvaluator::extract_variable_references(expr);
         for var in vars {
@@ -2845,17 +3341,18 @@ impl NestedInterpolationProcessor {
             if let Some(paren_end) = trimmed.rfind(')') {
                 let func_name = trimmed[..paren_start].trim();
                 let args_str = &trimmed[paren_start + 1..paren_end];
-                
+
                 if let Some(func) = functions.get(func_name) {
                     // Parse arguments (simple comma-separated for now)
                     let args: Vec<String> = if args_str.trim().is_empty() {
                         Vec::new()
                     } else {
-                        args_str.split(',')
+                        args_str
+                            .split(',')
                             .map(|arg| arg.trim().to_string())
                             .collect()
                     };
-                    
+
                     return Ok(Some(func(&args)?));
                 }
             }
@@ -3684,9 +4181,10 @@ mod tests {
         assert!(!ExpressionEvaluator::is_complex_expression("\"quoted\""));
 
         // Test variable extraction
-        let vars =
+        let mut vars =
             ExpressionEvaluator::extract_variable_references("Hello {{name}} from {{location}}!");
-        assert_eq!(vars, vec!["name", "location"]);
+        vars.sort(); // Sort to ensure consistent ordering
+        assert_eq!(vars, vec!["location", "name"]);
 
         let empty_vars = ExpressionEvaluator::extract_variable_references("No variables here");
         assert!(empty_vars.is_empty());
@@ -3829,5 +4327,154 @@ mod tests {
         assert_eq!(param.parameter_type, ParameterType::String);
         assert!(!param.is_required);
         // Note: description association in tests might not work perfectly due to mock data
+    }
+
+    #[test]
+    fn test_attribute_info_creation() {
+        // Test boolean attribute
+        let private_attr = AttributeInfo::new("private".to_string(), 5);
+        assert_eq!(private_attr.name, "private");
+        assert_eq!(private_attr.attribute_type, AttributeType::Private);
+        assert!(private_attr.is_boolean);
+        assert!(private_attr.arguments.is_empty());
+        assert!(private_attr.is_valid());
+
+        // Test parameterized attribute
+        let group_attr = AttributeInfo::with_value("group".to_string(), "test".to_string(), 10);
+        assert_eq!(group_attr.name, "group");
+        assert_eq!(group_attr.attribute_type, AttributeType::Group);
+        assert!(!group_attr.is_boolean);
+        assert_eq!(group_attr.arguments, vec!["test"]);
+        assert_eq!(group_attr.get_value(), Some("test"));
+        assert!(group_attr.is_valid());
+
+        // Test confirm attribute with message
+        let confirm_attr =
+            AttributeInfo::with_value("confirm".to_string(), "Are you sure?".to_string(), 15);
+        assert_eq!(confirm_attr.attribute_type, AttributeType::Confirm);
+        assert_eq!(confirm_attr.get_value(), Some("Are you sure?"));
+        assert!(confirm_attr.is_valid());
+
+        // Test doc attribute
+        let doc_attr =
+            AttributeInfo::with_value("doc".to_string(), "Test documentation".to_string(), 20);
+        assert_eq!(doc_attr.attribute_type, AttributeType::Doc);
+        assert_eq!(doc_attr.get_value(), Some("Test documentation"));
+        assert!(doc_attr.is_valid());
+    }
+
+    #[test]
+    fn test_attribute_validation() {
+        // Test valid group attribute
+        let valid_group =
+            AttributeInfo::with_value("group".to_string(), "deployment".to_string(), 1);
+        assert!(valid_group.is_valid());
+        assert!(valid_group.validation_errors().is_empty());
+
+        // Test invalid group attribute (no arguments)
+        let invalid_group = AttributeInfo::new("group".to_string(), 1);
+        assert!(!invalid_group.is_valid());
+        let errors = invalid_group.validation_errors();
+        assert!(!errors.is_empty());
+        assert!(errors[0].contains("Group attribute requires exactly one argument"));
+
+        // Test private attribute with arguments (invalid)
+        let mut invalid_private = AttributeInfo::new("private".to_string(), 1);
+        invalid_private.arguments = vec!["invalid".to_string()];
+        invalid_private.is_boolean = false;
+        assert!(!invalid_private.is_valid());
+        let errors = invalid_private.validation_errors();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("does not accept arguments")));
+    }
+
+    #[test]
+    fn test_attribute_type_detection() {
+        assert_eq!(AttributeType::from_name("group"), AttributeType::Group);
+        assert_eq!(AttributeType::from_name("private"), AttributeType::Private);
+        assert_eq!(AttributeType::from_name("confirm"), AttributeType::Confirm);
+        assert_eq!(AttributeType::from_name("doc"), AttributeType::Doc);
+        assert_eq!(AttributeType::from_name("no-cd"), AttributeType::NoCD);
+        assert_eq!(AttributeType::from_name("windows"), AttributeType::Windows);
+        assert_eq!(AttributeType::from_name("unix"), AttributeType::Unix);
+        assert_eq!(AttributeType::from_name("linux"), AttributeType::Linux);
+        assert_eq!(AttributeType::from_name("macos"), AttributeType::MacOS);
+
+        // Test unknown attribute
+        if let AttributeType::Unknown(name) = AttributeType::from_name("custom") {
+            assert_eq!(name, "custom");
+        } else {
+            panic!("Expected Unknown attribute type");
+        }
+    }
+
+    #[test]
+    fn test_attribute_validation_conflicts() {
+        let group1 = AttributeInfo::with_value("group".to_string(), "test1".to_string(), 1);
+        let group2 = AttributeInfo::with_value("group".to_string(), "test2".to_string(), 2);
+        let private = AttributeInfo::new("private".to_string(), 3);
+        let confirm = AttributeInfo::with_value("confirm".to_string(), "Sure?".to_string(), 4);
+        let windows = AttributeInfo::new("windows".to_string(), 5);
+        let linux = AttributeInfo::new("linux".to_string(), 6);
+
+        // Test multiple groups
+        let errors = QueryResultProcessor::validate_attributes(&[group1.clone(), group2.clone()]);
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("multiple group attributes")));
+
+        // Test private + confirm (should warn)
+        let errors = QueryResultProcessor::validate_attributes(&[private.clone(), confirm.clone()]);
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Private recipe") && e.contains("confirm attribute")));
+
+        // Test conflicting platforms
+        let errors = QueryResultProcessor::validate_attributes(&[windows.clone(), linux.clone()]);
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("conflicting platform attributes")));
+
+        // Test valid combination
+        let errors = QueryResultProcessor::validate_attributes(&[group1, confirm]);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_parse_attribute_arguments() {
+        // Test simple quoted string
+        assert_eq!(parse_attribute_arguments("'test'"), vec!["test"]);
+        assert_eq!(parse_attribute_arguments("\"test\""), vec!["test"]);
+
+        // Test function-style arguments
+        assert_eq!(parse_attribute_arguments("('test')"), vec!["test"]);
+        assert_eq!(
+            parse_attribute_arguments("('test', 'value')"),
+            vec!["test", "value"]
+        );
+
+        // Test unquoted value
+        assert_eq!(parse_attribute_arguments("test"), vec!["test"]);
+
+        // Test empty
+        assert_eq!(parse_attribute_arguments(""), Vec::<String>::new());
+        assert_eq!(parse_attribute_arguments("()"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_attribute_display_formatting() {
+        let private = AttributeInfo::new("private".to_string(), 1);
+        assert_eq!(private.format_display(), "[private]");
+
+        let group = AttributeInfo::with_value("group".to_string(), "test".to_string(), 1);
+        assert_eq!(group.format_display(), "[group('test')]");
+
+        let confirm = AttributeInfo::new("confirm".to_string(), 1);
+        assert_eq!(confirm.format_display(), "[confirm]");
+
+        let confirm_msg =
+            AttributeInfo::with_value("confirm".to_string(), "Are you sure?".to_string(), 1);
+        assert_eq!(confirm_msg.format_display(), "[confirm('Are you sure?')]");
     }
 }

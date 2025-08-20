@@ -440,6 +440,11 @@ test:
             dependencies: vec!["dep1".to_string()],
             comments: vec!["Test task".to_string()],
             line_number: 1,
+            group: Some("test".to_string()),
+            is_private: false,
+            confirm_message: None,
+            doc: Some("Test task documentation".to_string()),
+            attributes: vec![],
         };
 
         let tool = watcher

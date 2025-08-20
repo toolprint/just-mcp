@@ -202,6 +202,7 @@ impl ASTJustParser {
         let parameter_results = executor.execute(&bundle.parameters, ast_tree)?;
         let comment_results = executor.execute(&bundle.comments, ast_tree)?;
         let dependency_results = executor.execute(&bundle.dependencies, ast_tree)?;
+        let attribute_results = executor.execute(&bundle.attributes, ast_tree)?;
 
         // Extract structured information
         let recipes = QueryResultProcessor::extract_recipes(&recipe_results);
@@ -211,6 +212,7 @@ impl ASTJustParser {
         );
         let dependencies = QueryResultProcessor::extract_dependencies(&dependency_results);
         let comments = QueryResultProcessor::extract_comments(&comment_results);
+        let attributes = QueryResultProcessor::extract_attributes(&attribute_results);
 
         // Associate parameters with recipes and enhance with descriptions
         let mut just_tasks = Vec::new();
@@ -265,6 +267,17 @@ impl ASTJustParser {
                 .map(|comment| comment.text.clone())
                 .collect();
 
+            // Find attributes for this recipe (preceding attributes)
+            let recipe_attributes: Vec<_> = attributes
+                .iter()
+                .filter(|attr| {
+                    // Attributes should appear immediately before the recipe (within 2 lines)
+                    attr.line_number < recipe.line_number
+                        && recipe.line_number - attr.line_number <= 2
+                })
+                .cloned()
+                .collect();
+
             // Convert ParameterInfo to Parameter for JustTask
             let just_params: Vec<_> = recipe_params
                 .iter()
@@ -275,6 +288,10 @@ impl ASTJustParser {
                 })
                 .collect();
 
+            // Extract attribute information for recipe
+            let (group, is_private, confirm_message, doc) =
+                Self::extract_attribute_metadata(&recipe_attributes);
+
             let just_task = JustTask {
                 name: recipe.name,
                 body: String::new(), // Would need body extraction from queries
@@ -282,6 +299,11 @@ impl ASTJustParser {
                 dependencies: recipe_deps,
                 comments: recipe_comments,
                 line_number: recipe.line_number,
+                group,
+                is_private,
+                confirm_message,
+                doc,
+                attributes: recipe_attributes,
             };
 
             just_tasks.push(just_task);
@@ -293,6 +315,45 @@ impl ASTJustParser {
         }
 
         Ok(just_tasks)
+    }
+
+    /// Extract attribute metadata from attribute list
+    fn extract_attribute_metadata(
+        attributes: &[crate::parser::ast::queries::AttributeInfo],
+    ) -> (Option<String>, bool, Option<String>, Option<String>) {
+        let mut group = None;
+        let mut is_private = false;
+        let mut confirm_message = None;
+        let mut doc = None;
+
+        for attr in attributes {
+            match &attr.attribute_type {
+                crate::parser::ast::queries::AttributeType::Group => {
+                    if let Some(value) = attr.get_value() {
+                        group = Some(value.to_string());
+                    }
+                }
+                crate::parser::ast::queries::AttributeType::Private => {
+                    is_private = true;
+                }
+                crate::parser::ast::queries::AttributeType::Confirm => {
+                    confirm_message = attr.get_value().map(|s| s.to_string()).or_else(|| {
+                        // Default message if no custom message provided
+                        Some("Are you sure?".to_string())
+                    });
+                }
+                crate::parser::ast::queries::AttributeType::Doc => {
+                    if let Some(value) = attr.get_value() {
+                        doc = Some(value.to_string());
+                    }
+                }
+                _ => {
+                    // Other attributes don't affect the basic metadata fields
+                }
+            }
+        }
+
+        (group, is_private, confirm_message, doc)
     }
 
     /// Extract recipes using fallback pattern-based approach
@@ -466,6 +527,9 @@ impl ASTJustParser {
         // Extract the body (everything after the recipe line that's indented)
         let body = self.extract_recipe_body(&lines, recipe_line)?;
 
+        // Check privacy before moving name
+        let is_private = name.starts_with('_');
+
         Ok(JustTask {
             name,
             body,
@@ -473,6 +537,11 @@ impl ASTJustParser {
             dependencies,
             comments,
             line_number,
+            group: None, // Fallback parser doesn't extract attributes
+            is_private,  // Use naming convention for privacy
+            confirm_message: None,
+            doc: None,
+            attributes: Vec::new(),
         })
     }
 

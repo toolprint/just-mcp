@@ -262,6 +262,11 @@ impl JustfileParser {
                 dependencies,
                 comments: final_comments,
                 line_number: *index,
+                group: None, // Legacy parser doesn't extract group information
+                is_private: name.starts_with('_'), // Convention-based private detection
+                confirm_message: None, // Legacy parser doesn't extract this
+                doc: None,   // Legacy parser doesn't extract this
+                attributes: Vec::new(), // Legacy parser doesn't extract raw attributes
             }))
         } else {
             *index = current_index + 1;
@@ -881,6 +886,11 @@ impl EnhancedJustfileParser {
                 "Please check the justfile syntax and try again.".to_string(),
             ],
             line_number: 1,
+            group: None,
+            is_private: true, // Error tasks are private by default
+            confirm_message: None,
+            doc: None,
+            attributes: Vec::new(),
         }
     }
 
@@ -913,6 +923,11 @@ impl EnhancedJustfileParser {
                 "Please check the justfile syntax and try again.".to_string(),
             ],
             line_number: 1,
+            group: None,
+            is_private: true, // Error tasks are private by default
+            confirm_message: None,
+            doc: None,
+            attributes: Vec::new(),
         }
     }
 

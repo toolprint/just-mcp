@@ -72,6 +72,11 @@ impl JustCommandParser {
                         dependencies: Vec::new(),
                         comments: vec![format!("Execute '{}' task", recipe_name)],
                         line_number: 0,
+                        group: None,
+                        is_private: false,
+                        confirm_message: None,
+                        doc: None,
+                        attributes: Vec::new(),
                     };
                     tasks.push(minimal_task);
                 }
@@ -359,6 +364,11 @@ impl JustCommandParser {
             dependencies: metadata.dependencies,
             comments,
             line_number: 0, // Line numbers not meaningful with command-based parsing
+            group: metadata.group,
+            is_private: metadata.is_private,
+            confirm_message: None, // Command parser doesn't extract this currently
+            doc: None,             // Command parser doesn't extract this currently
+            attributes: Vec::new(), // Command parser doesn't extract raw attributes
         })
     }
 
