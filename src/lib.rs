@@ -6,6 +6,7 @@ pub mod error;
 pub mod executor;
 mod notification;
 pub mod parser;
+pub mod prompts;
 pub mod registry;
 pub mod resource_limits;
 pub mod security;

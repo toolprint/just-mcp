@@ -29,6 +29,7 @@ pub struct Server {
     args: Option<Args>,
     security_config: Option<crate::security::SecurityConfig>,
     resource_limits: Option<crate::resource_limits::ResourceLimits>,
+    prompt_registry: Option<Arc<crate::prompts::PromptRegistry>>,
 }
 
 impl Server {
@@ -46,6 +47,7 @@ impl Server {
             args: None,
             security_config: None,
             resource_limits: None,
+            prompt_registry: None,
         }
     }
 
@@ -76,6 +78,14 @@ impl Server {
 
     pub fn with_resource_limits(mut self, limits: crate::resource_limits::ResourceLimits) -> Self {
         self.resource_limits = Some(limits);
+        self
+    }
+
+    pub fn with_prompt_registry(
+        mut self,
+        prompt_registry: Arc<crate::prompts::PromptRegistry>,
+    ) -> Self {
+        self.prompt_registry = Some(prompt_registry);
         self
     }
 
@@ -224,6 +234,10 @@ impl Server {
 
         if let Some(ref limits) = self.resource_limits {
             handler = handler.with_resource_limits(limits.clone());
+        }
+
+        if let Some(ref prompt_registry) = self.prompt_registry {
+            handler = handler.with_prompt_registry(prompt_registry.clone());
         }
 
         // Create and configure the combined resource provider
