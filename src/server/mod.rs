@@ -5,7 +5,7 @@ use crate::notification::{NotificationReceiver, NotificationSender};
 use crate::registry::ToolRegistry;
 use crate::watcher::JustfileWatcher;
 // use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -194,7 +194,19 @@ impl Server {
                         }
                         Err(e) => {
                             tracing::error!("Transport error: {}", e);
-                            return Err(e);
+                            // Send a JSON-RPC parse error response for invalid JSON
+                            let error_response = json!({
+                                "jsonrpc": "2.0",
+                                "id": null,
+                                "error": {
+                                    "code": -32700,
+                                    "message": format!("Parse error: {}", e)
+                                }
+                            });
+                            if let Err(send_err) = self.transport.send(error_response).await {
+                                tracing::error!("Failed to send error response: {}", send_err);
+                            }
+                            // Don't return the error, continue processing
                         }
                     }
                 }

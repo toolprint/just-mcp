@@ -627,9 +627,14 @@ async fn test_malformed_json_rpc_request() {
 
     let result = handler.handle(invalid_request).await;
     assert!(
-        result.is_err(),
-        "Should fail for malformed JSON-RPC request"
+        result.is_ok(),
+        "Should return JSON-RPC parse error response for malformed request"
     );
+    
+    let response = result.unwrap().unwrap();
+    
+    // Should return parse error response with the correct id
+    validate_json_rpc_error(&response, Some(json!(16)), -32700);
 }
 
 #[tokio::test]

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use just_mcp::server::{Server, StdioTransport};
+use std::sync::Arc;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use just_mcp::cli::{Args, Commands};
@@ -85,13 +86,36 @@ async fn start_mcp_server(args: &Args) -> Result<()> {
 
     let watch_configs = absolute_configs;
 
+    // Initialize empty prompt registry (no prompts registered yet)
+    let prompt_config = just_mcp::prompts::traits::PromptConfig::default();
+
+    // Create search adapter with MockSearchProvider
+    let mock_provider = just_mcp::prompts::search_adapter::MockSearchProvider::new();
+    let search_adapter = Arc::new(
+        just_mcp::prompts::search_adapter::SearchAdapter::with_provider(
+            Arc::new(mock_provider),
+            prompt_config.clone(),
+        ),
+    );
+
+    // Build empty registry (with_defaults = false to prevent auto-registration)
+    let prompt_registry = Arc::new(
+        just_mcp::prompts::registry::PromptRegistryBuilder::new()
+            .with_config(prompt_config)
+            .with_search_adapter(search_adapter)
+            .with_defaults(false) // KEY: Keep registry empty
+            .build()
+            .await?,
+    );
+
     // Create and run the server
     let transport = Box::new(StdioTransport::new());
     let mut server = Server::new(transport)
         .with_watch_paths(watch_paths)
         .with_watch_names(watch_configs)
         .with_admin_enabled(args.admin)
-        .with_args(args.clone());
+        .with_args(args.clone())
+        .with_prompt_registry(prompt_registry);
 
     server.run().await?;
 

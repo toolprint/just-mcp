@@ -68,7 +68,22 @@ impl MessageHandler {
 
     pub async fn handle(&self, message: Value) -> Result<Option<Value>> {
         // Parse the message as a JSON-RPC request
-        let request: JsonRpcRequest = serde_json::from_value(message).map_err(Error::Json)?;
+        let request: JsonRpcRequest = match serde_json::from_value(message.clone()) {
+            Ok(req) => req,
+            Err(e) => {
+                // Try to extract the id from the malformed message for proper error response
+                let id = message.as_object().and_then(|obj| obj.get("id")).cloned();
+
+                let error = JsonRpcError {
+                    code: -32700, // Parse error
+                    message: format!("Parse error: {e}"),
+                    data: None,
+                };
+
+                let response = JsonRpcResponse::error(id, error.code, error.message);
+                return Ok(Some(serde_json::to_value(response)?));
+            }
+        };
 
         // Handle different method calls
         let result = match request.method.as_str() {
@@ -79,8 +94,6 @@ impl MessageHandler {
             }
             "tools/list" => self.handle_list_tools(&request).await,
             "tools/call" => self.handle_call_tool(&request).await,
-            "prompts/list" => self.handle_list_prompts(&request).await,
-            "prompts/get" => self.handle_get_prompt(&request).await,
             "resources/list" => self.handle_resources_list(&request).await,
             "resources/read" => self.handle_resources_read(&request).await,
             "resources/templates/list" => self.handle_resource_templates_list(&request).await,
@@ -660,6 +673,7 @@ impl MessageHandler {
         Ok(Some(serde_json::to_value(response)?))
     }
 
+    #[allow(dead_code)] // Kept for future prompt functionality
     async fn handle_list_prompts(&self, request: &JsonRpcRequest) -> Result<Option<Value>> {
         #[derive(Serialize)]
         struct ListPromptsResult {
@@ -678,8 +692,10 @@ impl MessageHandler {
         Ok(Some(serde_json::to_value(response)?))
     }
 
+    #[allow(dead_code)] // Kept for future prompt functionality
     async fn handle_get_prompt(&self, request: &JsonRpcRequest) -> Result<Option<Value>> {
         #[derive(Deserialize)]
+        #[allow(dead_code)] // Used when prompts are enabled
         struct GetPromptParams {
             name: String,
             #[serde(default)]
