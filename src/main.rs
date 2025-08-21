@@ -3,8 +3,7 @@ use clap::Parser;
 use just_mcp::server::{Server, StdioTransport};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-mod cli;
-use cli::{Args, Commands};
+use just_mcp::cli::{Args, Commands};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,7 +16,7 @@ async fn main() -> Result<()> {
     match args.command {
         #[cfg(feature = "vector-search")]
         Some(Commands::Search { search_command }) => {
-            cli::handle_search_command(search_command).await?;
+            just_mcp::cli::handle_search_command(search_command).await?;
         }
         Some(Commands::Serve) | None => {
             // Default behavior: start MCP server
@@ -90,7 +89,9 @@ async fn start_mcp_server(args: &Args) -> Result<()> {
     let transport = Box::new(StdioTransport::new());
     let mut server = Server::new(transport)
         .with_watch_paths(watch_paths)
-        .with_watch_names(watch_configs);
+        .with_watch_names(watch_configs)
+        .with_admin_enabled(args.admin)
+        .with_args(args.clone());
 
     server.run().await?;
 

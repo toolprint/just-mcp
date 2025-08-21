@@ -8,11 +8,22 @@ pub enum Error {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("Parse error: {0}")]
-    Parse(String),
+    #[error("Parse error at line {line}, column {column}: {message}")]
+    Parse {
+        message: String,
+        line: usize,
+        column: usize,
+    },
 
-    #[error("Execution error: {0}")]
-    Execution(String),
+    #[error("Execution error: command '{command}' failed with exit code {exit_code:?}: {stderr}")]
+    Execution {
+        command: String,
+        exit_code: Option<i32>,
+        stderr: String,
+    },
+
+    #[error("Just command error: {0}")]
+    JustCommand(String),
 
     #[error("Registry error: {0}")]
     Registry(String),

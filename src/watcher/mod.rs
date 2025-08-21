@@ -1,7 +1,8 @@
 use crate::error::{Error, Result};
 use crate::notification::{Notification, NotificationSender};
-use crate::parser::JustfileParser;
+use crate::parser::{EnhancedJustfileParser, ParserPreference};
 use crate::registry::ToolRegistry;
+use crate::security::SecurityValidator;
 use crate::types::{JustTask, Parameter, ToolDefinition};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::json;
@@ -15,7 +16,7 @@ use tracing::{error, info, warn};
 
 pub struct JustfileWatcher {
     registry: Arc<Mutex<ToolRegistry>>,
-    parser: JustfileParser,
+    parser: EnhancedJustfileParser,
     watched_paths: Arc<Mutex<HashSet<PathBuf>>>,
     debounce_duration: Duration,
     notification_sender: Option<NotificationSender>,
@@ -25,20 +26,75 @@ pub struct JustfileWatcher {
     path_names: Arc<Mutex<HashMap<PathBuf, Option<String>>>>,
     // Whether we have multiple watch directories
     has_multiple_dirs: bool,
+    // Security validator for parameter name sanitization
+    security_validator: SecurityValidator,
 }
 
 impl JustfileWatcher {
+    /// Create a new watcher with automatic parser selection based on environment
     pub fn new(registry: Arc<Mutex<ToolRegistry>>) -> Self {
+        // Try to use enhanced parser, fall back to legacy if needed
+        let parser = if EnhancedJustfileParser::is_just_available() {
+            info!("Just CLI detected, using Auto parser preference (AST → CLI fallback)");
+            EnhancedJustfileParser::new().expect("Failed to create enhanced parser")
+        } else {
+            warn!("Just CLI not available, using legacy regex-based parser");
+            #[allow(deprecated)]
+            EnhancedJustfileParser::new_legacy_only().expect("Failed to create legacy parser")
+        };
+
         Self {
             registry,
-            parser: JustfileParser::new().expect("Failed to create parser"),
+            parser,
             watched_paths: Arc::new(Mutex::new(HashSet::new())),
             debounce_duration: Duration::from_millis(500),
             notification_sender: None,
             tool_source_map: Arc::new(Mutex::new(HashMap::new())),
             path_names: Arc::new(Mutex::new(HashMap::new())),
             has_multiple_dirs: false,
+            security_validator: SecurityValidator::with_default(),
         }
+    }
+
+    /// Create a watcher with specific parser preference
+    pub fn new_with_parser_preference(
+        registry: Arc<Mutex<ToolRegistry>>,
+        preference: ParserPreference,
+    ) -> Self {
+        let parser = EnhancedJustfileParser::new_with_preference(preference)
+            .expect("Failed to create parser with specified preference");
+
+        info!(
+            "Created JustfileWatcher with parser preference: {}",
+            parser.get_parser_preference()
+        );
+
+        Self {
+            registry,
+            parser,
+            watched_paths: Arc::new(Mutex::new(HashSet::new())),
+            debounce_duration: Duration::from_millis(500),
+            notification_sender: None,
+            tool_source_map: Arc::new(Mutex::new(HashMap::new())),
+            path_names: Arc::new(Mutex::new(HashMap::new())),
+            has_multiple_dirs: false,
+            security_validator: SecurityValidator::with_default(),
+        }
+    }
+
+    /// Create a watcher with explicit parser preference for testing (deprecated)
+    #[deprecated(since = "0.1.3", note = "Use new_with_parser_preference() instead")]
+    pub fn new_with_command_parser_preference(
+        registry: Arc<Mutex<ToolRegistry>>,
+        prefer_command_parser: bool,
+    ) -> Self {
+        let preference = if prefer_command_parser {
+            ParserPreference::Auto
+        } else {
+            #[allow(deprecated)]
+            ParserPreference::Regex
+        };
+        Self::new_with_parser_preference(registry, preference)
     }
 
     pub fn with_notification_sender(mut self, sender: NotificationSender) -> Self {
@@ -183,7 +239,7 @@ impl JustfileWatcher {
     ) -> Result<usize> {
         let content = std::fs::read_to_string(path)?;
         let hash = ToolRegistry::compute_hash(&content);
-        let tasks = self.parser.parse_file(path)?;
+        let tasks = self.parser.parse_file_for_tools(path)?;
 
         let mut registry = self.registry.lock().await;
         let mut tool_map = self.tool_source_map.lock().await;
@@ -203,7 +259,7 @@ impl JustfileWatcher {
         // Track which tools we've seen
         let mut seen_tools = HashSet::new();
 
-        // Add or update tools from parsed tasks
+        // Add or update tools from parsed tasks (private recipes already filtered)
         for task in tasks {
             let tool = self.task_to_tool(task, &hash, path).await?;
             let tool_name = tool.name.clone();
@@ -269,21 +325,21 @@ impl JustfileWatcher {
         let path_names = self.path_names.lock().await;
         let configured_name = path_names.get(path).and_then(|n| n.as_ref());
 
-        // Always create the internal name with full path for execution
-        let internal_name = format!("just_{}_{}", task.name, path.display());
+        // Always create the internal name with full path for execution (keep underscore format for parsing)
+        let internal_name = format!("{}_{}", task.name, path.display());
 
-        // Build the display name based on configuration
+        // Build the display name based on configuration (no just_ prefix)
         let display_name = if self.has_multiple_dirs {
             // Multiple directories: add @name suffix if we have a name
             if let Some(name) = configured_name {
-                format!("just_{}@{}", task.name, name)
+                format!("{}@{}", task.name, name)
             } else {
                 // Fall back to full path if no name configured
-                format!("just_{}_{}", task.name, path.display())
+                format!("{}_{}", task.name, path.display())
             }
         } else {
-            // Single directory: no suffix in the display name
-            format!("just_{}", task.name)
+            // Single directory: just use the task name
+            task.name.clone()
         };
 
         // Generate description from comments or use default
@@ -323,6 +379,9 @@ impl JustfileWatcher {
             let mut param_schema = serde_json::Map::new();
             param_schema.insert("type".to_string(), json!("string"));
 
+            // Sanitize parameter name for MCP schema compliance
+            let sanitized_name = self.security_validator.sanitize_parameter_name(&param.name);
+
             if let Some(desc) = &param.description {
                 param_schema.insert("description".to_string(), json!(desc));
             }
@@ -330,10 +389,10 @@ impl JustfileWatcher {
             if let Some(default) = &param.default {
                 param_schema.insert("default".to_string(), json!(default));
             } else {
-                required.push(param.name.clone());
+                required.push(sanitized_name.clone());
             }
 
-            properties.insert(param.name.clone(), json!(param_schema));
+            properties.insert(sanitized_name, json!(param_schema));
         }
 
         json!({
@@ -382,7 +441,7 @@ test:
         let reg = registry.lock().await;
         let tools = reg.list_tools();
         assert_eq!(tools.len(), 1);
-        assert!(tools[0].name.contains("just_test"));
+        assert_eq!(tools[0].name, "test");
     }
 
     #[tokio::test]
@@ -408,6 +467,11 @@ test:
             dependencies: vec!["dep1".to_string()],
             comments: vec!["Test task".to_string()],
             line_number: 1,
+            group: Some("test".to_string()),
+            is_private: false,
+            confirm_message: None,
+            doc: Some("Test task documentation".to_string()),
+            attributes: vec![],
         };
 
         let tool = watcher

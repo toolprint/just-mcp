@@ -3,7 +3,6 @@
 //! This module provides various embedding providers that can generate
 //! vector embeddings for text content.
 
-use crate::vector_search::error::VectorSearchError;
 use anyhow::Result;
 use async_trait::async_trait;
 

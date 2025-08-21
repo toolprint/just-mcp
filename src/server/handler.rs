@@ -19,7 +19,7 @@ pub struct MessageHandler {
     admin_tools: Option<Arc<crate::admin::AdminTools>>,
     security_config: Option<crate::security::SecurityConfig>,
     resource_limits: Option<crate::resource_limits::ResourceLimits>,
-    resource_provider: Option<Arc<crate::embedded_content::resources::EmbeddedResourceProvider>>,
+    resource_provider: Option<Arc<dyn ResourceProvider>>,
 }
 
 impl MessageHandler {
@@ -48,9 +48,9 @@ impl MessageHandler {
         self
     }
 
-    pub fn with_resource_provider(
+    pub fn with_resource_provider<T: ResourceProvider + 'static>(
         mut self,
-        provider: Arc<crate::embedded_content::resources::EmbeddedResourceProvider>,
+        provider: Arc<T>,
     ) -> Self {
         self.resource_provider = Some(provider);
         self
@@ -197,7 +197,7 @@ impl MessageHandler {
             .map_err(|_| Error::InvalidParameter("Invalid tool call parameters".to_string()))?;
 
         // Check if this is an admin tool
-        if params.name.starts_with("admin_") {
+        if params.name.starts_with("_admin_") {
             return self
                 .handle_admin_tool(&params.name, &params.arguments, &request.id)
                 .await;
@@ -279,7 +279,7 @@ impl MessageHandler {
         request_id: &Option<Value>,
     ) -> Result<Option<Value>> {
         match tool_name {
-            "admin_sync" => {
+            "_admin_sync" => {
                 if let Some(ref admin_tools) = self.admin_tools {
                     match admin_tools.sync().await {
                         Ok(result) => {
@@ -287,9 +287,9 @@ impl MessageHandler {
                                 "content": [{
                                     "type": "text",
                                     "text": format!(
-                                        "Sync completed successfully:\n- Scanned files: {}\n- Found tasks: {}\n- Duration: {}ms\n{}",
+                                        "Sync completed successfully:\n- Scanned files: {}\n- Found recipes: {}\n- Duration: {}ms\n{}",
                                         result.scanned_files,
-                                        result.found_tasks,
+                                        result.found_recipes,
                                         result.duration_ms,
                                         if result.errors.is_empty() {
                                             String::new()
@@ -332,22 +332,24 @@ impl MessageHandler {
                     Ok(Some(serde_json::to_value(response)?))
                 }
             }
-            "admin_create_task" => {
+            "_admin_create_recipe" => {
                 if let Some(ref admin_tools) = self.admin_tools {
-                    // Parse the arguments into CreateTaskParams
-                    let params: crate::admin::CreateTaskParams =
+                    // Parse the arguments into CreateRecipeParams
+                    let params: crate::admin::CreateRecipeParams =
                         serde_json::from_value(serde_json::to_value(arguments)?).map_err(|e| {
-                            Error::InvalidParameter(format!("Invalid create_task parameters: {e}"))
+                            Error::InvalidParameter(format!(
+                                "Invalid create_recipe parameters: {e}"
+                            ))
                         })?;
 
-                    match admin_tools.create_task(params).await {
+                    match admin_tools.create_recipe(params).await {
                         Ok(result) => {
                             let tool_result = json!({
                                 "content": [{
                                     "type": "text",
                                     "text": format!(
-                                        "Task '{}' created successfully in {}.\nBackup saved to: {}",
-                                        result.task_name,
+                                        "Recipe '{}' created successfully in {}.\nBackup saved to: {}",
+                                        result.recipe_name,
                                         result.justfile_path,
                                         result.backup_path
                                     )
@@ -362,7 +364,116 @@ impl MessageHandler {
                         Err(e) => {
                             let error = JsonRpcError {
                                 code: -32603,
-                                message: format!("Failed to create task: {e}"),
+                                message: format!("Failed to create recipe: {e}"),
+                                data: None,
+                            };
+
+                            let response = JsonRpcResponse::error(
+                                request_id.clone(),
+                                error.code,
+                                error.message,
+                            );
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                    }
+                } else {
+                    let error = JsonRpcError {
+                        code: -32603,
+                        message: "Admin tools not available".to_string(),
+                        data: None,
+                    };
+
+                    let response =
+                        JsonRpcResponse::error(request_id.clone(), error.code, error.message);
+                    Ok(Some(serde_json::to_value(response)?))
+                }
+            }
+            "_admin_set_watch_directory" => {
+                if let Some(ref admin_tools) = self.admin_tools {
+                    // Parse the arguments into SetWatchDirectoryParams
+                    let params: crate::admin::SetWatchDirectoryParams =
+                        serde_json::from_value(serde_json::to_value(arguments)?).map_err(|e| {
+                            Error::InvalidParameter(format!(
+                                "Invalid set_watch_directory parameters: {e}"
+                            ))
+                        })?;
+
+                    match admin_tools.set_watch_directory(params).await {
+                        Ok(result) => {
+                            let tool_result = json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": format!(
+                                        "Set watch directory successfully:\n- New path: {}\n- Justfile detected: {}\n{}",
+                                        result.absolute_path,
+                                        if result.justfile_detected { "Yes" } else { "No" },
+                                        if let Some(justfile_path) = result.justfile_path {
+                                            format!("- Justfile path: {justfile_path}")
+                                        } else {
+                                            "- No justfile found in directory".to_string()
+                                        }
+                                    )
+                                }],
+                                "isError": false
+                            });
+
+                            let response =
+                                JsonRpcResponse::success(request_id.clone(), tool_result);
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                        Err(e) => {
+                            let error = JsonRpcError {
+                                code: -32603,
+                                message: format!("Failed to set watch directory: {e}"),
+                                data: None,
+                            };
+
+                            let response = JsonRpcResponse::error(
+                                request_id.clone(),
+                                error.code,
+                                error.message,
+                            );
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                    }
+                } else {
+                    let error = JsonRpcError {
+                        code: -32603,
+                        message: "Admin tools not available".to_string(),
+                        data: None,
+                    };
+
+                    let response =
+                        JsonRpcResponse::error(request_id.clone(), error.code, error.message);
+                    Ok(Some(serde_json::to_value(response)?))
+                }
+            }
+            "_admin_parser_doctor" => {
+                if let Some(ref admin_tools) = self.admin_tools {
+                    // Parse the verbose parameter
+                    let verbose = arguments
+                        .get("verbose")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    match admin_tools.parser_doctor(verbose).await {
+                        Ok(report) => {
+                            let tool_result = json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": report
+                                }],
+                                "isError": false
+                            });
+
+                            let response =
+                                JsonRpcResponse::success(request_id.clone(), tool_result);
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                        Err(e) => {
+                            let error = JsonRpcError {
+                                code: -32603,
+                                message: format!("Parser diagnostic failed: {e}"),
                                 data: None,
                             };
 
@@ -418,7 +529,11 @@ impl MessageHandler {
         let resources = resource_provider
             .list_resources()
             .await
-            .map_err(|e| Error::Execution(format!("Failed to list resources: {e}")))?;
+            .map_err(|e| Error::Execution {
+                command: "list_resources".to_string(),
+                exit_code: None,
+                stderr: format!("Failed to list resources: {e}"),
+            })?;
 
         let result = ResourcesListResponse {
             resources,
@@ -442,7 +557,11 @@ impl MessageHandler {
         let content = resource_provider
             .read_resource(&params.uri)
             .await
-            .map_err(|e| Error::Execution(format!("Failed to read resource: {e}")))?;
+            .map_err(|e| Error::Execution {
+                command: "read_resource".to_string(),
+                exit_code: None,
+                stderr: format!("Failed to read resource: {e}"),
+            })?;
 
         let result = ResourcesReadResponse {
             contents: vec![content],
@@ -470,10 +589,15 @@ impl MessageHandler {
         };
 
         // TODO: Handle pagination with cursor
-        let resource_templates = resource_provider
-            .list_resource_templates()
-            .await
-            .map_err(|e| Error::Execution(format!("Failed to list resource templates: {e}")))?;
+        let resource_templates =
+            resource_provider
+                .list_resource_templates()
+                .await
+                .map_err(|e| Error::Execution {
+                    command: "list_resource_templates".to_string(),
+                    exit_code: None,
+                    stderr: format!("Failed to list resource templates: {e}"),
+                })?;
 
         let result = ResourceTemplatesListResponse {
             resource_templates,
@@ -500,7 +624,11 @@ impl MessageHandler {
         let completion_result = resource_provider
             .complete_resource(&completion_request)
             .await
-            .map_err(|e| Error::Execution(format!("Failed to complete resource: {e}")))?;
+            .map_err(|e| Error::Execution {
+                command: "complete_resource".to_string(),
+                exit_code: None,
+                stderr: format!("Failed to complete resource: {e}"),
+            })?;
 
         let result = CompletionCompleteResponse {
             completion: completion_result.completion,

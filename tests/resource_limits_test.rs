@@ -71,7 +71,7 @@ timeout_test:
         .with_resource_limits(resource_limits);
 
     let request = ExecutionRequest {
-        tool_name: format!("just_timeout_test_{}", justfile_path.display()),
+        tool_name: format!("timeout_test_{}", justfile_path.display()),
         parameters: HashMap::new(),
         context: ExecutionContext {
             working_directory: Some(temp_dir.path().to_string_lossy().to_string()),
@@ -118,7 +118,7 @@ large_output:
         .with_resource_limits(resource_limits);
 
     let request = ExecutionRequest {
-        tool_name: format!("just_large_output_{}", justfile_path.display()),
+        tool_name: format!("large_output_{}", justfile_path.display()),
         parameters: HashMap::new(),
         context: ExecutionContext {
             working_directory: Some(temp_dir.path().to_string_lossy().to_string()),

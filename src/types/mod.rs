@@ -27,6 +27,19 @@ pub struct JustTask {
     pub dependencies: Vec<String>,
     pub comments: Vec<String>,
     pub line_number: usize,
+    /// Recipe group for organization (from [group('name')] attribute)
+    pub group: Option<String>,
+    /// Whether recipe is private (from [private] attribute)
+    pub is_private: bool,
+    /// Confirmation message if required (from [confirm] or [confirm("msg")] attribute)
+    pub confirm_message: Option<String>,
+    /// Recipe documentation (from [doc("text")] attribute)
+    pub doc: Option<String>,
+    /// Raw attribute information for advanced use cases
+    #[cfg(feature = "ast-parser")]
+    pub attributes: Vec<crate::parser::ast::queries::AttributeInfo>,
+    #[cfg(not(feature = "ast-parser"))]
+    pub attributes: Vec<String>, // Simplified representation when AST parser is not available
 }
 
 #[derive(Debug, Clone, PartialEq)]
