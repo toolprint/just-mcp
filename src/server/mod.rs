@@ -82,8 +82,27 @@ impl Server {
     pub async fn run(&mut self) -> Result<()> {
         tracing::info!("Starting just-mcp server");
 
-        // Start filesystem watcher in background
-        let mut watcher = JustfileWatcher::new(self.registry.clone());
+        // Start filesystem watcher in background with parser preference from CLI args
+        let mut watcher = if let Some(ref args) = self.args {
+            // Parse the parser preference from CLI args
+            match args.parser.parse::<crate::parser::ParserPreference>() {
+                Ok(preference) => {
+                    tracing::info!("Using parser preference from CLI: {}", preference);
+                    JustfileWatcher::new_with_parser_preference(self.registry.clone(), preference)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Invalid parser preference '{}': {}. Using automatic selection.",
+                        args.parser,
+                        e
+                    );
+                    JustfileWatcher::new(self.registry.clone())
+                }
+            }
+        } else {
+            tracing::info!("No CLI args provided, using automatic parser selection");
+            JustfileWatcher::new(self.registry.clone())
+        };
 
         // Add notification sender to watcher
         if let Some(sender) = self.notification_sender.clone() {

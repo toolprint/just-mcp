@@ -50,7 +50,7 @@ fn analyze_parsing(content: &str) -> Result<(), Box<dyn std::error::Error>> {
     let init_start = Instant::now();
     let mut parser = ASTJustParser::new()?;
     let init_time = init_start.elapsed();
-    println!("  Parser initialization: {:?}", init_time);
+    println!("  Parser initialization: {init_time:?}");
 
     // Warm up (first parse is often slower)
     let _ = parser.parse_content(content)?;
@@ -81,14 +81,14 @@ fn analyze_parsing(content: &str) -> Result<(), Box<dyn std::error::Error>> {
     let total_time = avg_parse_time + avg_extract_time;
     let recipe_count = recipe_counts[0]; // Should be consistent
 
-    println!("  Average parse time: {:?}", avg_parse_time);
-    println!("  Average extract time: {:?}", avg_extract_time);
-    println!("  Total time: {:?}", total_time);
-    println!("  Recipe count: {}", recipe_count);
+    println!("  Average parse time: {avg_parse_time:?}");
+    println!("  Average extract time: {avg_extract_time:?}");
+    println!("  Total time: {total_time:?}");
+    println!("  Recipe count: {recipe_count}");
 
     if recipe_count > 0 {
         let time_per_recipe = total_time.as_micros() as f64 / recipe_count as f64 / 1000.0;
-        println!("  Time per recipe: {:.2} ms", time_per_recipe);
+        println!("  Time per recipe: {time_per_recipe:.2} ms");
 
         if time_per_recipe <= 12.0 {
             println!("  ✓ Meets performance target (6-12ms per recipe)");
@@ -99,7 +99,7 @@ fn analyze_parsing(content: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     // Check cache stats
     if let Ok(stats) = parser.cache_stats() {
-        println!("  Cache stats: {}", stats);
+        println!("  Cache stats: {stats}");
     }
 
     Ok(())
@@ -121,15 +121,13 @@ fn generate_justfile(recipe_count: usize) -> String {
             0 => {
                 // Simple recipe
                 content.push_str(&format!(
-                    "# Simple task {}\ntask-{}:\n    echo \"Task {}\"\n\n",
-                    i, i, i
+                    "# Simple task {i}\ntask-{i}:\n    echo \"Task {i}\"\n\n"
                 ));
             }
             1 => {
                 // Recipe with parameters
                 content.push_str(&format!(
-                    "# Parameterized task {}\ntask-{} param=\"default{}\":\n    echo \"Task {} with {{{{param}}}}\"\n\n",
-                    i, i, i, i
+                    "# Parameterized task {i}\ntask-{i} param=\"default{i}\":\n    echo \"Task {i} with {{{{param}}}}\"\n\n"
                 ));
             }
             2 => {
@@ -140,22 +138,19 @@ fn generate_justfile(recipe_count: usize) -> String {
                     String::from("")
                 };
                 content.push_str(&format!(
-                    "# Task {} with dependency\ntask-{}: {}\n    echo \"Task {} after dependency\"\n\n",
-                    i, i, dep, i
+                    "# Task {i} with dependency\ntask-{i}: {dep}\n    echo \"Task {i} after dependency\"\n\n"
                 ));
             }
             3 => {
                 // Recipe with multiple parameters
                 content.push_str(&format!(
-                    "# Complex task {}\ntask-{} arg1=\"a\" arg2=\"b\" arg3=\"c\":\n    echo \"Complex {{{{arg1}}}} {{{{arg2}}}} {{{{arg3}}}}\"\n\n",
-                    i, i
+                    "# Complex task {i}\ntask-{i} arg1=\"a\" arg2=\"b\" arg3=\"c\":\n    echo \"Complex {{{{arg1}}}} {{{{arg2}}}} {{{{arg3}}}}\"\n\n"
                 ));
             }
             _ => {
                 // Recipe with attributes
                 content.push_str(&format!(
-                    "[private]\n[group('test')]\n# Private task {}\n_task-{}:\n    echo \"Private task {}\"\n\n",
-                    i, i, i
+                    "[private]\n[group('test')]\n# Private task {i}\n_task-{i}:\n    echo \"Private task {i}\"\n\n"
                 ));
             }
         }

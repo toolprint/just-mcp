@@ -96,7 +96,7 @@ impl<'tree> ASTNode<'tree> {
     pub fn text(&self) -> ASTResult<&str> {
         self.node
             .utf8_text(self.source.as_bytes())
-            .map_err(|e| ASTError::text_extraction(format!("UTF-8 decode error: {}", e)))
+            .map_err(|e| ASTError::text_extraction(format!("UTF-8 decode error: {e}")))
     }
 
     /// Get the text content as a trimmed string
@@ -329,7 +329,7 @@ impl fmt::Display for NodeType {
             NodeType::String => write!(f, "string"),
             NodeType::Identifier => write!(f, "identifier"),
             NodeType::Dependencies => write!(f, "dependencies"),
-            NodeType::Unknown(s) => write!(f, "unknown({})", s),
+            NodeType::Unknown(s) => write!(f, "unknown({s})"),
         }
     }
 }

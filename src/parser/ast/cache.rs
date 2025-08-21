@@ -313,8 +313,7 @@ impl QueryCompiler {
                     if let Some(first_char) = after_at.chars().next() {
                         if !first_char.is_alphabetic() && first_char != '_' {
                             return Err(ASTError::internal(format!(
-                                "Invalid capture name starting with '{}'",
-                                first_char
+                                "Invalid capture name starting with '{first_char}'"
                             )));
                         }
                     }
@@ -329,7 +328,7 @@ impl QueryCompiler {
     fn format_query_error(&self, error: &QueryError) -> String {
         // QueryError is typically an opaque type
         // We'll provide a generic error message
-        format!("Query compilation error: {:?}", error)
+        format!("Query compilation error: {error:?}")
     }
 
     /// Extract error offset from Tree-sitter error (if available)

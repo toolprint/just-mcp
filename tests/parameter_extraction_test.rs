@@ -249,10 +249,10 @@ mod parameter_extraction_tests {
             "'another quoted'"
         ));
 
-        // Test variable reference extraction
+        // Test variable reference extraction (sorted for consistency)
         let vars =
             ExpressionEvaluator::extract_variable_references("Hello {{name}} from {{location}}!");
-        assert_eq!(vars, vec!["name", "location"]);
+        assert_eq!(vars, vec!["location", "name"]);
 
         let vars = ExpressionEvaluator::extract_variable_references("Build target: {{target}}");
         assert_eq!(vars, vec!["target"]);

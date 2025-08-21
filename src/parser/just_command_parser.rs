@@ -394,15 +394,16 @@ impl JustCommandParser {
 
     /// Fallback method for content parsing (compatibility)
     pub fn parse_content(&self, content: &str) -> Result<Vec<JustTask>> {
-        // For content-based parsing, write to temp file and use Just commands
+        // For content-based parsing, write to temp directory with proper justfile name
         use std::fs;
-        use tempfile::NamedTempFile;
+        use tempfile::TempDir;
 
-        let temp_file = NamedTempFile::new().map_err(Error::Io)?;
+        let temp_dir = TempDir::new().map_err(Error::Io)?;
+        let justfile_path = temp_dir.path().join("justfile");
 
-        fs::write(temp_file.path(), content).map_err(Error::Io)?;
+        fs::write(&justfile_path, content).map_err(Error::Io)?;
 
-        self.parse_file(temp_file.path())
+        self.parse_file(&justfile_path)
     }
 }
 

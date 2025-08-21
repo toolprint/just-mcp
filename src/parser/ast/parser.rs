@@ -49,6 +49,7 @@ pub struct ASTJustParser {
     /// Global query cache for compiled patterns (shared across instances)
     query_cache: Arc<QueryCache>,
     /// Query compiler for pattern compilation
+    #[allow(dead_code)]
     query_compiler: Arc<QueryCompiler>,
     /// Pre-compiled query bundle for standard operations
     query_bundle: Option<Arc<QueryBundle>>,
@@ -201,7 +202,7 @@ impl ASTJustParser {
     pub fn parse_file<P: AsRef<Path>>(&mut self, path: P) -> ASTResult<ParseTree> {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)
-            .map_err(|e| ASTError::io(format!("Failed to read file: {}", e)))?;
+            .map_err(|e| ASTError::io(format!("Failed to read file: {e}")))?;
 
         self.parse_content(&content)
     }
@@ -570,7 +571,7 @@ impl ASTJustParser {
     /// Extract a single recipe from a recipe node (fallback method)
     fn extract_recipe_fallback(&self, node: &ASTNode, _line_number: usize) -> ASTResult<JustTask> {
         let text = node.text().map_err(|e| {
-            ASTError::recipe_extraction("unknown", format!("Text extraction failed: {}", e))
+            ASTError::recipe_extraction("unknown", format!("Text extraction failed: {e}"))
         })?;
 
         // Get the actual line number from the node position
@@ -617,12 +618,13 @@ impl ASTJustParser {
     }
 
     /// Check if an unknown node type looks like a recipe (conservative)
-    fn looks_like_recipe_conservative(&self, kind: &str, node: &ASTNode) -> bool {
+    fn looks_like_recipe_conservative(&self, kind: &str, _node: &ASTNode) -> bool {
         // Only accept explicit recipe-related node types, not generic patterns
         kind == "recipe" || kind == "recipe_definition" || kind == "rule" || kind == "task"
     }
 
     /// Check if an unknown node type looks like a recipe (legacy, broad matching)
+    #[allow(dead_code)]
     fn looks_like_recipe(&self, kind: &str, node: &ASTNode) -> bool {
         // Common patterns in Tree-sitter just grammars
         kind.contains("recipe") || 

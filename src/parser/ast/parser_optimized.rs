@@ -118,7 +118,7 @@ impl ASTJustParser {
     pub fn parse_file<P: AsRef<Path>>(&mut self, path: P) -> ASTResult<ParseTree> {
         let path = path.as_ref();
         let content = std::fs::read_to_string(path)
-            .map_err(|e| ASTError::io(format!("Failed to read file: {}", e)))?;
+            .map_err(|e| ASTError::io(format!("Failed to read file: {e}")))?;
 
         self.parse_content(&content)
     }
@@ -472,7 +472,7 @@ impl ASTJustParser {
     /// Extract a single recipe from a recipe node (fallback method)
     fn extract_recipe_fallback(&self, node: &ASTNode, _line_number: usize) -> ASTResult<JustTask> {
         let text = node.text().map_err(|e| {
-            ASTError::recipe_extraction("unknown", format!("Text extraction failed: {}", e))
+            ASTError::recipe_extraction("unknown", format!("Text extraction failed: {e}"))
         })?;
 
         // Get the actual line number from the node position

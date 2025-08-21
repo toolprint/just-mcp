@@ -88,7 +88,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 cc = "1.0"
 
 [features]
-default = ["stdio"]
+default = ["stdio", "ast-parser"]
 stdio = []
 http = ["axum", "tower", "hyper"]
 vector-search = ["libsql", "rusqlite", "ndarray", "sqlite-vss", "reqwest"]

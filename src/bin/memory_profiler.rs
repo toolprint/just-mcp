@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test with different file sizes
     for recipe_count in [10, 50, 100, 200] {
-        println!("Testing with {} recipes", recipe_count);
+        println!("Testing with {recipe_count} recipes");
         analyze_memory_usage(recipe_count)?;
         println!();
     }
@@ -105,7 +105,8 @@ fn analyze_memory_for_content(content: &str) -> Result<(), Box<dyn std::error::E
     let net_memory = total_allocated.saturating_sub(total_deallocated);
 
     println!("  Content size: {} bytes", content.len());
-    println!("  Recipe count: {}", recipes.len());
+    let recipe_count = recipes.len();
+    println!("  Recipe count: {recipe_count}");
     println!("  Parser creation: {} KB", parser_memory / 1024);
     println!("  Content parsing: {} KB", parse_memory / 1024);
     println!("  Recipe extraction: {} KB", extract_memory / 1024);
@@ -114,9 +115,9 @@ fn analyze_memory_for_content(content: &str) -> Result<(), Box<dyn std::error::E
     println!("  Net memory usage: {} KB", net_memory / 1024);
 
     // Calculate per-recipe memory
-    if recipes.len() > 0 {
+    if !recipes.is_empty() {
         let memory_per_recipe = net_memory / recipes.len();
-        println!("  Memory per recipe: {} bytes", memory_per_recipe);
+        println!("  Memory per recipe: {memory_per_recipe} bytes");
 
         // Check against reasonable bounds
         if net_memory < 100 * 1024 * 1024 {
@@ -138,26 +139,22 @@ fn generate_justfile(recipe_count: usize) -> String {
         match i % 4 {
             0 => {
                 content.push_str(&format!(
-                    "# Simple task {}\ntask-{}:\n    echo \"Running task {}\"\n\n",
-                    i, i, i
+                    "# Simple task {i}\ntask-{i}:\n    echo \"Running task {i}\"\n\n"
                 ));
             }
             1 => {
                 content.push_str(&format!(
-                    "# Parameterized task {}\ntask-{} param=\"value{}\":\n    echo \"{{{{param}}}}\"\n    echo \"Task {} complete\"\n\n",
-                    i, i, i, i
+                    "# Parameterized task {i}\ntask-{i} param=\"value{i}\":\n    echo \"{{{{param}}}}\"\n    echo \"Task {i} complete\"\n\n"
                 ));
             }
             2 => {
                 content.push_str(&format!(
-                    "# Complex task {}\ntask-{} arg1=\"a\" arg2=\"b\" arg3=\"c\":\n    echo \"{{{{arg1}}}} {{{{arg2}}}} {{{{arg3}}}}\"\n    command --flag={{{{arg1}}}}\n\n",
-                    i, i
+                    "# Complex task {i}\ntask-{i} arg1=\"a\" arg2=\"b\" arg3=\"c\":\n    echo \"{{{{arg1}}}} {{{{arg2}}}} {{{{arg3}}}}\"\n    command --flag={{{{arg1}}}}\n\n"
                 ));
             }
             _ => {
                 content.push_str(&format!(
-                    "[private]\n# Private task {}\n_task-{}:\n    echo \"Private operation\"\n    rm -rf /tmp/task-{}\n\n",
-                    i, i, i
+                    "[private]\n# Private task {i}\n_task-{i}:\n    echo \"Private operation\"\n    rm -rf /tmp/task-{i}\n\n"
                 ));
             }
         }

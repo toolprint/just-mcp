@@ -367,15 +367,67 @@ impl ConfigDataCollector {
 
     /// Collect parser configuration and availability
     fn collect_parsing_info(&self) -> Value {
+        // Get the actual parser preference from CLI args
+        let (current_preference, preference_source) = if let Some(ref args) = self.args {
+            match args.parser.parse::<crate::parser::ParserPreference>() {
+                Ok(preference) => (preference.to_string(), "CLI argument"),
+                Err(_) => {
+                    // Invalid preference, fall back to default
+                    let default = if cfg!(feature = "ast-parser") {
+                        "auto"
+                    } else {
+                        "cli"
+                    };
+                    (default.to_string(), "default (invalid CLI argument)")
+                }
+            }
+        } else {
+            // No CLI args provided, use default
+            let default = if cfg!(feature = "ast-parser") {
+                "auto"
+            } else {
+                "cli"
+            };
+            (default.to_string(), "default")
+        };
+
+        // Determine the description based on current preference
+        let parser_description = match current_preference.as_str() {
+            "auto" => {
+                if cfg!(feature = "ast-parser") {
+                    "Using AST parser with CLI fallback (AST parser enabled)"
+                } else {
+                    "Using CLI parser with regex fallback (AST parser disabled)"
+                }
+            }
+            "ast" => {
+                if cfg!(feature = "ast-parser") {
+                    "Using AST parser only"
+                } else {
+                    "AST parser requested but not available, falling back to CLI"
+                }
+            }
+            "cli" => "Using CLI parser only",
+            "regex" => "Using deprecated regex parser",
+            _ => "Unknown parser preference",
+        };
+
         json!({
             "ast_parser_available": cfg!(feature = "ast-parser"),
             "cli_parser_available": true,
             "regex_parser_available": true,
-            "default_parser": if cfg!(feature = "ast-parser") { "ast" } else { "cli" },
+            "regex_parser_deprecated": true,
+            "current_preference": current_preference,
+            "preference_source": preference_source,
+            "description": parser_description,
+            "default_parser": if cfg!(feature = "ast-parser") { "auto" } else { "cli" },
             "parser_priority": if cfg!(feature = "ast-parser") {
-                vec!["ast", "cli", "regex"]
+                vec!["ast", "cli"]
             } else {
                 vec!["cli", "regex"]
+            },
+            "deprecation_warnings": {
+                "regex_parser": "The regex parser is deprecated since v0.1.3. Use 'auto', 'ast', or 'cli' instead."
             }
         })
     }

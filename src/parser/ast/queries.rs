@@ -34,6 +34,9 @@ use crate::parser::ast::errors::{ASTError, ASTResult};
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Query, QueryCursor, Tree};
 
+/// Type alias for function maps to reduce complexity
+type FunctionMap = HashMap<String, fn(&[String]) -> Result<String, String>>;
+
 /// Predefined query patterns for justfile parsing
 pub struct QueryPatterns {
     /// Query for extracting complete recipe information
@@ -778,7 +781,7 @@ impl std::error::Error for QueryCompilationError {}
 // Add query compilation error to ASTError in errors.rs
 impl From<QueryCompilationError> for ASTError {
     fn from(err: QueryCompilationError) -> Self {
-        ASTError::internal(format!("Query compilation failed: {}", err))
+        ASTError::internal(format!("Query compilation failed: {err}"))
     }
 }
 
@@ -856,7 +859,7 @@ impl<'tree> QueryExecutor<'tree> {
                 // Extract text safely
                 let text = node
                     .utf8_text(self.source.as_bytes())
-                    .map_err(|e| ASTError::text_extraction(format!("UTF-8 error: {}", e)))?
+                    .map_err(|e| ASTError::text_extraction(format!("UTF-8 error: {e}")))?
                     .to_string();
 
                 // Create query capture
@@ -1798,7 +1801,7 @@ impl QueryResultProcessor {
         let mut arguments = Vec::new();
 
         // Find the function call pattern
-        if let Some(start) = expression.find(&format!("{}(", function_name)) {
+        if let Some(start) = expression.find(&format!("{function_name}(")) {
             let args_start = start + function_name.len() + 1;
             if let Some(end) = expression.rfind(')') {
                 let args_str = &expression[args_start..end];
@@ -2057,13 +2060,11 @@ impl QueryResultProcessor {
         let mut variables = Vec::new();
 
         // Basic regex-like extraction for identifiers
-        let mut chars = expression.chars().peekable();
+        let chars = expression.chars().peekable();
         let mut current_word = String::new();
 
-        while let Some(ch) = chars.next() {
-            if ch.is_alphabetic() || ch == '_' {
-                current_word.push(ch);
-            } else if ch.is_numeric() && !current_word.is_empty() {
+        for ch in chars {
+            if ch.is_alphabetic() || ch == '_' || (ch.is_numeric() && !current_word.is_empty()) {
                 current_word.push(ch);
             } else {
                 if !current_word.is_empty() && !Self::is_keyword(&current_word) {
@@ -2426,7 +2427,7 @@ impl std::fmt::Display for AttributeType {
             AttributeType::Linux => write!(f, "linux"),
             AttributeType::MacOS => write!(f, "macos"),
             AttributeType::NoExitMessage => write!(f, "no-exit-message"),
-            AttributeType::Unknown(name) => write!(f, "{}", name),
+            AttributeType::Unknown(name) => write!(f, "{name}"),
         }
     }
 }
@@ -2571,7 +2572,7 @@ impl AttributeInfo {
             let args = self
                 .arguments
                 .iter()
-                .map(|arg| format!("'{}'", arg))
+                .map(|arg| format!("'{arg}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("[{}({})]", self.name, args)
@@ -2946,9 +2947,7 @@ impl ExpressionEvaluator {
                         'x' => {
                             // Handle hex escapes like \x41
                             if let (Some(d1), Some(d2)) = (chars.next(), chars.next()) {
-                                if let Ok(byte_val) =
-                                    u8::from_str_radix(&format!("{}{}", d1, d2), 16)
-                                {
+                                if let Ok(byte_val) = u8::from_str_radix(&format!("{d1}{d2}"), 16) {
                                     result.push(byte_val as char);
                                 } else {
                                     // Invalid hex escape, treat literally
@@ -2983,10 +2982,10 @@ impl ExpressionEvaluator {
                                         result.push(unicode_char);
                                     } else {
                                         // Invalid unicode
-                                        result.push_str(&format!("\\u{{{}}}", hex_digits));
+                                        result.push_str(&format!("\\u{{{hex_digits}}}"));
                                     }
                                 } else {
-                                    result.push_str(&format!("\\u{{{}}}", hex_digits));
+                                    result.push_str(&format!("\\u{{{hex_digits}}}"));
                                 }
                             } else {
                                 result.push('\\');
@@ -3018,7 +3017,7 @@ impl ExpressionEvaluator {
         }
 
         // Handle negative numbers
-        let s = if s.starts_with('-') { &s[1..] } else { s };
+        let s = s.strip_prefix('-').unwrap_or(s);
 
         // Integer
         if s.chars().all(|c| c.is_ascii_digit()) {
@@ -3078,7 +3077,7 @@ impl ExpressionEvaluator {
                     Ok(value) => result.push_str(&value),
                     Err(e) => {
                         if allow_missing {
-                            result.push_str(&format!("{{{{ {} }}}}", expr));
+                            result.push_str(&format!("{{{{ {expr} }}}}"));
                         } else {
                             return Err(e);
                         }
@@ -3110,7 +3109,7 @@ impl ExpressionEvaluator {
             return variables
                 .get(expr)
                 .cloned()
-                .ok_or_else(|| format!("Variable '{}' not found", expr));
+                .ok_or_else(|| format!("Variable '{expr}' not found"));
         }
 
         // Function calls (basic support)
@@ -3149,7 +3148,7 @@ impl ExpressionEvaluator {
         if allow_missing {
             Ok(expr.to_string())
         } else {
-            Err(format!("Cannot evaluate expression: {}", expr))
+            Err(format!("Cannot evaluate expression: {expr}"))
         }
     }
 
@@ -3228,9 +3227,9 @@ impl ExpressionEvaluator {
                     _ => {
                         // Unknown function
                         if allow_missing {
-                            return Ok(Some(format!("{}({})", func_name, args_str)));
+                            return Ok(Some(format!("{func_name}({args_str})")));
                         } else {
-                            return Err(format!("Unknown function: {}", func_name));
+                            return Err(format!("Unknown function: {func_name}"));
                         }
                     }
                 }
@@ -3277,7 +3276,7 @@ impl ExpressionEvaluator {
                 if allow_missing {
                     Ok(format!("{}({})", func_name, evaluated_args.join(", ")))
                 } else {
-                    Err(format!("Unknown function type: {}", func_name))
+                    Err(format!("Unknown function type: {func_name}"))
                 }
             }
         }
@@ -3292,9 +3291,9 @@ impl ExpressionEvaluator {
         match arg.argument_type {
             ArgumentType::StringLiteral => {
                 // Remove quotes and process escapes
-                let content = if arg.value.starts_with('"') && arg.value.ends_with('"') {
-                    &arg.value[1..arg.value.len() - 1]
-                } else if arg.value.starts_with('\'') && arg.value.ends_with('\'') {
+                let content = if (arg.value.starts_with('"') && arg.value.ends_with('"'))
+                    || (arg.value.starts_with('\'') && arg.value.ends_with('\''))
+                {
                     &arg.value[1..arg.value.len() - 1]
                 } else {
                     &arg.value
@@ -3395,7 +3394,7 @@ impl ExpressionEvaluator {
                 if allow_missing {
                     Ok(format!("{}({})", func_name, args.join(", ")))
                 } else {
-                    Err(format!("Unknown built-in function: {}", func_name))
+                    Err(format!("Unknown built-in function: {func_name}"))
                 }
             }
         }
@@ -3411,8 +3410,7 @@ impl ExpressionEvaluator {
             Ok(format!("{}({})", func_name, args.join(", ")))
         } else {
             Err(format!(
-                "User-defined function not implemented: {}",
-                func_name
+                "User-defined function not implemented: {func_name}"
             ))
         }
     }
@@ -3427,8 +3425,7 @@ impl ExpressionEvaluator {
             Ok(format!("`{} {}`", func_name, args.join(" ")))
         } else {
             Err(format!(
-                "External command execution not implemented: {}",
-                func_name
+                "External command execution not implemented: {func_name}"
             ))
         }
     }
@@ -3523,7 +3520,7 @@ impl ExpressionEvaluator {
             }
         }
 
-        Err(format!("Cannot parse conditional expression: {}", expr))
+        Err(format!("Cannot parse conditional expression: {expr}"))
     }
 
     /// Parse a function call expression string into FunctionCallInfo
@@ -3545,7 +3542,7 @@ impl ExpressionEvaluator {
             }
         }
 
-        Err(format!("Cannot parse function call: {}", expr))
+        Err(format!("Cannot parse function call: {expr}"))
     }
 
     /// Evaluate arithmetic expressions (basic implementation)
@@ -3598,7 +3595,7 @@ impl ExpressionEvaluator {
                     }
                 } else if *op == "+" {
                     // String concatenation
-                    return Ok(Some(format!("{}{}", left_val, right_val)));
+                    return Ok(Some(format!("{left_val}{right_val}")));
                 }
             }
         }
@@ -3711,7 +3708,7 @@ impl NestedInterpolationProcessor {
                     Ok(value) => result.push_str(&value),
                     Err(_) => {
                         // Fall back to partial evaluation or literal inclusion
-                        result.push_str(&format!("{{{{ {} }}}}", processed_expr));
+                        result.push_str(&format!("{{{{ {processed_expr} }}}}"));
                     }
                 }
             } else {
@@ -3828,7 +3825,7 @@ impl NestedInterpolationProcessor {
             } else if ch == '}' && chars.peek().map(|(_, c)| *c) == Some('}') {
                 chars.next(); // consume second '}'
                 if brace_stack.is_empty() {
-                    return Err(format!("Unmatched '}}' at position {}", pos));
+                    return Err(format!("Unmatched '}}' at position {pos}"));
                 }
                 brace_stack.pop();
             }
@@ -3836,7 +3833,7 @@ impl NestedInterpolationProcessor {
 
         if !brace_stack.is_empty() {
             let unclosed_pos = brace_stack[0];
-            return Err(format!("Unclosed '{{{{' at position {}", unclosed_pos));
+            return Err(format!("Unclosed '{{{{' at position {unclosed_pos}"));
         }
 
         Ok(())
@@ -3856,8 +3853,7 @@ impl NestedInterpolationProcessor {
 
                 if current_depth > max_depth {
                     return Err(format!(
-                        "Nesting depth {} exceeds maximum allowed depth {}",
-                        current_depth, max_depth
+                        "Nesting depth {current_depth} exceeds maximum allowed depth {max_depth}"
                     ));
                 }
             } else if ch == '}' && chars.peek() == Some(&'}') {
@@ -3873,7 +3869,7 @@ impl NestedInterpolationProcessor {
     pub fn resolve_complex_expression(
         expr: &str,
         variables: &HashMap<String, String>,
-        functions: &HashMap<String, fn(&[String]) -> Result<String, String>>,
+        functions: &FunctionMap,
     ) -> Result<String, String> {
         // First, resolve all simple variable references
         let mut resolved = expr.to_string();
@@ -3882,7 +3878,7 @@ impl NestedInterpolationProcessor {
         let vars = ExpressionEvaluator::extract_variable_references(expr);
         for var in vars {
             if let Some(value) = variables.get(&var) {
-                resolved = resolved.replace(&format!("{{{{{}}}}}", var), value);
+                resolved = resolved.replace(&format!("{{{{{var}}}}}"), value);
             }
         }
 
@@ -3904,7 +3900,7 @@ impl NestedInterpolationProcessor {
     fn try_evaluate_complex(
         expr: &str,
         variables: &HashMap<String, String>,
-        functions: &HashMap<String, fn(&[String]) -> Result<String, String>>,
+        functions: &FunctionMap,
     ) -> Result<Option<String>, String> {
         let trimmed = expr.trim();
 
@@ -4006,7 +4002,7 @@ impl CommentAssociator {
 
     /// Extract description from "# {{param_name}}: description" pattern
     fn extract_param_comment_pattern1(comment: &str, param_name: &str) -> Option<String> {
-        let pattern = format!("{{{{{}}}}}:", param_name);
+        let pattern = format!("{{{{{param_name}}}}}:");
         if let Some(index) = comment.find(&pattern) {
             let description = comment[index + pattern.len()..].trim();
             if !description.is_empty() {
@@ -4018,7 +4014,7 @@ impl CommentAssociator {
 
     /// Extract description from "# param_name: description" pattern
     fn extract_param_comment_pattern2(comment: &str, param_name: &str) -> Option<String> {
-        let pattern = format!("{}:", param_name);
+        let pattern = format!("{param_name}:");
         if let Some(index) = comment.find(&pattern) {
             let description = comment[index + pattern.len()..].trim();
             if !description.is_empty() {
@@ -4123,9 +4119,9 @@ impl DependencyValidator {
             // For now, we assume the dependency belongs to the recipe at the same line
             // In a more sophisticated implementation, we'd track recipe-dependency associations
             if let Some(recipe) = recipes.iter().find(|r| {
-                dependency.position.map_or(false, |(line, _)| {
-                    (r.line_number as i32 - line as i32).abs() <= 3
-                })
+                dependency
+                    .position
+                    .is_some_and(|(line, _)| (r.line_number as i32 - line as i32).abs() <= 3)
             }) {
                 graph
                     .entry(recipe.name.clone())
@@ -4275,6 +4271,12 @@ pub struct DependencyValidationResult {
     pub invalid_dependencies: Vec<DependencyValidationError>,
 }
 
+impl Default for DependencyValidationResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DependencyValidationResult {
     pub fn new() -> Self {
         Self {
@@ -4381,7 +4383,7 @@ pub enum ConditionalType {
 impl ConditionalExpressionInfo {
     /// Create a simple if-then conditional
     pub fn if_then(condition: String, true_branch: String) -> Self {
-        let full_expression = format!("if {} then {}", condition, true_branch);
+        let full_expression = format!("if {condition} then {true_branch}");
         Self {
             condition_variables: Self::extract_variables(&condition),
             branch_variables: Self::extract_variables(&true_branch),
@@ -4398,10 +4400,7 @@ impl ConditionalExpressionInfo {
 
     /// Create a complete if-then-else conditional
     pub fn if_then_else(condition: String, true_branch: String, false_branch: String) -> Self {
-        let full_expression = format!(
-            "if {} then {} else {}",
-            condition, true_branch, false_branch
-        );
+        let full_expression = format!("if {condition} then {true_branch} else {false_branch}");
         let condition_vars = Self::extract_variables(&condition);
         let true_vars = Self::extract_variables(&true_branch);
         let false_vars = Self::extract_variables(&false_branch);
@@ -4427,7 +4426,7 @@ impl ConditionalExpressionInfo {
 
     /// Create a ternary conditional
     pub fn ternary(condition: String, true_branch: String, false_branch: String) -> Self {
-        let full_expression = format!("{} ? {} : {}", condition, true_branch, false_branch);
+        let full_expression = format!("{condition} ? {true_branch} : {false_branch}");
         let mut info = Self::if_then_else(condition, true_branch, false_branch);
         info.conditional_type = ConditionalType::Ternary;
         info.full_expression = full_expression;
@@ -4695,7 +4694,7 @@ impl FunctionCallInfo {
         for (i, arg) in self.arguments.iter().enumerate() {
             let arg_errors = arg.validation_errors();
             for error in arg_errors {
-                errors.push(format!("Argument {}: {}", i + 1, error));
+                errors.push(format!("Argument {}: {error}", i + 1));
             }
         }
 

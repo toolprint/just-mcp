@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use crate::notification::{Notification, NotificationSender};
-use crate::parser::EnhancedJustfileParser;
+use crate::parser::{EnhancedJustfileParser, ParserPreference};
 use crate::registry::ToolRegistry;
 use crate::types::{JustTask, Parameter, ToolDefinition};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -28,13 +28,15 @@ pub struct JustfileWatcher {
 }
 
 impl JustfileWatcher {
+    /// Create a new watcher with automatic parser selection based on environment
     pub fn new(registry: Arc<Mutex<ToolRegistry>>) -> Self {
         // Try to use enhanced parser, fall back to legacy if needed
         let parser = if EnhancedJustfileParser::is_just_available() {
-            info!("Just CLI detected, using enhanced command-based parser");
+            info!("Just CLI detected, using Auto parser preference (AST → CLI fallback)");
             EnhancedJustfileParser::new().expect("Failed to create enhanced parser")
         } else {
             warn!("Just CLI not available, using legacy regex-based parser");
+            #[allow(deprecated)]
             EnhancedJustfileParser::new_legacy_only().expect("Failed to create legacy parser")
         };
 
@@ -50,16 +52,18 @@ impl JustfileWatcher {
         }
     }
 
-    /// Create a watcher with explicit parser preference for testing
+    /// Create a watcher with specific parser preference
     pub fn new_with_parser_preference(
         registry: Arc<Mutex<ToolRegistry>>,
-        prefer_command_parser: bool,
+        preference: ParserPreference,
     ) -> Self {
-        let parser = if prefer_command_parser {
-            EnhancedJustfileParser::new().expect("Failed to create enhanced parser")
-        } else {
-            EnhancedJustfileParser::new_legacy_only().expect("Failed to create legacy parser")
-        };
+        let parser = EnhancedJustfileParser::new_with_preference(preference)
+            .expect("Failed to create parser with specified preference");
+
+        info!(
+            "Created JustfileWatcher with parser preference: {}",
+            parser.get_parser_preference()
+        );
 
         Self {
             registry,
@@ -71,6 +75,21 @@ impl JustfileWatcher {
             path_names: Arc::new(Mutex::new(HashMap::new())),
             has_multiple_dirs: false,
         }
+    }
+
+    /// Create a watcher with explicit parser preference for testing (deprecated)
+    #[deprecated(since = "0.1.3", note = "Use new_with_parser_preference() instead")]
+    pub fn new_with_command_parser_preference(
+        registry: Arc<Mutex<ToolRegistry>>,
+        prefer_command_parser: bool,
+    ) -> Self {
+        let preference = if prefer_command_parser {
+            ParserPreference::Auto
+        } else {
+            #[allow(deprecated)]
+            ParserPreference::Regex
+        };
+        Self::new_with_parser_preference(registry, preference)
     }
 
     pub fn with_notification_sender(mut self, sender: NotificationSender) -> Self {

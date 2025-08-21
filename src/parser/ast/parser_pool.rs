@@ -41,7 +41,7 @@ impl ParserPool {
             let mut parser = Parser::new();
             parser
                 .set_language(&self.language)
-                .map_err(|e| ASTError::language_load(format!("Failed to set language: {}", e)))?;
+                .map_err(|e| ASTError::language_load(format!("Failed to set language: {e}")))?;
             parser
         };
 
@@ -151,10 +151,18 @@ mod tests {
         let language = tree_sitter_just::language();
         let pool = ParserPool::new(language, 2);
 
-        // Create and return 3 parsers
-        for _ in 0..3 {
-            let _pooled = pool.get().unwrap();
-        }
+        // Create 3 parsers concurrently, then drop them all at once
+        let parser1 = pool.get().unwrap();
+        let parser2 = pool.get().unwrap();
+        let parser3 = pool.get().unwrap();
+
+        // All parsers should be different instances (created new since pool was empty)
+        assert_eq!(pool.available_count(), 0);
+
+        // Drop all parsers - only 2 should be kept due to max_size
+        drop(parser1);
+        drop(parser2);
+        drop(parser3);
 
         // Only 2 should be kept (max_size)
         assert_eq!(pool.available_count(), 2);

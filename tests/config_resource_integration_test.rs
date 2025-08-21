@@ -46,6 +46,7 @@ fn create_test_args() -> Args {
         admin: true,
         json_logs: false,
         log_level: "debug".to_string(),
+        parser: "auto".to_string(),
     }
 }
 

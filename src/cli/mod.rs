@@ -50,6 +50,13 @@ pub struct Args {
         help = "Log level (trace, debug, info, warn, error)"
     )]
     pub log_level: String,
+
+    #[arg(
+        long,
+        default_value = "auto",
+        help = "Parser to use: auto (AST→CLI fallback), ast (AST only), cli (CLI only), regex (deprecated)"
+    )]
+    pub parser: String,
 }
 
 /// Available CLI commands
