@@ -20,6 +20,7 @@ pub struct MessageHandler {
     security_config: Option<crate::security::SecurityConfig>,
     resource_limits: Option<crate::resource_limits::ResourceLimits>,
     resource_provider: Option<Arc<dyn ResourceProvider>>,
+    prompt_registry: Option<Arc<crate::prompts::PromptRegistry>>,
 }
 
 impl MessageHandler {
@@ -30,6 +31,7 @@ impl MessageHandler {
             security_config: None,
             resource_limits: None,
             resource_provider: None,
+            prompt_registry: None,
         }
     }
 
@@ -56,9 +58,32 @@ impl MessageHandler {
         self
     }
 
+    pub fn with_prompt_registry(
+        mut self,
+        prompt_registry: Arc<crate::prompts::PromptRegistry>,
+    ) -> Self {
+        self.prompt_registry = Some(prompt_registry);
+        self
+    }
+
     pub async fn handle(&self, message: Value) -> Result<Option<Value>> {
         // Parse the message as a JSON-RPC request
-        let request: JsonRpcRequest = serde_json::from_value(message).map_err(Error::Json)?;
+        let request: JsonRpcRequest = match serde_json::from_value(message.clone()) {
+            Ok(req) => req,
+            Err(e) => {
+                // Try to extract the id from the malformed message for proper error response
+                let id = message.as_object().and_then(|obj| obj.get("id")).cloned();
+
+                let error = JsonRpcError {
+                    code: -32700, // Parse error
+                    message: format!("Parse error: {e}"),
+                    data: None,
+                };
+
+                let response = JsonRpcResponse::error(id, error.code, error.message);
+                return Ok(Some(serde_json::to_value(response)?));
+            }
+        };
 
         // Handle different method calls
         let result = match request.method.as_str() {
@@ -104,6 +129,7 @@ impl MessageHandler {
         #[derive(Serialize)]
         struct ServerCapabilities {
             tools: ToolsCapability,
+            prompts: PromptsCapability,
             logging: LoggingCapability,
             resources: ResourcesCapability,
             #[serde(rename = "resourceTemplates")]
@@ -113,6 +139,12 @@ impl MessageHandler {
 
         #[derive(Serialize)]
         struct ToolsCapability {
+            #[serde(rename = "listChanged")]
+            list_changed: bool,
+        }
+
+        #[derive(Serialize)]
+        struct PromptsCapability {
             #[serde(rename = "listChanged")]
             list_changed: bool,
         }
@@ -148,6 +180,9 @@ impl MessageHandler {
             protocol_version: "2024-11-05".to_string(),
             capabilities: ServerCapabilities {
                 tools: ToolsCapability { list_changed: true },
+                prompts: PromptsCapability {
+                    list_changed: false,
+                },
                 logging: LoggingCapability {},
                 resources: ResourcesCapability {
                     subscribe: false,
@@ -636,5 +671,71 @@ impl MessageHandler {
 
         let response = JsonRpcResponse::success(request.id.clone(), serde_json::to_value(result)?);
         Ok(Some(serde_json::to_value(response)?))
+    }
+
+    #[allow(dead_code)] // Kept for future prompt functionality
+    async fn handle_list_prompts(&self, request: &JsonRpcRequest) -> Result<Option<Value>> {
+        #[derive(Serialize)]
+        struct ListPromptsResult {
+            prompts: Vec<crate::prompts::PromptDefinition>,
+        }
+
+        let prompt_registry = self
+            .prompt_registry
+            .as_ref()
+            .ok_or_else(|| Error::InvalidParameter("Prompt registry not available".to_string()))?;
+
+        let prompts = prompt_registry.list_prompts().await;
+        let result = ListPromptsResult { prompts };
+
+        let response = JsonRpcResponse::success(request.id.clone(), serde_json::to_value(result)?);
+        Ok(Some(serde_json::to_value(response)?))
+    }
+
+    #[allow(dead_code)] // Kept for future prompt functionality
+    async fn handle_get_prompt(&self, request: &JsonRpcRequest) -> Result<Option<Value>> {
+        #[derive(Deserialize)]
+        #[allow(dead_code)] // Used when prompts are enabled
+        struct GetPromptParams {
+            name: String,
+            #[serde(default)]
+            arguments: HashMap<String, Value>,
+        }
+
+        let params: GetPromptParams = serde_json::from_value(request.params.clone())
+            .map_err(|_| Error::InvalidParameter("Invalid prompts/get parameters".to_string()))?;
+
+        let prompt_registry = self
+            .prompt_registry
+            .as_ref()
+            .ok_or_else(|| Error::InvalidParameter("Prompt registry not available".to_string()))?;
+
+        // Create a prompt request
+        let prompt_request = crate::prompts::PromptRequest {
+            name: params.name.clone(),
+            arguments: params.arguments,
+        };
+
+        // Execute the prompt
+        match prompt_registry.execute_prompt_for_mcp(prompt_request).await {
+            Ok(prompt_response) => {
+                let response = JsonRpcResponse::success(
+                    request.id.clone(),
+                    serde_json::to_value(prompt_response)?,
+                );
+                Ok(Some(serde_json::to_value(response)?))
+            }
+            Err(e) => {
+                let error = JsonRpcError {
+                    code: -32603,
+                    message: format!("Prompt execution failed: {e}"),
+                    data: None,
+                };
+
+                let response =
+                    JsonRpcResponse::error(request.id.clone(), error.code, error.message);
+                Ok(Some(serde_json::to_value(response)?))
+            }
+        }
     }
 }

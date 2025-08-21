@@ -5,7 +5,7 @@ use crate::notification::{NotificationReceiver, NotificationSender};
 use crate::registry::ToolRegistry;
 use crate::watcher::JustfileWatcher;
 // use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -29,6 +29,7 @@ pub struct Server {
     args: Option<Args>,
     security_config: Option<crate::security::SecurityConfig>,
     resource_limits: Option<crate::resource_limits::ResourceLimits>,
+    prompt_registry: Option<Arc<crate::prompts::PromptRegistry>>,
 }
 
 impl Server {
@@ -46,6 +47,7 @@ impl Server {
             args: None,
             security_config: None,
             resource_limits: None,
+            prompt_registry: None,
         }
     }
 
@@ -76,6 +78,14 @@ impl Server {
 
     pub fn with_resource_limits(mut self, limits: crate::resource_limits::ResourceLimits) -> Self {
         self.resource_limits = Some(limits);
+        self
+    }
+
+    pub fn with_prompt_registry(
+        mut self,
+        prompt_registry: Arc<crate::prompts::PromptRegistry>,
+    ) -> Self {
+        self.prompt_registry = Some(prompt_registry);
         self
     }
 
@@ -184,7 +194,19 @@ impl Server {
                         }
                         Err(e) => {
                             tracing::error!("Transport error: {}", e);
-                            return Err(e);
+                            // Send a JSON-RPC parse error response for invalid JSON
+                            let error_response = json!({
+                                "jsonrpc": "2.0",
+                                "id": null,
+                                "error": {
+                                    "code": -32700,
+                                    "message": format!("Parse error: {}", e)
+                                }
+                            });
+                            if let Err(send_err) = self.transport.send(error_response).await {
+                                tracing::error!("Failed to send error response: {}", send_err);
+                            }
+                            // Don't return the error, continue processing
                         }
                     }
                 }
@@ -224,6 +246,10 @@ impl Server {
 
         if let Some(ref limits) = self.resource_limits {
             handler = handler.with_resource_limits(limits.clone());
+        }
+
+        if let Some(ref prompt_registry) = self.prompt_registry {
+            handler = handler.with_prompt_registry(prompt_registry.clone());
         }
 
         // Create and configure the combined resource provider
