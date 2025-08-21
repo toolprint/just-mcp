@@ -17,6 +17,9 @@ pub mod watcher;
 #[cfg(feature = "vector-search")]
 pub mod vector_search;
 
+#[cfg(feature = "ultrafast-framework")]
+pub mod server_v2;
+
 pub use error::{Error, Result};
 pub use server::Server;
 
