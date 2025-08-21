@@ -527,6 +527,14 @@ impl EnhancedJustfileParser {
 
     /// Parse justfile using three-tier fallback system: AST → Command → Regex → Minimal
     pub fn parse_file(&self, path: &Path) -> Result<Vec<JustTask>> {
+        // Check if file is empty - return empty task list rather than creating error task
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if content.trim().is_empty() {
+                tracing::debug!("File {} is empty, returning empty task list", path.display());
+                return Ok(vec![]);
+            }
+        }
+
         let start_time = std::time::Instant::now();
         let mut last_error = None;
 
@@ -654,6 +662,12 @@ impl EnhancedJustfileParser {
 
     /// Parse content string using three-tier fallback system: AST → Command → Regex → Minimal
     pub fn parse_content(&self, content: &str) -> Result<Vec<JustTask>> {
+        // Handle empty content - return empty task list rather than creating error task
+        if content.trim().is_empty() {
+            tracing::debug!("Content is empty, returning empty task list");
+            return Ok(vec![]);
+        }
+
         let start_time = std::time::Instant::now();
         let mut last_error = None;
 

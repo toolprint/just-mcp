@@ -1,6 +1,7 @@
 //! Test to verify AST parser is used by default when available
 
 use just_mcp::parser::EnhancedJustfileParser;
+#[cfg(feature = "ast-parser")]
 use tempfile::TempDir;
 
 #[cfg(feature = "ast-parser")]

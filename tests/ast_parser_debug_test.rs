@@ -1,7 +1,10 @@
 //! Debug test to understand AST parser behavior
 
+#[cfg(feature = "ast-parser")]
 use anyhow::Result;
+#[cfg(feature = "ast-parser")]
 use just_mcp::parser::ast::ASTJustParser;
+#[cfg(feature = "ast-parser")]
 use just_mcp::parser::JustfileParser;
 
 #[cfg(feature = "ast-parser")]

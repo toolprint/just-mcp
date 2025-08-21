@@ -4,14 +4,18 @@
 //! all existing project recipes and ensures consistency with the regex parser.
 
 use anyhow::Result;
-use just_mcp::parser::{EnhancedJustfileParser, JustfileParser, ParsingMethod};
+use just_mcp::parser::{EnhancedJustfileParser, JustfileParser};
+#[cfg(feature = "ast-parser")]
 use just_mcp::types::JustTask;
+#[cfg(feature = "ast-parser")]
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(feature = "ast-parser")]
 use std::time::Instant;
 
 /// Test data structure for tracking parsing results
+#[cfg(feature = "ast-parser")]
 #[derive(Debug, Clone)]
 struct ParsingTestResult {
     file_path: String,
@@ -27,6 +31,7 @@ struct ParsingTestResult {
 }
 
 /// Summary statistics for the validation test suite
+#[cfg(feature = "ast-parser")]
 #[derive(Debug, Default)]
 struct ValidationSummary {
     total_justfiles: usize,
@@ -132,6 +137,7 @@ fn test_justfile_parsing(path: &PathBuf) -> Result<ParsingTestResult> {
 }
 
 /// Check consistency between AST and regex parser results
+#[cfg(feature = "ast-parser")]
 fn check_parsing_consistency(ast_tasks: &[JustTask], regex_tasks: &[JustTask]) -> Vec<String> {
     let mut issues = Vec::new();
 
