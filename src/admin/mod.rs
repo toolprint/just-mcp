@@ -130,6 +130,31 @@ impl AdminTools {
 
         registry.add_tool(set_watch_directory_tool)?;
 
+        // Register parser_doctor() tool
+        let parser_doctor_tool = ToolDefinition {
+            name: "_admin_parser_doctor".to_string(),
+            description: "Diagnose parser accuracy by comparing AST and CLI parser results against expected recipes".to_string(),
+            input_schema: json!({
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "verbose": {
+                        "type": "boolean",
+                        "description": "Show detailed information about missing recipes and parsing errors",
+                        "default": false
+                    }
+                },
+                "required": [],
+                "additionalProperties": false
+            }),
+            dependencies: vec![],
+            source_hash: "admin_tool_parser_doctor_v1".to_string(),
+            last_modified: std::time::SystemTime::now(),
+            internal_name: None,
+        };
+
+        registry.add_tool(parser_doctor_tool)?;
+
         // TODO: Add modify_recipe, remove_recipe tools in future subtasks
 
         Ok(())
@@ -516,6 +541,233 @@ impl AdminTools {
             justfile_path: detected_justfile_path,
         })
     }
+
+    pub async fn parser_doctor(&self, verbose: bool) -> Result<String> {
+        info!("Running parser diagnostic");
+
+        // Find the main justfile to analyze
+        let justfile_path = {
+            let (path, _) = &self.watch_configs.first().ok_or_else(|| {
+                crate::error::Error::Other("No watch directories configured".to_string())
+            })?;
+
+            if path.is_dir() {
+                let justfile = path.join("justfile");
+                if justfile.exists() {
+                    justfile
+                } else {
+                    let justfile_cap = path.join("Justfile");
+                    if justfile_cap.exists() {
+                        justfile_cap
+                    } else {
+                        return Err(crate::error::Error::Other(
+                            "No justfile found in main watch directory".to_string(),
+                        ));
+                    }
+                }
+            } else {
+                path.clone()
+            }
+        };
+
+        // Get expected recipes using `just --summary`
+        let expected_recipes = self.get_expected_recipes(&justfile_path).await?;
+
+        // Test AST parser
+        let ast_result = self
+            .test_parser(&justfile_path, crate::parser::ParserPreference::Ast)
+            .await;
+
+        // Test CLI parser
+        let cli_result = self
+            .test_parser(&justfile_path, crate::parser::ParserPreference::Cli)
+            .await;
+
+        // Format and return results
+        self.format_diagnostic_report(&expected_recipes, &ast_result, &cli_result, verbose)
+            .await
+    }
+
+    async fn get_expected_recipes(&self, justfile_path: &std::path::Path) -> Result<Vec<String>> {
+        use std::process::Command;
+
+        let output = Command::new("just")
+            .arg("--summary")
+            .current_dir(
+                justfile_path
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new(".")),
+            )
+            .output()
+            .map_err(|e| {
+                crate::error::Error::Other(format!("Failed to execute 'just --summary': {e}"))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(crate::error::Error::Other(format!(
+                "Command 'just --summary' failed: {stderr}"
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let recipes = stdout.split_whitespace().map(|s| s.to_string()).collect();
+
+        Ok(recipes)
+    }
+
+    async fn test_parser(
+        &self,
+        justfile_path: &std::path::Path,
+        preference: crate::parser::ParserPreference,
+    ) -> ParserDiagnosticResult {
+        let parser_name = match preference {
+            crate::parser::ParserPreference::Ast => "AST",
+            crate::parser::ParserPreference::Cli => "CLI",
+            crate::parser::ParserPreference::Auto => "Auto",
+            #[allow(deprecated)]
+            crate::parser::ParserPreference::Regex => "Regex",
+        };
+
+        let mut enhanced_parser = match crate::parser::EnhancedJustfileParser::new() {
+            Ok(parser) => parser,
+            Err(e) => {
+                return ParserDiagnosticResult {
+                    found_recipes: Vec::new(),
+                    missing_recipes: Vec::new(),
+                    parsing_errors: vec![format!("Failed to create parser: {e}")],
+                    parser_name: parser_name.to_string(),
+                };
+            }
+        };
+
+        enhanced_parser.set_parser_preference(preference);
+
+        match enhanced_parser.parse_file(justfile_path) {
+            Ok(tasks) => {
+                let found_recipes: Vec<String> = tasks.into_iter().map(|t| t.name).collect();
+
+                ParserDiagnosticResult {
+                    found_recipes,
+                    missing_recipes: Vec::new(),
+                    parsing_errors: Vec::new(),
+                    parser_name: parser_name.to_string(),
+                }
+            }
+            Err(e) => ParserDiagnosticResult {
+                found_recipes: Vec::new(),
+                missing_recipes: Vec::new(),
+                parsing_errors: vec![format!("Parser failed: {e}")],
+                parser_name: parser_name.to_string(),
+            },
+        }
+    }
+
+    async fn format_diagnostic_report(
+        &self,
+        expected: &[String],
+        ast_result: &ParserDiagnosticResult,
+        cli_result: &ParserDiagnosticResult,
+        verbose: bool,
+    ) -> Result<String> {
+        let mut report = String::new();
+
+        report.push_str("# Parser Diagnostic Report\n\n");
+
+        // Calculate missing recipes for each parser
+        let ast_missing: Vec<&String> = expected
+            .iter()
+            .filter(|recipe| !ast_result.found_recipes.contains(recipe))
+            .collect();
+
+        let cli_missing: Vec<&String> = expected
+            .iter()
+            .filter(|recipe| !cli_result.found_recipes.contains(recipe))
+            .collect();
+
+        // Summary section
+        report.push_str("## Summary\n");
+        report.push_str(&format!("- Expected: {}\n", expected.len()));
+        report.push_str(&format!(
+            "- AST parser: {} ({:.0}%) | Missing: {}\n",
+            ast_result.found_recipes.len(),
+            if expected.is_empty() {
+                0.0
+            } else {
+                (ast_result.found_recipes.len() as f64 / expected.len() as f64) * 100.0
+            },
+            ast_missing.len()
+        ));
+        report.push_str(&format!(
+            "- CLI parser: {} ({:.0}%) | Missing: {}\n",
+            cli_result.found_recipes.len(),
+            if expected.is_empty() {
+                0.0
+            } else {
+                (cli_result.found_recipes.len() as f64 / expected.len() as f64) * 100.0
+            },
+            cli_missing.len()
+        ));
+
+        // Verbose details
+        if verbose {
+            // AST Parser Issues
+            report.push_str("\n## AST Parser Issues\n");
+            if ast_missing.is_empty() && ast_result.parsing_errors.is_empty() {
+                report.push_str("### No issues found\n");
+            } else {
+                if !ast_missing.is_empty() {
+                    report.push_str(&format!("### Missing Recipes ({}):\n", ast_missing.len()));
+                    for recipe in &ast_missing {
+                        report.push_str(&format!("- `{recipe}`\n"));
+                    }
+                }
+
+                if !ast_result.parsing_errors.is_empty() {
+                    report.push_str(&format!(
+                        "### Parsing Errors ({}):\n",
+                        ast_result.parsing_errors.len()
+                    ));
+                    for error in &ast_result.parsing_errors {
+                        report.push_str(&format!("- {error}\n"));
+                    }
+                }
+            }
+
+            // CLI Parser Issues
+            report.push_str("\n## CLI Parser Issues\n");
+            if cli_missing.is_empty() && cli_result.parsing_errors.is_empty() {
+                report.push_str("### No issues found\n");
+            } else {
+                if !cli_missing.is_empty() {
+                    report.push_str(&format!("### Missing Recipes ({}):\n", cli_missing.len()));
+                    for recipe in &cli_missing {
+                        report.push_str(&format!("- `{recipe}`\n"));
+                    }
+                }
+
+                if !cli_result.parsing_errors.is_empty() {
+                    report.push_str(&format!(
+                        "### Parsing Errors ({}):\n",
+                        cli_result.parsing_errors.len()
+                    ));
+                    for error in &cli_result.parsing_errors {
+                        report.push_str(&format!("- {error}\n"));
+                    }
+                }
+            }
+        }
+
+        Ok(report)
+    }
+}
+
+#[derive(Debug)]
+pub struct ParserDiagnosticResult {
+    pub found_recipes: Vec<String>,
+    pub missing_recipes: Vec<String>,
+    pub parsing_errors: Vec<String>,
+    pub parser_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

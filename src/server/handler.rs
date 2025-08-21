@@ -448,6 +448,55 @@ impl MessageHandler {
                     Ok(Some(serde_json::to_value(response)?))
                 }
             }
+            "_admin_parser_doctor" => {
+                if let Some(ref admin_tools) = self.admin_tools {
+                    // Parse the verbose parameter
+                    let verbose = arguments
+                        .get("verbose")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    match admin_tools.parser_doctor(verbose).await {
+                        Ok(report) => {
+                            let tool_result = json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": report
+                                }],
+                                "isError": false
+                            });
+
+                            let response =
+                                JsonRpcResponse::success(request_id.clone(), tool_result);
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                        Err(e) => {
+                            let error = JsonRpcError {
+                                code: -32603,
+                                message: format!("Parser diagnostic failed: {e}"),
+                                data: None,
+                            };
+
+                            let response = JsonRpcResponse::error(
+                                request_id.clone(),
+                                error.code,
+                                error.message,
+                            );
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                    }
+                } else {
+                    let error = JsonRpcError {
+                        code: -32603,
+                        message: "Admin tools not available".to_string(),
+                        data: None,
+                    };
+
+                    let response =
+                        JsonRpcResponse::error(request_id.clone(), error.code, error.message);
+                    Ok(Some(serde_json::to_value(response)?))
+                }
+            }
             _ => {
                 let error = JsonRpcError {
                     code: -32602,
