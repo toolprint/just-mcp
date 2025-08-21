@@ -462,11 +462,21 @@ impl ParsingMetrics {
 
 impl EnhancedJustfileParser {
     /// Create a new enhanced parser with all parsing methods available
+    /// 
+    /// ## Parser Priority
+    /// 
+    /// The enhanced parser implements a three-tier fallback system:
+    /// 1. **AST Parser** (Tree-sitter) - Default when available, most accurate for complex syntax
+    /// 2. **CLI Parser** (just --summary) - Good fallback for recipe discovery
+    /// 3. **Regex Parser** - Reliable backup for basic parsing
+    /// 
+    /// The AST parser is now the default choice when available, providing the most
+    /// accurate parsing with full support for all Just syntax features.
     pub fn new() -> Result<Self> {
         #[cfg(feature = "ast-parser")]
         let ast_parser = match ast::ASTJustParser::new() {
             Ok(parser) => {
-                tracing::info!("AST parser initialized successfully");
+                tracing::info!("AST parser initialized successfully - using as primary parser");
                 Some(parser)
             }
             Err(e) => {
@@ -483,7 +493,7 @@ impl EnhancedJustfileParser {
             ast_parser,
             command_parser: JustCommandParser::new()?,
             legacy_parser: JustfileParser::new()?,
-            prefer_ast_parser: true,
+            prefer_ast_parser: true,  // AST parser is now always preferred when available
             prefer_command_parser: true,
             metrics: std::sync::Arc::new(std::sync::RwLock::new(ParsingMetrics::default())),
         })

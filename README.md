@@ -37,7 +37,9 @@ This enables AI assistants to understand, explore, and execute a project's commo
 
 ### 📝 **Comprehensive Justfile Parsing**
 
+- AST-based parser using Tree-sitter for accurate syntax understanding
 - Full syntax support: parameters, defaults, dependencies, comments, attributes
+- Three-tier fallback system: AST → CLI → Regex for maximum compatibility
 - Parameter documentation from `# {{param}}: description` comments
 - Multiple parameter formats: `task(param)` and `task param`
 - Doc attributes: `[doc("description")]` for enhanced documentation
@@ -114,8 +116,12 @@ git clone https://github.com/onegrep/just-mcp.git
 cd just-mcp
 cargo install --path .
 
-# With vector search support (optional)
-cargo install --path . --features "vector-search,local-embeddings"
+# With all features including AST parser (recommended)
+cargo install --path . --features all
+
+# With specific features
+cargo install --path . --features "ast-parser"  # AST parser only
+cargo install --path . --features "vector-search,local-embeddings"  # Vector search
 ```
 
 ### Using Just

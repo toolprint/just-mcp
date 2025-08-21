@@ -94,16 +94,75 @@ just vector-help                 # Vector search commands
 - **Channel-Based Communication**: Components communicate via broadcast channels for decoupling
 - **Security by Design**: All inputs validated, paths restricted, resources limited
 - **Tool Naming**: Format is `just_<task>@<name>` or `just_<task>_<full_path>`
+- **AST-Based Parsing**: Tree-sitter parser provides accurate syntax understanding
 
 ### Module Interactions
 
 ```text
 main.rs → Server → Registry ← Watcher
                 ↓            ↓
-             Handler      Parser
+             Handler      Parser (AST/CLI/Regex)
                 ↓
             Executor → Security + ResourceLimits
 ```
+
+## AST Parser (Tree-sitter Integration)
+
+just-mcp now uses an AST-based parser powered by Tree-sitter as the primary parsing method, with automatic fallback to CLI and regex parsers for compatibility.
+
+### Parser Priority System
+
+The `EnhancedJustfileParser` implements a three-tier fallback system:
+
+1. **AST Parser** (Default) - Most accurate, handles all Just syntax features
+2. **CLI Parser** - Uses `just --summary` for recipe discovery
+3. **Regex Parser** - Basic pattern matching for simple justfiles
+
+### Building with AST Support
+
+```bash
+# Build with AST parser support (recommended)
+cargo build --features ast-parser
+
+# Build with all features including AST parser
+cargo build --features all
+
+# Test AST parser functionality
+cargo test --features ast-parser ast_parser
+```
+
+### AST Parser Benefits
+
+- **Complete Syntax Support**: Handles multiline strings, complex expressions, all attributes
+- **Error Recovery**: Continues parsing even with syntax errors
+- **Performance**: Parser reuse and query caching for efficiency
+- **Future-Proof**: Easy to support new Just language features
+
+### Testing AST Parser
+
+```bash
+# Run AST parser tests
+cargo test --features ast-parser parser::ast
+
+# Compare AST vs regex parser outputs
+cargo test --features ast-parser parser_comparison
+
+# Check parsing metrics
+RUST_LOG=just_mcp::parser=debug cargo run --features ast-parser -- --watch-dir ./demo
+```
+
+### Key AST Parser Files
+
+- `src/parser/ast/mod.rs` - Main AST parser module
+- `src/parser/ast/parser.rs` - Tree-sitter integration
+- `src/parser/ast/queries.rs` - Query execution system
+- `src/parser/ast/nodes.rs` - AST node wrappers
+- `tests/ast_parser_test.rs` - AST parser tests
+
+For detailed AST parser documentation, see:
+- [Migration Guide](docs/migration/ast-parser-migration.md)
+- [Architecture Documentation](docs/architecture/ast-parser-architecture.md)
+- [API Reference](docs/api/ast-parser-api.md)
 
 ## Vector Search (Optional Feature)
 
