@@ -53,25 +53,25 @@ impl AdminTools {
 
         registry.add_tool(sync_tool)?;
 
-        // Register create_task() tool
-        let create_task_tool = ToolDefinition {
-            name: "_admin_create_task".to_string(),
-            description: "Create a new task in a justfile with AI assistance".to_string(),
+        // Register create_recipe() tool
+        let create_recipe_tool = ToolDefinition {
+            name: "_admin_create_recipe".to_string(),
+            description: "Create a new recipe in a justfile with AI assistance".to_string(),
             input_schema: json!({
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "type": "object",
                 "properties": {
                     "watch_name": {
                         "type": "string",
-                        "description": "Name of the watch directory to create task in (e.g., 'frontend', 'backend'). If omitted, uses the main/default justfile"
+                        "description": "Name of the watch directory to create recipe in (e.g., 'frontend', 'backend'). If omitted, uses the main/default justfile"
                     },
-                    "task_name": {
+                    "recipe_name": {
                         "type": "string",
-                        "description": "Name of the new task"
+                        "description": "Name of the new recipe"
                     },
                     "description": {
                         "type": "string",
-                        "description": "Description/comment for the task"
+                        "description": "Description/comment for the recipe"
                     },
                     "recipe": {
                         "type": "string",
@@ -79,7 +79,7 @@ impl AdminTools {
                     },
                     "parameters": {
                         "type": "array",
-                        "description": "Task parameters",
+                        "description": "Recipe parameters",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -91,22 +91,22 @@ impl AdminTools {
                     },
                     "dependencies": {
                         "type": "array",
-                        "description": "Task dependencies",
+                        "description": "Recipe dependencies",
                         "items": {"type": "string"}
                     }
                 },
-                "required": ["task_name", "recipe"],
+                "required": ["recipe_name", "recipe"],
                 "additionalProperties": false
             }),
             dependencies: vec![],
-            source_hash: "admin_tool_create_task_v1".to_string(),
+            source_hash: "admin_tool_create_recipe_v1".to_string(),
             last_modified: std::time::SystemTime::now(),
             internal_name: None,
         };
 
-        registry.add_tool(create_task_tool)?;
+        registry.add_tool(create_recipe_tool)?;
 
-        // TODO: Add modify_task, remove_task tools in future subtasks
+        // TODO: Add modify_recipe, remove_recipe tools in future subtasks
 
         Ok(())
     }
@@ -116,7 +116,7 @@ impl AdminTools {
 
         let start_time = std::time::Instant::now();
         let mut scanned_files = 0;
-        let mut found_tasks = 0;
+        let mut found_recipes = 0;
         let mut errors = Vec::new();
 
         // Clear the registry cache
@@ -146,7 +146,7 @@ impl AdminTools {
                         match self.scan_justfile(&justfile_path).await {
                             Ok(task_count) => {
                                 scanned_files += 1;
-                                found_tasks += task_count;
+                                found_recipes += task_count;
                             }
                             Err(e) => {
                                 warn!("Error scanning {}: {}", justfile_path.display(), e);
@@ -162,7 +162,7 @@ impl AdminTools {
                         match self.scan_justfile(&justfile_cap).await {
                             Ok(task_count) => {
                                 scanned_files += 1;
-                                found_tasks += task_count;
+                                found_recipes += task_count;
                             }
                             Err(e) => {
                                 warn!("Error scanning {}: {}", justfile_cap.display(), e);
@@ -177,7 +177,7 @@ impl AdminTools {
                     match self.scan_justfile(path).await {
                         Ok(task_count) => {
                             scanned_files += 1;
-                            found_tasks += task_count;
+                            found_recipes += task_count;
                         }
                         Err(e) => {
                             warn!("Error scanning {}: {}", path.display(), e);
@@ -194,10 +194,10 @@ impl AdminTools {
         let duration = start_time.elapsed();
 
         info!(
-            "Sync completed in {:?}: {} files scanned, {} tasks found, {} errors",
+            "Sync completed in {:?}: {} files scanned, {} recipes found, {} errors",
             duration,
             scanned_files,
-            found_tasks,
+            found_recipes,
             errors.len()
         );
 
@@ -206,7 +206,7 @@ impl AdminTools {
 
         Ok(SyncResult {
             scanned_files,
-            found_tasks,
+            found_recipes,
             errors,
             duration_ms: duration.as_millis() as u64,
         })
@@ -224,10 +224,10 @@ impl AdminTools {
         Ok(task_count)
     }
 
-    pub async fn create_task(&self, params: CreateTaskParams) -> Result<CreateTaskResult> {
+    pub async fn create_recipe(&self, params: CreateRecipeParams) -> Result<CreateRecipeResult> {
         info!(
-            "Creating new task: {} in {}",
-            params.task_name,
+            "Creating new recipe: {} in {}",
+            params.recipe_name,
             params.watch_name.as_deref().unwrap_or("default justfile")
         );
 
@@ -296,29 +296,29 @@ impl AdminTools {
             }
         };
 
-        // Validate task name doesn't conflict with existing tasks
+        // Validate recipe name doesn't conflict with existing recipes
         {
             let registry = self.registry.lock().await;
 
-            // Check for any tool that matches the task name exactly or with @name suffix
-            // This handles both single directory (taskname) and multi-directory (taskname@name) cases
-            let existing_task = registry.list_tools().iter().any(|tool| {
-                tool.name == params.task_name
-                    || tool.name.starts_with(&format!("{}@", params.task_name))
+            // Check for any tool that matches the recipe name exactly or with @name suffix
+            // This handles both single directory (recipename) and multi-directory (recipename@name) cases
+            let existing_recipe = registry.list_tools().iter().any(|tool| {
+                tool.name == params.recipe_name
+                    || tool.name.starts_with(&format!("{}@", params.recipe_name))
             });
 
-            if existing_task {
+            if existing_recipe {
                 return Err(crate::error::Error::Other(format!(
-                    "Task '{}' already exists in {}",
-                    params.task_name,
+                    "Recipe '{}' already exists in {}",
+                    params.recipe_name,
                     justfile_path.display()
                 )));
             }
 
             // Check for admin tool conflicts
-            if params.task_name.starts_with("_admin_") {
+            if params.recipe_name.starts_with("_admin_") {
                 return Err(crate::error::Error::Other(
-                    "Task names starting with '_admin_' are reserved".to_string(),
+                    "Recipe names starting with '_admin_' are reserved".to_string(),
                 ));
             }
         }
@@ -336,34 +336,34 @@ impl AdminTools {
         // Read existing content
         let existing_content = std::fs::read_to_string(&justfile_path)?;
 
-        // Build the new task content
-        let mut task_content = String::new();
+        // Build the new recipe content
+        let mut recipe_content = String::new();
 
-        // Ensure proper spacing: always add a blank line before the new task
+        // Ensure proper spacing: always add a blank line before the new recipe
         if !existing_content.is_empty() {
             // If file doesn't end with newline, add one
             if !existing_content.ends_with('\n') {
-                task_content.push('\n');
+                recipe_content.push('\n');
             }
             // Always add a blank line for visual separation
-            task_content.push('\n');
+            recipe_content.push('\n');
         }
 
         // Add description as comment
         if let Some(desc) = &params.description {
-            task_content.push_str(&format!("# {desc}\n"));
+            recipe_content.push_str(&format!("# {desc}\n"));
         }
 
-        // Add task signature
-        task_content.push_str(&params.task_name);
+        // Add recipe signature
+        recipe_content.push_str(&params.recipe_name);
 
         // Add parameters
         if let Some(parameters) = &params.parameters {
             for param in parameters {
-                task_content.push(' ');
-                task_content.push_str(&param.name);
+                recipe_content.push(' ');
+                recipe_content.push_str(&param.name);
                 if let Some(default) = &param.default {
-                    task_content.push_str(&format!("=\"{default}\""));
+                    recipe_content.push_str(&format!("=\"{default}\""));
                 }
             }
         }
@@ -371,35 +371,35 @@ impl AdminTools {
         // Add dependencies
         if let Some(deps) = &params.dependencies {
             if !deps.is_empty() {
-                task_content.push_str(": ");
-                task_content.push_str(&deps.join(" "));
+                recipe_content.push_str(": ");
+                recipe_content.push_str(&deps.join(" "));
             }
         }
 
-        task_content.push_str(":\n");
+        recipe_content.push_str(":\n");
 
         // Add recipe body with proper indentation
         for line in params.recipe.lines() {
-            task_content.push_str("    ");
-            task_content.push_str(line);
-            task_content.push('\n');
+            recipe_content.push_str("    ");
+            recipe_content.push_str(line);
+            recipe_content.push('\n');
         }
 
         // Write updated content
-        let new_content = existing_content + &task_content;
+        let new_content = existing_content + &recipe_content;
         std::fs::write(&justfile_path, &new_content)?;
 
         // Re-scan the justfile to update registry
         self.scan_justfile(&justfile_path).await?;
 
         info!(
-            "Successfully created task '{}' in {}",
-            params.task_name,
+            "Successfully created recipe '{}' in {}",
+            params.recipe_name,
             justfile_path.display()
         );
 
-        Ok(CreateTaskResult {
-            task_name: params.task_name,
+        Ok(CreateRecipeResult {
+            recipe_name: params.recipe_name,
             justfile_path: justfile_path.to_string_lossy().to_string(),
             backup_path: backup_path.to_string_lossy().to_string(),
         })
@@ -409,30 +409,30 @@ impl AdminTools {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SyncResult {
     pub scanned_files: usize,
-    pub found_tasks: usize,
+    pub found_recipes: usize,
     pub errors: Vec<String>,
     pub duration_ms: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CreateTaskParams {
+pub struct CreateRecipeParams {
     pub watch_name: Option<String>,
-    pub task_name: String,
+    pub recipe_name: String,
     pub description: Option<String>,
     pub recipe: String,
-    pub parameters: Option<Vec<TaskParameter>>,
+    pub parameters: Option<Vec<RecipeParameter>>,
     pub dependencies: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct TaskParameter {
+pub struct RecipeParameter {
     pub name: String,
     pub default: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CreateTaskResult {
-    pub task_name: String,
+pub struct CreateRecipeResult {
+    pub recipe_name: String,
     pub justfile_path: String,
     pub backup_path: String,
 }
@@ -491,9 +491,9 @@ build:
         // with justfiles, so just check that we found at least our test justfile
         assert!(result.scanned_files >= 1);
         assert!(
-            result.found_tasks >= 2,
-            "Expected at least 2 tasks, found {}",
-            result.found_tasks
+            result.found_recipes >= 2,
+            "Expected at least 2 recipes, found {}",
+            result.found_recipes
         );
         assert_eq!(result.errors.len(), 0);
 
@@ -513,7 +513,7 @@ build:
     }
 
     #[tokio::test]
-    async fn test_create_task() {
+    async fn test_create_recipe() {
         let temp_dir = TempDir::new().unwrap();
         let justfile_path = temp_dir.path().join("justfile");
 
@@ -534,28 +534,28 @@ existing:
             vec![(temp_dir.path().to_path_buf(), None)],
         );
 
-        // Create a new task
-        let params = CreateTaskParams {
+        // Create a new recipe
+        let params = CreateRecipeParams {
             watch_name: None, // Use default
-            task_name: "new_task".to_string(),
-            description: Some("A new test task".to_string()),
+            recipe_name: "new_recipe".to_string(),
+            description: Some("A new test recipe".to_string()),
             recipe: "echo \"hello world\"\necho \"second line\"".to_string(),
-            parameters: Some(vec![TaskParameter {
+            parameters: Some(vec![RecipeParameter {
                 name: "name".to_string(),
                 default: Some("world".to_string()),
             }]),
             dependencies: Some(vec!["existing".to_string()]),
         };
 
-        let result = admin_tools.create_task(params).await.unwrap();
+        let result = admin_tools.create_recipe(params).await.unwrap();
 
-        assert_eq!(result.task_name, "new_task");
+        assert_eq!(result.recipe_name, "new_recipe");
         assert!(result.backup_path.ends_with(".justfile.bak"));
 
-        // Verify the task was added to the file
+        // Verify the recipe was added to the file
         let new_content = fs::read_to_string(&justfile_path).unwrap();
-        assert!(new_content.contains("# A new test task"));
-        assert!(new_content.contains("new_task name=\"world\": existing"));
+        assert!(new_content.contains("# A new test recipe"));
+        assert!(new_content.contains("new_recipe name=\"world\": existing"));
         assert!(new_content.contains("    echo \"hello world\""));
         assert!(new_content.contains("    echo \"second line\""));
 
@@ -572,15 +572,15 @@ existing:
         // Verify registry was updated
         let reg = registry.lock().await;
         let tools = reg.list_tools();
-        let new_task_tool = tools
+        let new_recipe_tool = tools
             .iter()
-            .find(|t| t.name.contains("new_task"))
-            .expect("New task should be in registry");
-        assert_eq!(new_task_tool.description, "A new test task");
+            .find(|t| t.name.contains("new_recipe"))
+            .expect("New recipe should be in registry");
+        assert_eq!(new_recipe_tool.description, "A new test recipe");
     }
 
     #[tokio::test]
-    async fn test_create_task_validation() {
+    async fn test_create_recipe_validation() {
         let temp_dir = TempDir::new().unwrap();
         let justfile_path = temp_dir.path().join("justfile");
 
@@ -607,37 +607,37 @@ existing:
             .await
             .unwrap();
 
-        // Try to create a task with existing name
-        let params = CreateTaskParams {
+        // Try to create a recipe with existing name
+        let params = CreateRecipeParams {
             watch_name: None, // Use default
-            task_name: "existing".to_string(),
+            recipe_name: "existing".to_string(),
             description: None,
             recipe: "echo \"duplicate\"".to_string(),
             parameters: None,
             dependencies: None,
         };
 
-        let result = admin_tools.create_task(params).await;
+        let result = admin_tools.create_recipe(params).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("already exists"));
 
-        // Try to create a task with _admin_ prefix
-        let params = CreateTaskParams {
+        // Try to create a recipe with _admin_ prefix
+        let params = CreateRecipeParams {
             watch_name: None, // Use default
-            task_name: "_admin_task".to_string(),
+            recipe_name: "_admin_recipe".to_string(),
             description: None,
             recipe: "echo \"admin\"".to_string(),
             parameters: None,
             dependencies: None,
         };
 
-        let result = admin_tools.create_task(params).await;
+        let result = admin_tools.create_recipe(params).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("reserved"));
     }
 
     #[tokio::test]
-    async fn test_create_task_with_named_dirs() {
+    async fn test_create_recipe_with_named_dirs() {
         let temp_dir1 = TempDir::new().unwrap();
         let temp_dir2 = TempDir::new().unwrap();
         let justfile_path1 = temp_dir1.path().join("justfile");
@@ -662,21 +662,21 @@ existing:
             ],
         );
 
-        // Test creating task with name
-        let params = CreateTaskParams {
+        // Test creating recipe with name
+        let params = CreateRecipeParams {
             watch_name: Some("frontend".to_string()),
-            task_name: "build".to_string(),
+            recipe_name: "build".to_string(),
             description: Some("Build frontend".to_string()),
             recipe: "npm run build".to_string(),
             parameters: None,
             dependencies: None,
         };
 
-        let result = admin_tools.create_task(params).await.unwrap();
-        assert_eq!(result.task_name, "build");
+        let result = admin_tools.create_recipe(params).await.unwrap();
+        assert_eq!(result.recipe_name, "build");
         assert!(result.justfile_path.contains("justfile"));
 
-        // Verify the task was added
+        // Verify the recipe was added
         let content = fs::read_to_string(&justfile_path1).unwrap();
         assert!(content.contains("# Build frontend"));
         assert!(content.contains("build:"));

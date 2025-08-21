@@ -197,7 +197,7 @@ impl MessageHandler {
             .map_err(|_| Error::InvalidParameter("Invalid tool call parameters".to_string()))?;
 
         // Check if this is an admin tool
-        if params.name.starts_with("admin_") {
+        if params.name.starts_with("_admin_") {
             return self
                 .handle_admin_tool(&params.name, &params.arguments, &request.id)
                 .await;
@@ -279,7 +279,7 @@ impl MessageHandler {
         request_id: &Option<Value>,
     ) -> Result<Option<Value>> {
         match tool_name {
-            "admin_sync" => {
+            "_admin_sync" => {
                 if let Some(ref admin_tools) = self.admin_tools {
                     match admin_tools.sync().await {
                         Ok(result) => {
@@ -287,9 +287,9 @@ impl MessageHandler {
                                 "content": [{
                                     "type": "text",
                                     "text": format!(
-                                        "Sync completed successfully:\n- Scanned files: {}\n- Found tasks: {}\n- Duration: {}ms\n{}",
+                                        "Sync completed successfully:\n- Scanned files: {}\n- Found recipes: {}\n- Duration: {}ms\n{}",
                                         result.scanned_files,
-                                        result.found_tasks,
+                                        result.found_recipes,
                                         result.duration_ms,
                                         if result.errors.is_empty() {
                                             String::new()
@@ -332,22 +332,24 @@ impl MessageHandler {
                     Ok(Some(serde_json::to_value(response)?))
                 }
             }
-            "admin_create_task" => {
+            "_admin_create_recipe" => {
                 if let Some(ref admin_tools) = self.admin_tools {
-                    // Parse the arguments into CreateTaskParams
-                    let params: crate::admin::CreateTaskParams =
+                    // Parse the arguments into CreateRecipeParams
+                    let params: crate::admin::CreateRecipeParams =
                         serde_json::from_value(serde_json::to_value(arguments)?).map_err(|e| {
-                            Error::InvalidParameter(format!("Invalid create_task parameters: {e}"))
+                            Error::InvalidParameter(format!(
+                                "Invalid create_recipe parameters: {e}"
+                            ))
                         })?;
 
-                    match admin_tools.create_task(params).await {
+                    match admin_tools.create_recipe(params).await {
                         Ok(result) => {
                             let tool_result = json!({
                                 "content": [{
                                     "type": "text",
                                     "text": format!(
-                                        "Task '{}' created successfully in {}.\nBackup saved to: {}",
-                                        result.task_name,
+                                        "Recipe '{}' created successfully in {}.\nBackup saved to: {}",
+                                        result.recipe_name,
                                         result.justfile_path,
                                         result.backup_path
                                     )
@@ -362,7 +364,7 @@ impl MessageHandler {
                         Err(e) => {
                             let error = JsonRpcError {
                                 code: -32603,
-                                message: format!("Failed to create task: {e}"),
+                                message: format!("Failed to create recipe: {e}"),
                                 data: None,
                             };
 
