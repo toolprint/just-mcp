@@ -87,6 +87,7 @@ pub struct ASTJustParser {
 ```
 
 **Responsibilities:**
+
 - Parser lifecycle management
 - Tree generation from source code
 - Recipe extraction coordination
@@ -105,6 +106,7 @@ pub struct QueryExecutor {
 ```
 
 **Key Features:**
+
 - Query compilation and caching
 - Pattern matching against AST
 - Result extraction and processing
@@ -122,6 +124,7 @@ pub struct ASTNode<'tree> {
 ```
 
 **Provides:**
+
 - Safe node traversal
 - Text extraction utilities
 - Node type checking
@@ -139,6 +142,7 @@ pub struct ParserPool {
 ```
 
 **Benefits:**
+
 - Reduced parser creation overhead
 - Thread-safe parser sharing
 - Automatic pool sizing
@@ -214,17 +218,20 @@ extern "C" {
 ### Key Grammar Elements
 
 1. **Recipe Definitions**
+
    ```
    recipe: name parameters? ':' dependencies? body
    ```
 
 2. **Parameters**
+
    ```
    parameters: '(' parameter_list ')' | parameter_list
    parameter: name ('=' default_value)?
    ```
 
 3. **Attributes**
+
    ```
    attribute: '[' attribute_name ('(' attribute_args ')')? ']'
    ```
@@ -363,6 +370,7 @@ pub struct ParsingMetrics {
 ### Unit Tests
 
 Located in each module:
+
 - `parser/ast/parser.rs`: Parser functionality
 - `parser/ast/queries.rs`: Query execution
 - `parser/ast/nodes.rs`: Node operations

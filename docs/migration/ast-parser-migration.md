@@ -16,18 +16,21 @@ just-mcp has evolved from a regex-based parser to a sophisticated AST-based pars
 ## Key Benefits of AST Parser
 
 ### 1. **Accuracy Improvements**
+
 - Handles complex Just syntax correctly (multiline strings, nested expressions)
 - Proper parsing of attributes like `[private]`, `[confirm]`, `[group('name')]`
 - Accurate dependency extraction including parameterized dependencies
 - Correct handling of doc comments and parameter descriptions
 
 ### 2. **Performance Benefits**
+
 - Parser reuse across multiple files
 - Optimized query execution with caching
 - Parallel parsing capabilities
 - Consistent performance regardless of file complexity
 
 ### 3. **Feature Support**
+
 - Full support for all Just language features
 - Proper error recovery and partial parsing
 - Structured error messages with line/column information
@@ -151,6 +154,7 @@ parser.set_command_parsing_enabled(true); // Enable CLI fallback
 ### Breaking Changes
 
 None! The AST parser maintains full backward compatibility:
+
 - Same `JustTask` structure returned
 - Same MCP tool interface exposed
 - Graceful fallback ensures continuous operation
@@ -162,6 +166,7 @@ None! The AST parser maintains full backward compatibility:
 If you see "Failed to initialize AST parser" in logs:
 
 1. **Check Build Features**
+
    ```bash
    # Verify just-mcp was built with ast-parser feature
    just-mcp --version
@@ -172,6 +177,7 @@ If you see "Failed to initialize AST parser" in logs:
    - On some systems, you may need to install build tools
 
 3. **Force Fallback Mode**
+
    ```bash
    # Temporarily disable AST parser
    just-mcp --watch-dir . --no-ast
@@ -182,6 +188,7 @@ If you see "Failed to initialize AST parser" in logs:
 If parsing seems slow:
 
 1. **Check Parser Metrics**
+
    ```rust
    let diagnostics = parser.get_diagnostics();
    println!("{}", diagnostics);
@@ -206,11 +213,13 @@ If tasks appear different with AST parser:
 ## Best Practices
 
 1. **Always Build with AST Support**
+
    ```bash
    cargo build --features ast-parser
    ```
 
 2. **Monitor Parser Performance**
+
    ```rust
    let metrics = parser.get_metrics();
    if metrics.ast_success_rate() < 0.8 {
@@ -236,6 +245,7 @@ If tasks appear different with AST parser:
 ## Support
 
 For migration assistance:
+
 - Check the [AST Parser Documentation](./ast-parser-architecture.md)
 - Review [Parser API Documentation](./ast-parser-api.md)
 - Submit issues on GitHub with the `ast-parser` label

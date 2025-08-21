@@ -160,6 +160,7 @@ RUST_LOG=just_mcp::parser=debug cargo run --features ast-parser -- --watch-dir .
 - `tests/ast_parser_test.rs` - AST parser tests
 
 For detailed AST parser documentation, see:
+
 - [Migration Guide](docs/migration/ast-parser-migration.md)
 - [Architecture Documentation](docs/architecture/ast-parser-architecture.md)
 - [API Reference](docs/api/ast-parser-api.md)

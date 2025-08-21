@@ -5,9 +5,7 @@
 
 #[cfg(feature = "ast-parser")]
 mod attribute_parsing_tests {
-    use just_mcp::parser::ast::queries::{
-        AttributeInfo, AttributeType, QueryResultProcessor,
-    };
+    use just_mcp::parser::ast::queries::{AttributeInfo, AttributeType, QueryResultProcessor};
     use just_mcp::parser::ast::ASTJustParser;
 
     fn create_parser() -> ASTJustParser {
@@ -29,23 +27,31 @@ dangerous-task:
     rm -rf data/
 "#;
 
-        let tree = parser.parse_content(content).expect("Failed to parse content");
+        let tree = parser
+            .parse_content(content)
+            .expect("Failed to parse content");
         let tasks = parser
             .extract_recipes(&tree)
             .expect("Failed to extract recipes");
 
-        println!("Extracted {} tasks: {:?}", tasks.len(), tasks.iter().map(|t| &t.name).collect::<Vec<_>>());
-        
+        println!(
+            "Extracted {} tasks: {:?}",
+            tasks.len(),
+            tasks.iter().map(|t| &t.name).collect::<Vec<_>>()
+        );
+
         // Verify that we extract the basic recipes
         // and that the attribute fields exist (even if empty)
         for task in &tasks {
-            println!("Task: {}, private: {}, group: {:?}, confirm: {:?}", 
-                     task.name, task.is_private, task.group, task.confirm_message);
-            
+            println!(
+                "Task: {}, private: {}, group: {:?}, confirm: {:?}",
+                task.name, task.is_private, task.group, task.confirm_message
+            );
+
             // Verify attribute fields exist
             assert!(task.attributes.is_empty()); // No attributes in simple test
-            // These fields should exist but be None/false for tasks without attributes
-            // The is_private field should be inferred from naming convention
+                                                 // These fields should exist but be None/false for tasks without attributes
+                                                 // The is_private field should be inferred from naming convention
             if task.name.starts_with('_') {
                 assert!(task.is_private);
             }
@@ -63,7 +69,9 @@ seed-db count="100":
     echo "Seeding {{count}} records"
 "#;
 
-        let tree = parser.parse_content(content).expect("Failed to parse content");
+        let tree = parser
+            .parse_content(content)
+            .expect("Failed to parse content");
         let tasks = parser
             .extract_recipes(&tree)
             .expect("Failed to extract recipes");
@@ -95,7 +103,9 @@ setup-macos:
     brew update
 "#;
 
-        let tree = parser.parse_content(content).expect("Failed to parse content");
+        let tree = parser
+            .parse_content(content)
+            .expect("Failed to parse content");
         let tasks = parser
             .extract_recipes(&tree)
             .expect("Failed to extract recipes");
@@ -119,11 +129,8 @@ setup-macos:
         let valid_private = AttributeInfo::new("private".to_string(), 1);
         assert!(valid_private.is_valid());
 
-        let valid_confirm = AttributeInfo::with_value(
-            "confirm".to_string(),
-            "Are you sure?".to_string(),
-            1,
-        );
+        let valid_confirm =
+            AttributeInfo::with_value("confirm".to_string(), "Are you sure?".to_string(), 1);
         assert!(valid_confirm.is_valid());
 
         // Test invalid attributes
@@ -208,7 +215,9 @@ cleanup:
     echo "Cleanup completed"
 "#;
 
-        let tree = parser.parse_content(content).expect("Failed to parse content");
+        let tree = parser
+            .parse_content(content)
+            .expect("Failed to parse content");
         let tasks = parser
             .extract_recipes(&tree)
             .expect("Failed to extract recipes");
@@ -233,7 +242,9 @@ global-command:
     echo "This runs without changing directory"
 "#;
 
-        let tree = parser.parse_content(content).expect("Failed to parse content");
+        let tree = parser
+            .parse_content(content)
+            .expect("Failed to parse content");
         let tasks = parser
             .extract_recipes(&tree)
             .expect("Failed to extract recipes");
@@ -258,7 +269,8 @@ global-command:
         );
         // Unknown attributes need arguments to be considered valid in our implementation
         // Boolean attributes need to be explicitly defined
-        let unknown_with_args = AttributeInfo::with_value("custom-attr".to_string(), "value".to_string(), 1);
+        let unknown_with_args =
+            AttributeInfo::with_value("custom-attr".to_string(), "value".to_string(), 1);
         assert!(unknown_with_args.is_valid()); // Unknown attributes with args are considered valid
 
         // Unknown attributes shouldn't cause validation errors by themselves

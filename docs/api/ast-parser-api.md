@@ -61,6 +61,7 @@ let mut parser = ASTJustParser::new()?;
 ```
 
 **Returns:**
+
 - `Ok(ASTJustParser)` on success
 - `Err(ASTError)` if Tree-sitter initialization fails
 
@@ -73,9 +74,11 @@ let tree = parser.parse_file(Path::new("justfile"))?;
 ```
 
 **Parameters:**
+
 - `path`: Path to the justfile
 
 **Returns:**
+
 - `Ok(ParseTree)` containing the AST
 - `Err(ASTError)` on parsing failure
 
@@ -89,9 +92,11 @@ let tree = parser.parse_content(content)?;
 ```
 
 **Parameters:**
+
 - `content`: Justfile content as string
 
 **Returns:**
+
 - `Ok(ParseTree)` containing the AST
 - `Err(ASTError)` on parsing failure
 
@@ -104,9 +109,11 @@ let tasks = parser.extract_recipes(&tree)?;
 ```
 
 **Parameters:**
+
 - `tree`: Previously parsed AST
 
 **Returns:**
+
 - `Ok(Vec<JustTask>)` containing all recipes
 - `Err(ASTError)` on extraction failure
 
@@ -275,6 +282,7 @@ let result = executor.execute_query("recipe", &tree, source)?;
 ```
 
 **Query Types:**
+
 - `"recipe"`: Extract recipe definitions
 - `"comment"`: Extract comments
 - `"attribute"`: Extract attributes

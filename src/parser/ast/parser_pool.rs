@@ -29,19 +29,22 @@ impl ParserPool {
 
     /// Get a parser from the pool or create a new one if needed
     pub fn get(&self) -> ASTResult<PooledParser> {
-        let mut available = self.available.lock()
+        let mut available = self
+            .available
+            .lock()
             .map_err(|_| ASTError::internal("Failed to lock parser pool"))?;
-        
+
         let parser = if let Some(parser) = available.pop() {
             parser
         } else {
             // Create a new parser
             let mut parser = Parser::new();
-            parser.set_language(&self.language)
+            parser
+                .set_language(&self.language)
                 .map_err(|e| ASTError::language_load(format!("Failed to set language: {}", e)))?;
             parser
         };
-        
+
         Ok(PooledParser {
             parser: Some(parser),
             pool: Arc::clone(&self.available),
@@ -51,9 +54,7 @@ impl ParserPool {
 
     /// Get the number of available parsers in the pool
     pub fn available_count(&self) -> usize {
-        self.available.lock()
-            .map(|pool| pool.len())
-            .unwrap_or(0)
+        self.available.lock().map(|pool| pool.len()).unwrap_or(0)
     }
 }
 
@@ -67,7 +68,9 @@ pub struct PooledParser {
 impl PooledParser {
     /// Get a mutable reference to the parser
     pub fn parser_mut(&mut self) -> &mut Parser {
-        self.parser.as_mut().expect("Parser already returned to pool")
+        self.parser
+            .as_mut()
+            .expect("Parser already returned to pool")
     }
 }
 
@@ -110,14 +113,14 @@ mod tests {
     fn test_parser_pool_get_and_return() {
         let language = tree_sitter_just::language();
         let pool = ParserPool::new(language, 4);
-        
+
         // Get a parser
         {
             let mut pooled = pool.get().unwrap();
             let _parser = pooled.parser_mut();
             assert_eq!(pool.available_count(), 0);
         }
-        
+
         // Parser should be returned to pool
         assert_eq!(pool.available_count(), 1);
     }
@@ -126,20 +129,20 @@ mod tests {
     fn test_parser_pool_reuse() {
         let language = tree_sitter_just::language();
         let pool = ParserPool::new(language, 4);
-        
+
         // Use and return a parser
         {
             let _pooled = pool.get().unwrap();
         }
-        
+
         assert_eq!(pool.available_count(), 1);
-        
+
         // Get it again - should reuse
         {
             let _pooled = pool.get().unwrap();
             assert_eq!(pool.available_count(), 0);
         }
-        
+
         assert_eq!(pool.available_count(), 1);
     }
 
@@ -147,12 +150,12 @@ mod tests {
     fn test_parser_pool_max_size() {
         let language = tree_sitter_just::language();
         let pool = ParserPool::new(language, 2);
-        
+
         // Create and return 3 parsers
         for _ in 0..3 {
             let _pooled = pool.get().unwrap();
         }
-        
+
         // Only 2 should be kept (max_size)
         assert_eq!(pool.available_count(), 2);
     }
@@ -161,7 +164,7 @@ mod tests {
     fn test_global_parser_pool() {
         let pool1 = get_global_parser_pool();
         let pool2 = get_global_parser_pool();
-        
+
         // Should be the same instance
         assert!(std::ptr::eq(pool1, pool2));
     }

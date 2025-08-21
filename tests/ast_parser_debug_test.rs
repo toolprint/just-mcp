@@ -27,19 +27,19 @@ test:
 "#;
 
     println!("=== Testing simple content ===");
-    
+
     // Parse with AST
     let tree = ast_parser.parse_content(simple_content)?;
     let ast_tasks = ast_parser.extract_recipes(&tree)?;
-    
+
     // Parse with regex
     let regex_tasks = regex_parser.parse_content(simple_content)?;
-    
+
     println!("AST parser found {} tasks:", ast_tasks.len());
     for task in &ast_tasks {
         println!("  - {}", task.name);
     }
-    
+
     println!("Regex parser found {} tasks:", regex_tasks.len());
     for task in &regex_tasks {
         println!("  - {}", task.name);
@@ -49,19 +49,19 @@ test:
     let demo_content = std::fs::read_to_string("demo/justfile")?;
     let demo_lines: Vec<&str> = demo_content.lines().take(30).collect();
     let demo_sample = demo_lines.join("\n");
-    
+
     println!("\n=== Testing demo justfile sample ===");
     println!("Content sample:\n{}", demo_sample);
-    
+
     let tree = ast_parser.parse_content(&demo_sample)?;
     let ast_tasks = ast_parser.extract_recipes(&tree)?;
     let regex_tasks = regex_parser.parse_content(&demo_sample)?;
-    
+
     println!("AST parser found {} tasks:", ast_tasks.len());
     for task in &ast_tasks {
         println!("  - '{}' (line {})", task.name, task.line_number);
     }
-    
+
     println!("Regex parser found {} tasks:", regex_tasks.len());
     for task in &regex_tasks {
         println!("  - '{}' (line {})", task.name, task.line_number);
@@ -71,7 +71,7 @@ test:
 }
 
 #[cfg(feature = "ast-parser")]
-#[test] 
+#[test]
 fn debug_ast_tree_structure() -> Result<()> {
     let mut ast_parser = ASTJustParser::new()?;
 
@@ -82,10 +82,10 @@ hello name="World":
 
     let tree = ast_parser.parse_content(content)?;
     let root_node = tree.root();
-    
+
     println!("=== AST Tree Structure ===");
     print_ast_node_wrapper(&root_node, 0);
-    
+
     Ok(())
 }
 
@@ -94,14 +94,14 @@ fn print_ast_node_wrapper(node: &just_mcp::parser::ast::ASTNode, depth: usize) {
     let indent = "  ".repeat(depth);
     let kind = node.kind();
     let text = node.text().unwrap_or("<error>");
-    
-    let formatted_text = if text.is_empty() { 
-        String::new() 
-    } else { 
-        format!(" \"{}\"", text.replace("\n", "\\n")) 
+
+    let formatted_text = if text.is_empty() {
+        String::new()
+    } else {
+        format!(" \"{}\"", text.replace("\n", "\\n"))
     };
     println!("{}{} {}", indent, kind, formatted_text);
-    
+
     for child in node.children() {
         print_ast_node_wrapper(&child, depth + 1);
     }

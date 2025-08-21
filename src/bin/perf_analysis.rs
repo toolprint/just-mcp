@@ -3,8 +3,8 @@
 //! This tool measures parsing performance and provides detailed metrics.
 
 use just_mcp::parser::ast::ASTJustParser;
-use std::time::{Duration, Instant};
 use std::fs;
+use std::time::{Duration, Instant};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("AST Parser Performance Analysis");
@@ -20,7 +20,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test with generated justfiles of various sizes
     for recipe_count in [10, 50, 99, 200] {
         let content = generate_justfile(recipe_count);
-        println!("\nTesting with {} recipes ({} bytes)", recipe_count, content.len());
+        println!(
+            "\nTesting with {} recipes ({} bytes)",
+            recipe_count,
+            content.len()
+        );
         analyze_parsing(&content)?;
     }
 
@@ -67,11 +71,11 @@ fn analyze_parsing(content: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("  Average extract time: {:?}", avg_extract_time);
     println!("  Total time: {:?}", total_time);
     println!("  Recipe count: {}", recipe_count);
-    
+
     if recipe_count > 0 {
         let time_per_recipe = total_time.as_micros() as f64 / recipe_count as f64 / 1000.0;
         println!("  Time per recipe: {:.2} ms", time_per_recipe);
-        
+
         if time_per_recipe <= 12.0 {
             println!("  ✓ Meets performance target (6-12ms per recipe)");
         } else {
@@ -89,12 +93,12 @@ fn analyze_parsing(content: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 fn generate_justfile(recipe_count: usize) -> String {
     let mut content = String::new();
-    
+
     // Add some variable definitions
     content.push_str("# Generated justfile for performance testing\n\n");
     content.push_str("default_target := \"debug\"\n");
     content.push_str("features := \"default\"\n\n");
-    
+
     // Generate recipes with various patterns
     for i in 0..recipe_count {
         // Mix of different recipe types
@@ -115,7 +119,11 @@ fn generate_justfile(recipe_count: usize) -> String {
             }
             2 => {
                 // Recipe with dependencies
-                let dep = if i > 0 { format!("task-{}", i - 1) } else { String::from("") };
+                let dep = if i > 0 {
+                    format!("task-{}", i - 1)
+                } else {
+                    String::from("")
+                };
                 content.push_str(&format!(
                     "# Task {} with dependency\ntask-{}: {}\n    echo \"Task {} after dependency\"\n\n",
                     i, i, dep, i
@@ -137,7 +145,7 @@ fn generate_justfile(recipe_count: usize) -> String {
             }
         }
     }
-    
+
     content
 }
 

@@ -7,18 +7,15 @@
 #[cfg(feature = "ast-parser")]
 mod conditional_function_tests {
     use just_mcp::parser::ast::queries::{
-        ConditionalExpressionInfo, ConditionalType, FunctionCallInfo, FunctionArgument,
-        ArgumentType, FunctionType, FunctionReturnType, ExpressionEvaluator,
+        ArgumentType, ConditionalExpressionInfo, ConditionalType, ExpressionEvaluator,
+        FunctionArgument, FunctionCallInfo, FunctionReturnType, FunctionType,
     };
     use std::collections::HashMap;
 
     #[test]
     fn test_conditional_expression_creation() {
         // Test if-then conditional
-        let if_then = ConditionalExpressionInfo::if_then(
-            "x > 5".to_string(),
-            "large".to_string(),
-        );
+        let if_then = ConditionalExpressionInfo::if_then("x > 5".to_string(), "large".to_string());
         assert_eq!(if_then.conditional_type, ConditionalType::IfThen);
         assert_eq!(if_then.condition, "x > 5");
         assert_eq!(if_then.true_branch, "large");
@@ -96,10 +93,8 @@ mod conditional_function_tests {
     #[test]
     fn test_function_call_creation() {
         // Test simple function call
-        let simple_func = FunctionCallInfo::simple(
-            "uppercase".to_string(),
-            vec!["hello".to_string()],
-        );
+        let simple_func =
+            FunctionCallInfo::simple("uppercase".to_string(), vec!["hello".to_string()]);
         assert_eq!(simple_func.function_name, "uppercase");
         assert_eq!(simple_func.arguments.len(), 1);
         assert_eq!(simple_func.arguments[0].value, "hello");
@@ -150,10 +145,7 @@ mod conditional_function_tests {
     #[test]
     fn test_function_call_validation() {
         // Test valid function calls
-        let valid_env = FunctionCallInfo::simple(
-            "env_var".to_string(),
-            vec!["HOME".to_string()],
-        );
+        let valid_env = FunctionCallInfo::simple("env_var".to_string(), vec!["HOME".to_string()]);
         assert!(valid_env.is_valid());
         assert!(valid_env.validation_errors().is_empty());
 
@@ -169,7 +161,9 @@ mod conditional_function_tests {
             vec![], // Missing required argument
         );
         let errors = invalid_env.validation_errors();
-        assert!(errors.iter().any(|e| e.contains("requires at least one argument")));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("requires at least one argument")));
 
         // Test too many arguments
         let too_many_args = FunctionCallInfo::simple(
@@ -188,10 +182,8 @@ mod conditional_function_tests {
         variables.insert("new_text".to_string(), "universe".to_string());
 
         // Test uppercase function
-        let uppercase_func = FunctionCallInfo::simple(
-            "uppercase".to_string(),
-            vec!["text".to_string()],
-        );
+        let uppercase_func =
+            FunctionCallInfo::simple("uppercase".to_string(), vec!["text".to_string()]);
         let result = ExpressionEvaluator::evaluate_function_call_advanced(
             &uppercase_func,
             &variables,
@@ -200,10 +192,8 @@ mod conditional_function_tests {
         assert_eq!(result.unwrap(), "HELLO WORLD");
 
         // Test lowercase function
-        let lowercase_func = FunctionCallInfo::simple(
-            "lowercase".to_string(),
-            vec!["text".to_string()],
-        );
+        let lowercase_func =
+            FunctionCallInfo::simple("lowercase".to_string(), vec!["text".to_string()]);
         let result = ExpressionEvaluator::evaluate_function_call_advanced(
             &lowercase_func,
             &variables,
@@ -214,13 +204,14 @@ mod conditional_function_tests {
         // Test replace function
         let replace_func = FunctionCallInfo::simple(
             "replace".to_string(),
-            vec!["text".to_string(), "old_text".to_string(), "new_text".to_string()],
+            vec![
+                "text".to_string(),
+                "old_text".to_string(),
+                "new_text".to_string(),
+            ],
         );
-        let result = ExpressionEvaluator::evaluate_function_call_advanced(
-            &replace_func,
-            &variables,
-            false,
-        );
+        let result =
+            ExpressionEvaluator::evaluate_function_call_advanced(&replace_func, &variables, false);
         assert_eq!(result.unwrap(), "hello universe");
     }
 
@@ -234,40 +225,31 @@ mod conditional_function_tests {
         // Test simple if-then with true condition
         let if_then_true = ConditionalExpressionInfo::if_then(
             "debug".to_string(),
-            "\"development\"".to_string(),  // Use string literal instead of variable
+            "\"development\"".to_string(), // Use string literal instead of variable
         );
-        let result = ExpressionEvaluator::evaluate_conditional_advanced(
-            &if_then_true,
-            &variables,
-            false,
-        );
+        let result =
+            ExpressionEvaluator::evaluate_conditional_advanced(&if_then_true, &variables, false);
         assert_eq!(result.unwrap(), "development");
 
         // Test if-then-else with false condition
         variables.insert("debug".to_string(), "false".to_string());
         let if_then_else = ConditionalExpressionInfo::if_then_else(
             "debug".to_string(),
-            "\"development\"".to_string(),  // Use string literals
+            "\"development\"".to_string(), // Use string literals
             "\"production\"".to_string(),
         );
-        let result = ExpressionEvaluator::evaluate_conditional_advanced(
-            &if_then_else,
-            &variables,
-            false,
-        );
+        let result =
+            ExpressionEvaluator::evaluate_conditional_advanced(&if_then_else, &variables, false);
         assert_eq!(result.unwrap(), "production");
 
         // Test ternary expression
         let ternary = ConditionalExpressionInfo::ternary(
             "status".to_string(),
-            "\"running\"".to_string(),   // Use string literals
+            "\"running\"".to_string(), // Use string literals
             "\"stopped\"".to_string(),
         );
-        let result = ExpressionEvaluator::evaluate_conditional_advanced(
-            &ternary,
-            &variables,
-            false,
-        );
+        let result =
+            ExpressionEvaluator::evaluate_conditional_advanced(&ternary, &variables, false);
         assert_eq!(result.unwrap(), "running"); // "active" is truthy
     }
 
@@ -275,7 +257,7 @@ mod conditional_function_tests {
     fn test_conditional_expression_parsing() {
         // Test if-then-else parsing
         let parsed = ExpressionEvaluator::parse_conditional_expression(
-            "if debug then development else production"
+            "if debug then development else production",
         );
         assert!(parsed.is_ok());
         let conditional = parsed.unwrap();
@@ -285,9 +267,8 @@ mod conditional_function_tests {
         assert_eq!(conditional.false_branch, Some("production".to_string()));
 
         // Test ternary parsing
-        let parsed = ExpressionEvaluator::parse_conditional_expression(
-            "status ? active : inactive"
-        );
+        let parsed =
+            ExpressionEvaluator::parse_conditional_expression("status ? active : inactive");
         assert!(parsed.is_ok());
         let conditional = parsed.unwrap();
         assert_eq!(conditional.conditional_type, ConditionalType::Ternary);
@@ -296,9 +277,7 @@ mod conditional_function_tests {
         assert_eq!(conditional.false_branch, Some("inactive".to_string()));
 
         // Test if-then parsing (no else)
-        let parsed = ExpressionEvaluator::parse_conditional_expression(
-            "if debug then verbose"
-        );
+        let parsed = ExpressionEvaluator::parse_conditional_expression("if debug then verbose");
         assert!(parsed.is_ok());
         let conditional = parsed.unwrap();
         assert_eq!(conditional.conditional_type, ConditionalType::IfThen);
@@ -316,9 +295,7 @@ mod conditional_function_tests {
         assert_eq!(func_call.arguments[0].value, "text");
 
         // Test function call with multiple arguments
-        let parsed = ExpressionEvaluator::parse_function_call(
-            "replace(content, \"old\", \"new\")"
-        );
+        let parsed = ExpressionEvaluator::parse_function_call("replace(content, \"old\", \"new\")");
         assert!(parsed.is_ok());
         let func_call = parsed.unwrap();
         assert_eq!(func_call.function_name, "replace");
@@ -345,7 +322,10 @@ mod conditional_function_tests {
         assert_eq!(func_call.function_name, "uppercase");
         assert_eq!(func_call.arguments.len(), 1);
         assert_eq!(func_call.arguments[0].value, "lowercase(trim(text))");
-        assert_eq!(func_call.arguments[0].argument_type, ArgumentType::FunctionCall);
+        assert_eq!(
+            func_call.arguments[0].argument_type,
+            ArgumentType::FunctionCall
+        );
 
         // Test nesting level calculation (the current implementation might not detect all levels correctly)
         assert!(func_call.nesting_level >= 1); // Should detect at least some nesting
@@ -361,12 +341,12 @@ mod conditional_function_tests {
         );
 
         let all_vars = complex_conditional.get_all_variables();
-        
+
         // The variable extraction currently has limited capability
         // It only extracts simple alphanumeric words that aren't operators or keywords
         // From the expression "uppercase(env) == PRODUCTION", only "PRODUCTION" is extracted
         assert!(all_vars.contains(&"PRODUCTION".to_string()));
-        
+
         // The current simple implementation doesn't extract variables inside function calls
         // In a more sophisticated implementation, we would extract "env" and "code" as well
         // The has_nested_expressions detection might need adjustment
@@ -401,7 +381,9 @@ mod conditional_function_tests {
         assert!(ExpressionEvaluator::evaluate_condition_as_boolean("true"));
         assert!(ExpressionEvaluator::evaluate_condition_as_boolean("1"));
         assert!(ExpressionEvaluator::evaluate_condition_as_boolean("yes"));
-        assert!(ExpressionEvaluator::evaluate_condition_as_boolean("non-empty"));
+        assert!(ExpressionEvaluator::evaluate_condition_as_boolean(
+            "non-empty"
+        ));
 
         assert!(!ExpressionEvaluator::evaluate_condition_as_boolean("false"));
         assert!(!ExpressionEvaluator::evaluate_condition_as_boolean("0"));
@@ -431,15 +413,10 @@ mod conditional_function_tests {
         let mut variables = HashMap::new();
 
         // Test missing variable in conditional
-        let conditional = ConditionalExpressionInfo::if_then(
-            "missing_var".to_string(),
-            "result".to_string(),
-        );
-        let result = ExpressionEvaluator::evaluate_conditional_advanced(
-            &conditional,
-            &variables,
-            false,
-        );
+        let conditional =
+            ConditionalExpressionInfo::if_then("missing_var".to_string(), "result".to_string());
+        let result =
+            ExpressionEvaluator::evaluate_conditional_advanced(&conditional, &variables, false);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
 
@@ -452,7 +429,8 @@ mod conditional_function_tests {
         assert!(errors.iter().any(|e| e.contains("exactly one argument")));
 
         // Test malformed expression parsing
-        let invalid_conditional = ExpressionEvaluator::parse_conditional_expression("invalid syntax");
+        let invalid_conditional =
+            ExpressionEvaluator::parse_conditional_expression("invalid syntax");
         assert!(invalid_conditional.is_err());
 
         let invalid_function = ExpressionEvaluator::parse_function_call("not_a_function");
@@ -467,7 +445,10 @@ mod conditional_function_tests {
             "verbose".to_string(),
             "quiet".to_string(),
         );
-        assert_eq!(conditional.format_display(), "if debug then verbose else quiet");
+        assert_eq!(
+            conditional.format_display(),
+            "if debug then verbose else quiet"
+        );
 
         let ternary = ConditionalExpressionInfo::ternary(
             "status".to_string(),
@@ -481,7 +462,10 @@ mod conditional_function_tests {
             "replace".to_string(),
             vec!["text".to_string(), "old".to_string(), "new".to_string()],
         );
-        assert_eq!(func_call.format_display(), "replace({{text}}, {{old}}, {{new}})");
+        assert_eq!(
+            func_call.format_display(),
+            "replace({{text}}, {{old}}, {{new}})"
+        );
 
         // Test argument display
         let string_arg = FunctionArgument::new("\"hello\"".to_string(), 0);
@@ -499,13 +483,13 @@ mod conditional_function_tests {
 
         // Test that new structures work with existing expression evaluation
         let _template = "{{if env == \"development\" then uppercase(name) else name}}";
-        
+
         // This would be the integration point with the existing system
         // The existing ExpressionEvaluator should be able to handle these complex expressions
         // For now, we test the parsing and evaluation separately
-        
-        let conditional_part = "env";  // Simple variable check for now
-        let true_part = "\"development\"";  // String literals
+
+        let conditional_part = "env"; // Simple variable check for now
+        let true_part = "\"development\""; // String literals
         let false_part = "\"production\"";
 
         // Parse and evaluate the conditional
@@ -515,12 +499,9 @@ mod conditional_function_tests {
             false_part.to_string(),
         );
 
-        let result = ExpressionEvaluator::evaluate_conditional_advanced(
-            &conditional,
-            &variables,
-            false,
-        );
-        
+        let result =
+            ExpressionEvaluator::evaluate_conditional_advanced(&conditional, &variables, false);
+
         // Should evaluate to development since env variable is truthy
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "development");

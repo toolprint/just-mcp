@@ -4,10 +4,10 @@
 //! for accurate justfile parsing, with parser reuse and comprehensive error handling.
 
 use crate::parser::ast::cache::{QueryBundle, QueryCache, QueryCompiler};
-use crate::parser::ast::queries::CompiledQuery;
 use crate::parser::ast::errors::{ASTError, ASTResult};
 use crate::parser::ast::nodes::{ASTNode, NodeType};
 use crate::parser::ast::parser_pool::get_global_parser_pool;
+use crate::parser::ast::queries::CompiledQuery;
 use crate::types::{JustTask, Parameter};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -112,17 +112,17 @@ impl ASTJustParser {
     /// Create a new AST parser with Tree-sitter integration
     pub fn new() -> ASTResult<Self> {
         let language = tree_sitter_just::language();
-        
+
         // Get or create global query cache
-        let query_cache = GLOBAL_QUERY_CACHE.get_or_init(|| {
-            Arc::new(QueryCache::with_capacity(128))
-        }).clone();
-        
+        let query_cache = GLOBAL_QUERY_CACHE
+            .get_or_init(|| Arc::new(QueryCache::with_capacity(128)))
+            .clone();
+
         // Get or create global query compiler
-        let query_compiler = GLOBAL_QUERY_COMPILER.get_or_init(|| {
-            Arc::new(QueryCompiler::new(language.clone()))
-        }).clone();
-        
+        let query_compiler = GLOBAL_QUERY_COMPILER
+            .get_or_init(|| Arc::new(QueryCompiler::new(language.clone())))
+            .clone();
+
         // Get or create global query bundle
         let query_bundle = GLOBAL_QUERY_BUNDLE.get_or_init(|| {
             match query_compiler.compile_standard_queries() {
@@ -133,53 +133,53 @@ impl ASTJustParser {
                     Arc::new(QueryBundle {
                         recipes: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         parameters: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         dependencies: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         comments: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         attributes: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         identifiers: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         bodies: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         assignments: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         interpolations: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         strings: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                         expressions: Arc::new(CompiledQuery::new(
                             Query::new(&language, "(comment) @comment").unwrap(),
-                            "empty".to_string()
+                            "empty".to_string(),
                         )),
                     })
                 }
             }
         });
-        
+
         // Check if bundle is actually valid (not the empty one)
         let valid_bundle = if query_bundle.recipes.name != "empty" {
             Some(query_bundle.clone())
@@ -210,7 +210,7 @@ impl ASTJustParser {
     pub fn parse_content(&mut self, content: &str) -> ASTResult<ParseTree> {
         // Check tree cache first
         let content_hash = self.hash_content(content);
-        
+
         // Try to get from cache
         if let Ok(cache) = self.tree_cache.read() {
             if let Some(cached_tree) = cache.get(&content_hash) {
@@ -218,11 +218,11 @@ impl ASTJustParser {
                 return Ok(ParseTree::new(
                     // Clone the tree structure (cheap Arc clone)
                     Tree::clone(cached_tree),
-                    content.to_string()
+                    content.to_string(),
                 ));
             }
         }
-        
+
         // Get a parser from the pool
         let mut pooled_parser = get_global_parser_pool().get()?;
         let tree = pooled_parser
@@ -258,7 +258,7 @@ impl ASTJustParser {
             }
             cache.insert(content_hash, Arc::new(tree.clone()));
         }
-        
+
         Ok(ParseTree::new(tree, content.to_string()))
     }
 
@@ -266,7 +266,7 @@ impl ASTJustParser {
     pub fn extract_recipes(&self, tree: &ParseTree) -> ASTResult<Vec<JustTask>> {
         // Check recipe cache first
         let tree_hash = self.hash_tree(tree);
-        
+
         // Try to get from cache
         if let Ok(cache) = self.recipe_cache.read() {
             if let Some(cached_recipes) = cache.get(&tree_hash) {
@@ -291,7 +291,7 @@ impl ASTJustParser {
 
         // Use fallback extraction
         let recipes = self.extract_recipes_fallback(tree)?;
-        
+
         // Cache the results
         if let Ok(mut cache) = self.recipe_cache.write() {
             // Limit cache size
@@ -303,7 +303,7 @@ impl ASTJustParser {
             }
             cache.insert(tree_hash, recipes.clone());
         }
-        
+
         Ok(recipes)
     }
 
@@ -324,9 +324,11 @@ impl ASTJustParser {
         let comment_results = executor.execute(&bundle.comments, ast_tree)?;
         let dependency_results = executor.execute(&bundle.dependencies, ast_tree)?;
         let attribute_results = executor.execute(&bundle.attributes, ast_tree)?;
-        
+
         // Execute enhanced expression queries for conditional expressions and function calls
-        let expression_results = executor.execute(&bundle.expressions, ast_tree).unwrap_or_default();
+        let expression_results = executor
+            .execute(&bundle.expressions, ast_tree)
+            .unwrap_or_default();
 
         // Extract structured information
         let recipes = QueryResultProcessor::extract_recipes(&recipe_results);
@@ -337,9 +339,10 @@ impl ASTJustParser {
         let dependencies = QueryResultProcessor::extract_dependencies(&dependency_results);
         let comments = QueryResultProcessor::extract_comments(&comment_results);
         let attributes = QueryResultProcessor::extract_attributes(&attribute_results);
-        
+
         // Extract enhanced expression information
-        let conditional_expressions = QueryResultProcessor::extract_conditional_expressions(&expression_results);
+        let conditional_expressions =
+            QueryResultProcessor::extract_conditional_expressions(&expression_results);
         let function_calls = QueryResultProcessor::extract_function_calls(&expression_results);
 
         // Associate parameters with recipes and enhance with descriptions
@@ -423,8 +426,8 @@ impl ASTJustParser {
                     // Find expressions that are likely associated with this recipe
                     // This is a simple heuristic - in a full implementation, position tracking would be more sophisticated
                     expr.get_all_variables().iter().any(|var| {
-                        recipe.name.contains(var) || 
-                        recipe_params.iter().any(|param| param.name == *var)
+                        recipe.name.contains(var)
+                            || recipe_params.iter().any(|param| param.name == *var)
                     })
                 })
                 .cloned()
@@ -435,8 +438,8 @@ impl ASTJustParser {
                 .filter(|func| {
                     // Find function calls that are likely associated with this recipe
                     func.get_all_variables().iter().any(|var| {
-                        recipe.name.contains(var) ||
-                        recipe_params.iter().any(|param| param.name == *var)
+                        recipe.name.contains(var)
+                            || recipe_params.iter().any(|param| param.name == *var)
                     })
                 })
                 .cloned()
@@ -450,11 +453,11 @@ impl ASTJustParser {
                     recipe_conditionals.len(),
                     recipe_function_calls.len()
                 );
-                
+
                 for conditional in &recipe_conditionals {
                     tracing::debug!("  Conditional: {}", conditional.format_display());
                 }
-                
+
                 for func_call in &recipe_function_calls {
                     tracing::debug!("  Function call: {}", func_call.format_display());
                 }
@@ -616,10 +619,7 @@ impl ASTJustParser {
     /// Check if an unknown node type looks like a recipe (conservative)
     fn looks_like_recipe_conservative(&self, kind: &str, node: &ASTNode) -> bool {
         // Only accept explicit recipe-related node types, not generic patterns
-        kind == "recipe" || 
-        kind == "recipe_definition" ||
-        kind == "rule" ||
-        kind == "task"
+        kind == "recipe" || kind == "recipe_definition" || kind == "rule" || kind == "task"
     }
 
     /// Check if an unknown node type looks like a recipe (legacy, broad matching)
@@ -975,22 +975,22 @@ impl ASTJustParser {
     pub fn cache_stats(&self) -> ASTResult<crate::parser::ast::cache::CacheStats> {
         self.query_cache.stats()
     }
-    
+
     /// Hash content for caching
     fn hash_content(&self, content: &str) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
         hasher.finish()
     }
-    
+
     /// Hash tree for caching
     fn hash_tree(&self, tree: &ParseTree) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
-        
+
         let mut hasher = DefaultHasher::new();
         // Hash based on source content and tree structure
         tree.source().hash(&mut hasher);

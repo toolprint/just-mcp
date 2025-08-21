@@ -95,7 +95,7 @@ fn test_justfile_parsing(path: &PathBuf) -> Result<ParsingTestResult> {
     let ast_start = Instant::now();
     let mut enhanced_parser = EnhancedJustfileParser::new()?;
     enhanced_parser.set_ast_parser_only();
-    
+
     match enhanced_parser.parse_file(path) {
         Ok(tasks) => {
             result.ast_success = true;
@@ -110,7 +110,7 @@ fn test_justfile_parsing(path: &PathBuf) -> Result<ParsingTestResult> {
     // Test regex parser
     let regex_start = Instant::now();
     let regex_parser = JustfileParser::new()?;
-    
+
     match regex_parser.parse_file(path) {
         Ok(tasks) => {
             result.regex_success = true;
@@ -124,7 +124,8 @@ fn test_justfile_parsing(path: &PathBuf) -> Result<ParsingTestResult> {
 
     // Check consistency if both succeeded
     if result.ast_success && result.regex_success {
-        result.consistency_issues = check_parsing_consistency(&result.ast_tasks, &result.regex_tasks);
+        result.consistency_issues =
+            check_parsing_consistency(&result.ast_tasks, &result.regex_tasks);
     }
 
     Ok(result)
@@ -144,19 +145,27 @@ fn check_parsing_consistency(ast_tasks: &[JustTask], regex_tasks: &[JustTask]) -
     }
 
     // Create maps for easier lookup
-    let ast_map: HashMap<&str, &JustTask> = ast_tasks.iter().map(|t| (t.name.as_str(), t)).collect();
-    let regex_map: HashMap<&str, &JustTask> = regex_tasks.iter().map(|t| (t.name.as_str(), t)).collect();
+    let ast_map: HashMap<&str, &JustTask> =
+        ast_tasks.iter().map(|t| (t.name.as_str(), t)).collect();
+    let regex_map: HashMap<&str, &JustTask> =
+        regex_tasks.iter().map(|t| (t.name.as_str(), t)).collect();
 
     // Check for missing tasks in either parser
     for task_name in ast_map.keys() {
         if !regex_map.contains_key(task_name) {
-            issues.push(format!("Task '{}' found in AST but not in regex parser", task_name));
+            issues.push(format!(
+                "Task '{}' found in AST but not in regex parser",
+                task_name
+            ));
         }
     }
 
     for task_name in regex_map.keys() {
         if !ast_map.contains_key(task_name) {
-            issues.push(format!("Task '{}' found in regex but not in AST parser", task_name));
+            issues.push(format!(
+                "Task '{}' found in regex but not in AST parser",
+                task_name
+            ));
         }
     }
 
@@ -184,11 +193,11 @@ fn check_parsing_consistency(ast_tasks: &[JustTask], regex_tasks: &[JustTask]) -
             }
 
             // Compare parameter names (order might differ)
-            let ast_param_names: std::collections::HashSet<_> = 
+            let ast_param_names: std::collections::HashSet<_> =
                 ast_task.parameters.iter().map(|p| &p.name).collect();
-            let regex_param_names: std::collections::HashSet<_> = 
+            let regex_param_names: std::collections::HashSet<_> =
                 regex_task.parameters.iter().map(|p| &p.name).collect();
-            
+
             if ast_param_names != regex_param_names {
                 issues.push(format!(
                     "Task '{}': parameter names differ: AST={:?}, Regex={:?}",
@@ -197,11 +206,9 @@ fn check_parsing_consistency(ast_tasks: &[JustTask], regex_tasks: &[JustTask]) -
             }
 
             // Compare dependency names (order might differ)
-            let ast_deps: std::collections::HashSet<_> = 
-                ast_task.dependencies.iter().collect();
-            let regex_deps: std::collections::HashSet<_> = 
-                regex_task.dependencies.iter().collect();
-            
+            let ast_deps: std::collections::HashSet<_> = ast_task.dependencies.iter().collect();
+            let regex_deps: std::collections::HashSet<_> = regex_task.dependencies.iter().collect();
+
             if ast_deps != regex_deps {
                 issues.push(format!(
                     "Task '{}': dependencies differ: AST={:?}, Regex={:?}",
@@ -226,7 +233,7 @@ fn test_all_project_justfiles_with_ast_parser() -> Result<()> {
     for justfile in &justfiles {
         println!("Testing: {}", justfile.display());
         let result = test_justfile_parsing(justfile)?;
-        
+
         // Update summary statistics
         summary.total_justfiles += 1;
         if result.ast_success {
@@ -246,7 +253,7 @@ fn test_all_project_justfiles_with_ast_parser() -> Result<()> {
         } else {
             summary.both_failed += 1;
         }
-        
+
         summary.consistency_issues += result.consistency_issues.len();
         summary.total_ast_time += result.ast_parse_time;
         summary.total_regex_time += result.regex_parse_time;
@@ -258,18 +265,26 @@ fn test_all_project_justfiles_with_ast_parser() -> Result<()> {
     println!("\n=== DETAILED RESULTS ===");
     for result in &results {
         println!("\nFile: {}", result.file_path);
-        println!("  AST Success: {} ({} tasks, {}μs)", 
-                result.ast_success, result.ast_tasks.len(), result.ast_parse_time);
-        println!("  Regex Success: {} ({} tasks, {}μs)", 
-                result.regex_success, result.regex_tasks.len(), result.regex_parse_time);
-        
+        println!(
+            "  AST Success: {} ({} tasks, {}μs)",
+            result.ast_success,
+            result.ast_tasks.len(),
+            result.ast_parse_time
+        );
+        println!(
+            "  Regex Success: {} ({} tasks, {}μs)",
+            result.regex_success,
+            result.regex_tasks.len(),
+            result.regex_parse_time
+        );
+
         if let Some(ref error) = result.ast_error {
             println!("  AST Error: {}", error);
         }
         if let Some(ref error) = result.regex_error {
             println!("  Regex Error: {}", error);
         }
-        
+
         if !result.consistency_issues.is_empty() {
             println!("  Consistency Issues:");
             for issue in &result.consistency_issues {
@@ -281,48 +296,73 @@ fn test_all_project_justfiles_with_ast_parser() -> Result<()> {
     // Print summary statistics
     println!("\n=== VALIDATION SUMMARY ===");
     println!("Total justfiles tested: {}", summary.total_justfiles);
-    println!("AST parser successes: {} ({:.1}%)", 
-            summary.ast_successes, 
-            (summary.ast_successes as f64 / summary.total_justfiles as f64) * 100.0);
-    println!("Regex parser successes: {} ({:.1}%)", 
-            summary.regex_successes,
-            (summary.regex_successes as f64 / summary.total_justfiles as f64) * 100.0);
-    println!("Both parsers succeeded: {} ({:.1}%)", 
-            summary.both_succeeded,
-            (summary.both_succeeded as f64 / summary.total_justfiles as f64) * 100.0);
+    println!(
+        "AST parser successes: {} ({:.1}%)",
+        summary.ast_successes,
+        (summary.ast_successes as f64 / summary.total_justfiles as f64) * 100.0
+    );
+    println!(
+        "Regex parser successes: {} ({:.1}%)",
+        summary.regex_successes,
+        (summary.regex_successes as f64 / summary.total_justfiles as f64) * 100.0
+    );
+    println!(
+        "Both parsers succeeded: {} ({:.1}%)",
+        summary.both_succeeded,
+        (summary.both_succeeded as f64 / summary.total_justfiles as f64) * 100.0
+    );
     println!("AST only succeeded: {}", summary.ast_only_succeeded);
     println!("Regex only succeeded: {}", summary.regex_only_succeeded);
     println!("Both parsers failed: {}", summary.both_failed);
     println!("Total recipes parsed by AST: {}", summary.total_recipes_ast);
-    println!("Total recipes parsed by Regex: {}", summary.total_recipes_regex);
+    println!(
+        "Total recipes parsed by Regex: {}",
+        summary.total_recipes_regex
+    );
     println!("Total consistency issues: {}", summary.consistency_issues);
-    
+
     if summary.total_ast_time > 0 && summary.total_regex_time > 0 {
-        println!("Average AST parse time: {:.1}μs", 
-                summary.total_ast_time as f64 / summary.ast_successes as f64);
-        println!("Average Regex parse time: {:.1}μs", 
-                summary.total_regex_time as f64 / summary.regex_successes as f64);
-        println!("AST vs Regex speed ratio: {:.2}x", 
-                summary.total_ast_time as f64 / summary.total_regex_time as f64);
+        println!(
+            "Average AST parse time: {:.1}μs",
+            summary.total_ast_time as f64 / summary.ast_successes as f64
+        );
+        println!(
+            "Average Regex parse time: {:.1}μs",
+            summary.total_regex_time as f64 / summary.regex_successes as f64
+        );
+        println!(
+            "AST vs Regex speed ratio: {:.2}x",
+            summary.total_ast_time as f64 / summary.total_regex_time as f64
+        );
     }
 
     // Validation assertions
-    assert!(summary.ast_successes > 0, "AST parser should successfully parse at least some justfiles");
-    assert!(summary.regex_successes > 0, "Regex parser should successfully parse at least some justfiles");
-    
+    assert!(
+        summary.ast_successes > 0,
+        "AST parser should successfully parse at least some justfiles"
+    );
+    assert!(
+        summary.regex_successes > 0,
+        "Regex parser should successfully parse at least some justfiles"
+    );
+
     // Require at least 80% success rate for AST parser
     let ast_success_rate = summary.ast_successes as f64 / summary.total_justfiles as f64;
-    assert!(ast_success_rate >= 0.8, 
-           "AST parser success rate should be at least 80%, got {:.1}%", 
-           ast_success_rate * 100.0);
+    assert!(
+        ast_success_rate >= 0.8,
+        "AST parser success rate should be at least 80%, got {:.1}%",
+        ast_success_rate * 100.0
+    );
 
     // For files where both parsers succeeded, consistency issues should be minimal
     if summary.both_succeeded > 0 {
         let consistency_rate = summary.consistency_issues as f64 / summary.both_succeeded as f64;
         // After fixing the AST parser over-extraction issue, we expect much better consistency
-        assert!(consistency_rate <= 1.0, 
-               "Average consistency issues per file should be <= 1, got {:.1}", 
-               consistency_rate);
+        assert!(
+            consistency_rate <= 1.0,
+            "Average consistency issues per file should be <= 1, got {:.1}",
+            consistency_rate
+        );
     }
 
     println!("\n✅ All validation tests passed!");
@@ -333,7 +373,7 @@ fn test_all_project_justfiles_with_ast_parser() -> Result<()> {
 #[test]
 fn test_enhanced_parser_fallback_behavior() -> Result<()> {
     let justfiles = get_all_project_justfiles()?;
-    
+
     if justfiles.is_empty() {
         println!("No justfiles found for testing fallback behavior");
         return Ok(());
@@ -353,7 +393,10 @@ fn test_enhanced_parser_fallback_behavior() -> Result<()> {
     // Check that parsing metrics were recorded
     let metrics = enhanced_parser.get_metrics();
     let total_attempts = metrics.ast_attempts + metrics.command_attempts + metrics.regex_attempts;
-    assert!(total_attempts > 0, "Should have attempted at least one parsing method");
+    assert!(
+        total_attempts > 0,
+        "Should have attempted at least one parsing method"
+    );
 
     // Print diagnostics
     println!("Fallback behavior diagnostics:");
@@ -373,8 +416,14 @@ fn test_enhanced_parser_fallback_behavior() -> Result<()> {
     println!("Regex-only parser: {} tasks", regex_only_tasks.len());
 
     // All parsers should return some tasks
-    assert!(!ast_only_tasks.is_empty(), "AST-only parser should parse tasks");
-    assert!(!regex_only_tasks.is_empty(), "Regex-only parser should parse tasks");
+    assert!(
+        !ast_only_tasks.is_empty(),
+        "AST-only parser should parse tasks"
+    );
+    assert!(
+        !regex_only_tasks.is_empty(),
+        "Regex-only parser should parse tasks"
+    );
 
     Ok(())
 }
@@ -386,7 +435,10 @@ fn test_regex_parser_baseline() -> Result<()> {
     let mut total_tasks = 0;
     let mut successful_files = 0;
 
-    println!("Testing {} justfiles with regex parser (baseline)...", justfiles.len());
+    println!(
+        "Testing {} justfiles with regex parser (baseline)...",
+        justfiles.len()
+    );
 
     for justfile in &justfiles {
         match parser.parse_file(justfile) {
@@ -402,12 +454,22 @@ fn test_regex_parser_baseline() -> Result<()> {
     }
 
     println!("\nRegex parser baseline results:");
-    println!("  Successful files: {}/{}", successful_files, justfiles.len());
+    println!(
+        "  Successful files: {}/{}",
+        successful_files,
+        justfiles.len()
+    );
     println!("  Total tasks parsed: {}", total_tasks);
 
     // Baseline expectations
-    assert!(successful_files > 0, "Regex parser should parse at least some files");
-    assert!(total_tasks >= 100, "Should parse at least 100 tasks total (based on estimated 171 recipes)");
+    assert!(
+        successful_files > 0,
+        "Regex parser should parse at least some files"
+    );
+    assert!(
+        total_tasks >= 100,
+        "Should parse at least 100 tasks total (based on estimated 171 recipes)"
+    );
 
     Ok(())
 }
@@ -423,26 +485,34 @@ fn test_complex_justfile_syntax_edge_cases() -> Result<()> {
     // Test various complex syntax patterns
     let test_cases = vec![
         // Parameters with complex defaults
-        ("complex-params", r#"
+        (
+            "complex-params",
+            r#"
 task param1="default with spaces" param2='single-quoted' param3=no-quotes:
     echo "{{param1}} {{param2}} {{param3}}"
-"#),
-        
+"#,
+        ),
         // Multiple dependencies
-        ("multi-deps", r#"
+        (
+            "multi-deps",
+            r#"
 deploy: build test lint
     echo "Deploying..."
-"#),
-
+"#,
+        ),
         // Basic expressions
-        ("basic-expr", r#"
+        (
+            "basic-expr",
+            r#"
 task:
     echo "Home: {{env_var('HOME')}}"
     echo "User: {{env_var('USER')}}"
-"#),
-
+"#,
+        ),
         // Complex recipe body
-        ("complex-body", r#"
+        (
+            "complex-body",
+            r#"
 setup:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -450,10 +520,12 @@ setup:
     if [ -f "requirements.txt" ]; then
         pip install -r requirements.txt
     fi
-"#),
-
+"#,
+        ),
         // Attributes and doc strings
-        ("attributes", r#"
+        (
+            "attributes",
+            r#"
 [private]
 [group('test')]
 [doc("Run unit tests with coverage")]
@@ -463,14 +535,17 @@ test-unit coverage="true":
     else
         cargo test --lib
     fi
-"#),
-
+"#,
+        ),
         // String interpolation variations
-        ("interpolation", r#"
+        (
+            "interpolation",
+            r#"
 greet name="World":
     @echo "Hello, {{name}}!"
     @echo "Welcome to {{justfile_directory()}}"
-"#),
+"#,
+        ),
     ];
 
     for (name, content) in test_cases {
@@ -480,20 +555,32 @@ greet name="World":
         let tree = ast_parser.parse_content(content)?;
         let ast_tasks = ast_parser.extract_recipes(&tree)?;
 
-        // Parse with regex parser  
+        // Parse with regex parser
         let regex_tasks = regex_parser.parse_content(content)?;
 
         println!("  AST parser: {} tasks", ast_tasks.len());
         println!("  Regex parser: {} tasks", regex_tasks.len());
 
         // Both should find at least one task
-        assert!(!ast_tasks.is_empty(), "AST parser should find tasks in {}", name);
-        assert!(!regex_tasks.is_empty(), "Regex parser should find tasks in {}", name);
+        assert!(
+            !ast_tasks.is_empty(),
+            "AST parser should find tasks in {}",
+            name
+        );
+        assert!(
+            !regex_tasks.is_empty(),
+            "Regex parser should find tasks in {}",
+            name
+        );
 
         // Check for major consistency issues
         if ast_tasks.len() != regex_tasks.len() {
-            println!("  ⚠️  Task count mismatch in {}: AST={}, Regex={}", 
-                    name, ast_tasks.len(), regex_tasks.len());
+            println!(
+                "  ⚠️  Task count mismatch in {}: AST={}, Regex={}",
+                name,
+                ast_tasks.len(),
+                regex_tasks.len()
+            );
         }
     }
 
@@ -505,8 +592,14 @@ greet name="World":
 fn test_ast_parser_feature_disabled() {
     // When AST parser feature is disabled, the enhanced parser should fall back gracefully
     let enhanced_parser = EnhancedJustfileParser::new();
-    assert!(enhanced_parser.is_ok(), "Enhanced parser should work without AST feature");
-    
+    assert!(
+        enhanced_parser.is_ok(),
+        "Enhanced parser should work without AST feature"
+    );
+
     let parser = enhanced_parser.unwrap();
-    assert!(!parser.is_ast_parsing_available(), "AST parsing should not be available without feature");
+    assert!(
+        !parser.is_ast_parsing_available(),
+        "AST parsing should not be available without feature"
+    );
 }

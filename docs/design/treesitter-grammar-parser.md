@@ -50,6 +50,7 @@ Individual Parsing: just -s recipe1 → AST Parser → Metadata
 From the official [GRAMMAR.md](https://github.com/casey/just/blob/43d88f50e02057e5d91602ef4ffdd0ddfc094099/GRAMMAR.md):
 
 **Core Grammar Elements**:
+
 - `justfile`: Top-level container with items (recipes, assignments, imports)
 - `recipe`: Named executable unit with optional parameters and dependencies
 - `parameter`: Named values with optional defaults and types
@@ -57,6 +58,7 @@ From the official [GRAMMAR.md](https://github.com/casey/just/blob/43d88f50e02057
 - `expression`: Values, interpolations, conditionals, and function calls
 
 **Complex Constructs**:
+
 - String interpolation: `"Hello {{name}}"`
 - Conditionals: `if condition { value } else { other }`
 - Function calls: `env_var("VAR")`, `path_exists("file")`
@@ -68,6 +70,7 @@ From the official [GRAMMAR.md](https://github.com/casey/just/blob/43d88f50e02057
 From [tree-sitter-just](https://github.com/IndianBoy42/tree-sitter-just):
 
 **Coverage Analysis**:
+
 - ✅ Complete recipe parsing including parameters and dependencies
 - ✅ String interpolation and escape sequences
 - ✅ Conditional expressions and function calls
@@ -77,6 +80,7 @@ From [tree-sitter-just](https://github.com/IndianBoy42/tree-sitter-just):
 - ⚠️ Grammar maintenance depends on community (last updated 6 months ago)
 
 **AST Node Types**:
+
 - `recipe`: Recipe definitions with metadata
 - `parameter`: Parameter declarations with defaults
 - `dependency`: Recipe dependencies
@@ -89,12 +93,14 @@ From [tree-sitter-just](https://github.com/IndianBoy42/tree-sitter-just):
 From [tree-sitter crate](https://docs.rs/tree-sitter/latest/tree_sitter/):
 
 **Key APIs**:
+
 - `Parser`: Creates and manages parsing state
 - `Tree`: Immutable parse tree with query capabilities
 - `Node`: Individual AST nodes with traversal methods
 - `Query`: Pattern matching against AST structures
 
 **Performance Characteristics**:
+
 - Incremental parsing support
 - Memory-efficient tree representation
 - Sub-millisecond parsing for typical recipe sizes
@@ -121,22 +127,26 @@ pub struct EnhancedCommandParser {
 ### AST Parsing Workflow
 
 1. **Recipe Source Acquisition**:
+
    ```rust
    let source = get_recipe_source(recipe_name, working_dir)?;
    ```
 
 2. **AST Parsing**:
+
    ```rust
    let tree = parser.parse(&source, None)?;
    let root_node = tree.root_node();
    ```
 
 3. **Metadata Extraction**:
+
    ```rust
    let metadata = extract_recipe_metadata(root_node, &source)?;
    ```
 
 4. **Fallback on Failure**:
+
    ```rust
    match ast_parse_result {
        Ok(metadata) => metadata,
@@ -147,6 +157,7 @@ pub struct EnhancedCommandParser {
 ### AST Query Patterns
 
 **Recipe Structure Query**:
+
 ```scheme
 (recipe
   name: (identifier) @name
@@ -160,6 +171,7 @@ pub struct EnhancedCommandParser {
 ```
 
 **Attribute Extraction Query**:
+
 ```scheme
 (attribute
   name: (identifier) @attr_name
@@ -167,6 +179,7 @@ pub struct EnhancedCommandParser {
 ```
 
 **Parameter Description Query**:
+
 ```scheme
 (comment
   content: (comment_text) @text
@@ -176,6 +189,7 @@ pub struct EnhancedCommandParser {
 ### Grammar Construct Handling
 
 #### Parameter Parsing
+
 ```rust
 fn extract_parameters(node: Node, source: &str) -> Vec<RecipeParameter> {
     let parameter_query = Query::new(language, PARAMETER_QUERY)?;
@@ -190,6 +204,7 @@ fn extract_parameters(node: Node, source: &str) -> Vec<RecipeParameter> {
 ```
 
 #### Dependency Resolution
+
 ```rust
 fn extract_dependencies(node: Node, source: &str) -> Vec<String> {
     let dependency_query = Query::new(language, DEPENDENCY_QUERY)?;
@@ -200,6 +215,7 @@ fn extract_dependencies(node: Node, source: &str) -> Vec<String> {
 ```
 
 #### String Interpolation Handling
+
 ```rust
 fn process_string_literal(node: Node, source: &str) -> String {
     // Handle interpolations like "Hello {{name}}"
@@ -276,6 +292,7 @@ Based on Tree-sitter characteristics and typical recipe complexity:
 ### Optimization Strategies
 
 1. **Parser Reuse**:
+
    ```rust
    // Reuse parser instance across recipes
    pub struct ASTJustParser {
@@ -284,12 +301,14 @@ Based on Tree-sitter characteristics and typical recipe complexity:
    ```
 
 2. **Query Caching**:
+
    ```rust
    // Cache compiled queries
    query_cache: HashMap<QueryType, Query>
    ```
 
 3. **Incremental Parsing**:
+
    ```rust
    // Future optimization for recipe change detection
    parser.parse(&new_source, Some(&old_tree))
@@ -354,24 +373,28 @@ pub struct JustTask {
 ## Migration Strategy
 
 ### Phase 1: Foundation (Week 1)
+
 - Add Tree-sitter dependencies to Cargo.toml
 - Implement basic `ASTJustParser` structure
 - Create AST node traversal utilities
 - Add comprehensive error handling
 
 ### Phase 2: Core Implementation (Week 2)
+
 - Implement recipe metadata extraction queries
 - Add parameter and dependency parsing
 - Integrate with `EnhancedCommandParser`
 - Create fallback chain logic
 
 ### Phase 3: Advanced Features (Week 3)
+
 - Handle complex string interpolation
 - Add attribute and annotation support
 - Implement conditional expression parsing
 - Add comprehensive test coverage
 
 ### Phase 4: Integration & Optimization (Week 4)
+
 - Performance benchmarking and optimization
 - Integration testing with all 99 existing recipes
 - Documentation and usage examples
@@ -469,6 +492,7 @@ cc = "1.0"  # For C compilation of grammar
 **Risk**: Tree-sitter-just grammar falls behind official Just releases
 
 **Mitigation**:
+
 - Monitor both Just and tree-sitter-just repositories
 - Contribute to tree-sitter-just maintenance if needed
 - Maintain fork if necessary
@@ -479,6 +503,7 @@ cc = "1.0"  # For C compilation of grammar
 **Risk**: AST parsing introduces unacceptable overhead
 
 **Mitigation**:
+
 - Comprehensive benchmarking before deployment
 - Performance regression testing
 - Optimization strategies already identified
@@ -489,6 +514,7 @@ cc = "1.0"  # For C compilation of grammar
 **Risk**: AST implementation increases system complexity
 
 **Mitigation**:
+
 - Maintain existing interfaces for backward compatibility
 - Comprehensive test coverage
 - Clear separation of concerns

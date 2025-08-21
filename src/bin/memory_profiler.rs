@@ -4,8 +4,8 @@
 
 use just_mcp::parser::ast::ASTJustParser;
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fs;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Custom allocator that tracks allocations
 struct TrackingAllocator;
@@ -91,14 +91,15 @@ fn analyze_memory_for_content(content: &str) -> Result<(), Box<dyn std::error::E
     println!("  Total allocated: {} KB", total_allocated / 1024);
     println!("  Total deallocated: {} KB", total_deallocated / 1024);
     println!("  Net memory usage: {} KB", net_memory / 1024);
-    
+
     // Calculate per-recipe memory
     if recipes.len() > 0 {
         let memory_per_recipe = net_memory / recipes.len();
         println!("  Memory per recipe: {} bytes", memory_per_recipe);
-        
+
         // Check against reasonable bounds
-        if net_memory < 100 * 1024 * 1024 { // Less than 100MB
+        if net_memory < 100 * 1024 * 1024 {
+            // Less than 100MB
             println!("  ✓ Memory usage within acceptable bounds");
         } else {
             println!("  ✗ Memory usage exceeds 100MB limit");
@@ -110,7 +111,7 @@ fn analyze_memory_for_content(content: &str) -> Result<(), Box<dyn std::error::E
 
 fn generate_justfile(recipe_count: usize) -> String {
     let mut content = String::new();
-    
+
     for i in 0..recipe_count {
         match i % 4 {
             0 => {
@@ -139,6 +140,6 @@ fn generate_justfile(recipe_count: usize) -> String {
             }
         }
     }
-    
+
     content
 }

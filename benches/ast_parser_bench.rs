@@ -104,7 +104,7 @@ tree:
 /// Generate a large justfile with specified number of recipes
 fn generate_large_justfile(recipe_count: usize) -> String {
     let mut content = String::new();
-    
+
     for i in 0..recipe_count {
         content.push_str(&format!(
             r#"
@@ -118,7 +118,7 @@ task-{i} param{i}="default{i}":
             i = i
         ));
     }
-    
+
     content
 }
 
@@ -136,51 +136,58 @@ fn bench_parser_init(c: &mut Criterion) {
 fn bench_parse_small(c: &mut Criterion) {
     let mut group = c.benchmark_group("ast_parse_content");
     group.throughput(Throughput::Bytes(SMALL_JUSTFILE.len() as u64));
-    
+
     group.bench_function("small_justfile", |b| {
         let mut parser = ASTJustParser::new().expect("Parser creation should succeed");
         b.iter(|| {
-            let tree = parser.parse_content(black_box(SMALL_JUSTFILE))
+            let tree = parser
+                .parse_content(black_box(SMALL_JUSTFILE))
                 .expect("Parsing should succeed");
             black_box(tree);
         });
     });
-    
+
     group.finish();
 }
 
 /// Benchmark recipe extraction
 fn bench_extract_recipes(c: &mut Criterion) {
     let mut group = c.benchmark_group("ast_extract_recipes");
-    
+
     // Setup parsers and trees
     let mut parser = ASTJustParser::new().expect("Parser creation should succeed");
-    let small_tree = parser.parse_content(SMALL_JUSTFILE).expect("Parsing should succeed");
-    let medium_tree = parser.parse_content(MEDIUM_JUSTFILE).expect("Parsing should succeed");
-    
+    let small_tree = parser
+        .parse_content(SMALL_JUSTFILE)
+        .expect("Parsing should succeed");
+    let medium_tree = parser
+        .parse_content(MEDIUM_JUSTFILE)
+        .expect("Parsing should succeed");
+
     group.bench_function("small_justfile", |b| {
         b.iter(|| {
-            let recipes = parser.extract_recipes(black_box(&small_tree))
+            let recipes = parser
+                .extract_recipes(black_box(&small_tree))
                 .expect("Extraction should succeed");
             black_box(recipes);
         });
     });
-    
+
     group.bench_function("medium_justfile", |b| {
         b.iter(|| {
-            let recipes = parser.extract_recipes(black_box(&medium_tree))
+            let recipes = parser
+                .extract_recipes(black_box(&medium_tree))
                 .expect("Extraction should succeed");
             black_box(recipes);
         });
     });
-    
+
     group.finish();
 }
 
 /// Benchmark parser reuse across multiple files
 fn bench_parser_reuse(c: &mut Criterion) {
     let mut group = c.benchmark_group("ast_parser_reuse");
-    
+
     // Generate multiple justfile contents
     let justfiles: Vec<String> = (0..10)
         .map(|i| {
@@ -197,20 +204,22 @@ test-{i}: recipe-{i}
             )
         })
         .collect();
-    
+
     group.bench_function("parse_10_files", |b| {
         let mut parser = ASTJustParser::new().expect("Parser creation should succeed");
         b.iter(|| {
             for content in &justfiles {
-                let tree = parser.parse_content(black_box(content))
+                let tree = parser
+                    .parse_content(black_box(content))
                     .expect("Parsing should succeed");
-                let recipes = parser.extract_recipes(&tree)
+                let recipes = parser
+                    .extract_recipes(&tree)
                     .expect("Extraction should succeed");
                 black_box(recipes);
             }
         });
     });
-    
+
     group.finish();
 }
 
@@ -218,91 +227,101 @@ test-{i}: recipe-{i}
 fn bench_parse_scales(c: &mut Criterion) {
     let mut group = c.benchmark_group("ast_parse_scale");
     group.measurement_time(Duration::from_secs(10));
-    
+
     for recipe_count in [10, 50, 100].iter() {
         let content = generate_large_justfile(*recipe_count);
         group.throughput(Throughput::Elements(*recipe_count as u64));
-        
+
         group.bench_with_input(
             BenchmarkId::from_parameter(recipe_count),
             &content,
             |b, content| {
                 let mut parser = ASTJustParser::new().expect("Parser creation should succeed");
                 b.iter(|| {
-                    let tree = parser.parse_content(black_box(content))
+                    let tree = parser
+                        .parse_content(black_box(content))
                         .expect("Parsing should succeed");
-                    let recipes = parser.extract_recipes(&tree)
+                    let recipes = parser
+                        .extract_recipes(&tree)
                         .expect("Extraction should succeed");
                     black_box(recipes);
                 });
             },
         );
     }
-    
+
     group.finish();
 }
 
 /// Benchmark per-recipe parsing time
 fn bench_per_recipe_time(c: &mut Criterion) {
     let mut group = c.benchmark_group("ast_per_recipe_time");
-    
+
     // Test with the demo justfile (99 recipes)
     let demo_content = generate_large_justfile(99);
     let mut parser = ASTJustParser::new().expect("Parser creation should succeed");
-    
+
     group.bench_function("99_recipes", |b| {
         b.iter(|| {
-            let tree = parser.parse_content(black_box(&demo_content))
+            let tree = parser
+                .parse_content(black_box(&demo_content))
                 .expect("Parsing should succeed");
-            let recipes = parser.extract_recipes(&tree)
+            let recipes = parser
+                .extract_recipes(&tree)
                 .expect("Extraction should succeed");
-            
+
             // Return both to ensure full parsing is measured
             black_box((tree, recipes));
         });
     });
-    
+
     group.finish();
 }
 
 /// Benchmark query cache effectiveness
 fn bench_query_cache(c: &mut Criterion) {
     let mut group = c.benchmark_group("ast_query_cache");
-    
+
     let mut parser = ASTJustParser::new().expect("Parser creation should succeed");
-    
+
     // First, warm up the cache by parsing once
-    let tree = parser.parse_content(MEDIUM_JUSTFILE).expect("Parsing should succeed");
-    let _ = parser.extract_recipes(&tree).expect("Extraction should succeed");
-    
+    let tree = parser
+        .parse_content(MEDIUM_JUSTFILE)
+        .expect("Parsing should succeed");
+    let _ = parser
+        .extract_recipes(&tree)
+        .expect("Extraction should succeed");
+
     // Now benchmark with warm cache
     group.bench_function("warm_cache", |b| {
         b.iter(|| {
-            let tree = parser.parse_content(black_box(MEDIUM_JUSTFILE))
+            let tree = parser
+                .parse_content(black_box(MEDIUM_JUSTFILE))
                 .expect("Parsing should succeed");
-            let recipes = parser.extract_recipes(&tree)
+            let recipes = parser
+                .extract_recipes(&tree)
                 .expect("Extraction should succeed");
             black_box(recipes);
         });
     });
-    
+
     // Get cache stats for reporting
     if let Ok(stats) = parser.cache_stats() {
         println!("Cache stats: {}", stats);
     }
-    
+
     group.finish();
 }
 
 /// Benchmark memory usage patterns
 fn bench_memory_patterns(c: &mut Criterion) {
     let mut group = c.benchmark_group("ast_memory_patterns");
-    
+
     // Test with different content sizes to observe memory scaling
     for size_multiplier in [1, 5, 10].iter() {
         let recipe_count = 10 * size_multiplier;
         let content = generate_large_justfile(recipe_count);
-        
+
         group.bench_with_input(
             BenchmarkId::new("recipe_count", recipe_count),
             &content,
@@ -310,18 +329,20 @@ fn bench_memory_patterns(c: &mut Criterion) {
                 b.iter(|| {
                     // Create new parser each time to measure full memory impact
                     let mut parser = ASTJustParser::new().expect("Parser creation should succeed");
-                    let tree = parser.parse_content(black_box(content))
+                    let tree = parser
+                        .parse_content(black_box(content))
                         .expect("Parsing should succeed");
-                    let recipes = parser.extract_recipes(&tree)
+                    let recipes = parser
+                        .extract_recipes(&tree)
                         .expect("Extraction should succeed");
-                    
+
                     // Ensure we're measuring the full memory footprint
                     black_box((parser, tree, recipes));
                 });
             },
         );
     }
-    
+
     group.finish();
 }
 

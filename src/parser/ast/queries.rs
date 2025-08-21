@@ -1658,7 +1658,9 @@ impl QueryResultProcessor {
     }
 
     /// Extract conditional expression information from query results
-    pub fn extract_conditional_expressions(results: &[QueryResult]) -> Vec<ConditionalExpressionInfo> {
+    pub fn extract_conditional_expressions(
+        results: &[QueryResult],
+    ) -> Vec<ConditionalExpressionInfo> {
         results
             .iter()
             .filter(|r| r.result_type == QueryResultType::ConditionalExpression)
@@ -1789,7 +1791,10 @@ impl QueryResultProcessor {
     }
 
     /// Parse function call arguments from the full expression
-    fn parse_function_call_arguments(expression: &str, function_name: &str) -> Vec<FunctionArgument> {
+    fn parse_function_call_arguments(
+        expression: &str,
+        function_name: &str,
+    ) -> Vec<FunctionArgument> {
         let mut arguments = Vec::new();
 
         // Find the function call pattern
@@ -1797,11 +1802,11 @@ impl QueryResultProcessor {
             let args_start = start + function_name.len() + 1;
             if let Some(end) = expression.rfind(')') {
                 let args_str = &expression[args_start..end];
-                
+
                 if !args_str.trim().is_empty() {
                     // Simple argument parsing - split by commas but handle nested calls
                     let parsed_args = Self::parse_function_arguments(args_str);
-                    
+
                     for (i, arg_str) in parsed_args.iter().enumerate() {
                         let arg = FunctionArgument::new(arg_str.trim().to_string(), i);
                         arguments.push(arg);
@@ -1911,7 +1916,7 @@ impl QueryResultProcessor {
         // Count function call patterns
         let open_parens = expression.matches('(').count();
         let close_parens = expression.matches(')').count();
-        
+
         // If we have multiple balanced parentheses, likely nested calls
         open_parens > 1 && open_parens == close_parens
     }
@@ -3296,12 +3301,10 @@ impl ExpressionEvaluator {
                 };
                 Ok(Self::process_string_escapes(content))
             }
-            ArgumentType::Variable => {
-                variables
-                    .get(&arg.value)
-                    .cloned()
-                    .ok_or_else(|| format!("Variable '{}' not found", arg.value))
-            }
+            ArgumentType::Variable => variables
+                .get(&arg.value)
+                .cloned()
+                .ok_or_else(|| format!("Variable '{}' not found", arg.value)),
             ArgumentType::NumericLiteral => Ok(arg.value.clone()),
             ArgumentType::BooleanLiteral => Ok(arg.value.clone()),
             ArgumentType::Expression => {
@@ -3319,7 +3322,10 @@ impl ExpressionEvaluator {
                 if allow_missing {
                     Ok(arg.value.clone())
                 } else {
-                    Err(format!("Cannot evaluate unknown argument type: {}", arg.value))
+                    Err(format!(
+                        "Cannot evaluate unknown argument type: {}",
+                        arg.value
+                    ))
                 }
             }
         }
@@ -3404,7 +3410,10 @@ impl ExpressionEvaluator {
         if allow_missing {
             Ok(format!("{}({})", func_name, args.join(", ")))
         } else {
-            Err(format!("User-defined function not implemented: {}", func_name))
+            Err(format!(
+                "User-defined function not implemented: {}",
+                func_name
+            ))
         }
     }
 
@@ -3417,7 +3426,10 @@ impl ExpressionEvaluator {
         if allow_missing {
             Ok(format!("`{} {}`", func_name, args.join(" ")))
         } else {
-            Err(format!("External command execution not implemented: {}", func_name))
+            Err(format!(
+                "External command execution not implemented: {}",
+                func_name
+            ))
         }
     }
 
@@ -3430,11 +3442,15 @@ impl ExpressionEvaluator {
         // Validate the conditional first
         if !conditional_info.is_valid() {
             let errors = conditional_info.validation_errors();
-            return Err(format!("Invalid conditional expression: {}", errors.join(", ")));
+            return Err(format!(
+                "Invalid conditional expression: {}",
+                errors.join(", ")
+            ));
         }
 
         // Evaluate the condition
-        let condition_result = Self::evaluate_expression(&conditional_info.condition, variables, allow_missing)?;
+        let condition_result =
+            Self::evaluate_expression(&conditional_info.condition, variables, allow_missing)?;
         let is_true = Self::evaluate_condition_as_boolean(&condition_result);
 
         // Choose the appropriate branch
@@ -3460,7 +3476,7 @@ impl ExpressionEvaluator {
     /// Parse a conditional expression string into ConditionalExpressionInfo
     pub fn parse_conditional_expression(expr: &str) -> Result<ConditionalExpressionInfo, String> {
         let trimmed = expr.trim();
-        
+
         // Handle ternary syntax: condition ? true_value : false_value
         if trimmed.contains('?') && trimmed.contains(':') {
             let parts: Vec<&str> = trimmed.splitn(2, '?').collect();
@@ -3471,7 +3487,11 @@ impl ExpressionEvaluator {
                 if value_parts.len() == 2 {
                     let true_branch = value_parts[0].trim().to_string();
                     let false_branch = value_parts[1].trim().to_string();
-                    return Ok(ConditionalExpressionInfo::ternary(condition, true_branch, false_branch));
+                    return Ok(ConditionalExpressionInfo::ternary(
+                        condition,
+                        true_branch,
+                        false_branch,
+                    ));
                 }
             }
         }
@@ -3492,7 +3512,11 @@ impl ExpressionEvaluator {
 
                 if let Some(else_pos) = else_pos {
                     let false_branch = parts[else_pos + 1..].join(" ");
-                    return Ok(ConditionalExpressionInfo::if_then_else(condition, true_branch, false_branch));
+                    return Ok(ConditionalExpressionInfo::if_then_else(
+                        condition,
+                        true_branch,
+                        false_branch,
+                    ));
                 } else {
                     return Ok(ConditionalExpressionInfo::if_then(condition, true_branch));
                 }
@@ -3505,12 +3529,12 @@ impl ExpressionEvaluator {
     /// Parse a function call expression string into FunctionCallInfo
     pub fn parse_function_call(expr: &str) -> Result<FunctionCallInfo, String> {
         let trimmed = expr.trim();
-        
+
         if let Some(paren_start) = trimmed.find('(') {
             if let Some(paren_end) = trimmed.rfind(')') {
                 let func_name = trimmed[..paren_start].trim().to_string();
                 let args_str = &trimmed[paren_start + 1..paren_end];
-                
+
                 let args = if args_str.trim().is_empty() {
                     Vec::new()
                 } else {
@@ -4374,11 +4398,14 @@ impl ConditionalExpressionInfo {
 
     /// Create a complete if-then-else conditional
     pub fn if_then_else(condition: String, true_branch: String, false_branch: String) -> Self {
-        let full_expression = format!("if {} then {} else {}", condition, true_branch, false_branch);
+        let full_expression = format!(
+            "if {} then {} else {}",
+            condition, true_branch, false_branch
+        );
         let condition_vars = Self::extract_variables(&condition);
         let true_vars = Self::extract_variables(&true_branch);
         let false_vars = Self::extract_variables(&false_branch);
-        
+
         let mut branch_variables = true_vars;
         branch_variables.extend(false_vars);
         branch_variables.sort();
@@ -4423,7 +4450,7 @@ impl ConditionalExpressionInfo {
 
     /// Validate the conditional expression structure
     pub fn is_valid(&self) -> bool {
-        !self.condition.is_empty() 
+        !self.condition.is_empty()
             && !self.true_branch.is_empty()
             && (self.conditional_type == ConditionalType::IfThen || self.false_branch.is_some())
     }
@@ -4440,8 +4467,11 @@ impl ConditionalExpressionInfo {
             errors.push("Conditional expression missing true branch".to_string());
         }
 
-        if matches!(self.conditional_type, ConditionalType::IfThenElse | ConditionalType::Ternary) 
-            && self.false_branch.is_none() {
+        if matches!(
+            self.conditional_type,
+            ConditionalType::IfThenElse | ConditionalType::Ternary
+        ) && self.false_branch.is_none()
+        {
             errors.push("If-then-else conditional missing false branch".to_string());
         }
 
@@ -4457,11 +4487,12 @@ impl ConditionalExpressionInfo {
         // Simple variable extraction - in a full implementation this would be more sophisticated
         let mut variables = Vec::new();
         let words: Vec<&str> = expr.split_whitespace().collect();
-        
+
         for word in words {
-            if word.chars().all(|c| c.is_alphanumeric() || c == '_') 
-                && !Self::is_keyword(word) 
-                && !Self::is_operator(word) {
+            if word.chars().all(|c| c.is_alphanumeric() || c == '_')
+                && !Self::is_keyword(word)
+                && !Self::is_operator(word)
+            {
                 variables.push(word.to_string());
             }
         }
@@ -4473,12 +4504,18 @@ impl ConditionalExpressionInfo {
 
     /// Check if a word is a keyword
     fn is_keyword(word: &str) -> bool {
-        matches!(word, "if" | "then" | "else" | "true" | "false" | "null" | "and" | "or" | "not")
+        matches!(
+            word,
+            "if" | "then" | "else" | "true" | "false" | "null" | "and" | "or" | "not"
+        )
     }
 
     /// Check if a word is an operator
     fn is_operator(word: &str) -> bool {
-        matches!(word, "==" | "!=" | "<" | ">" | "<=" | ">=" | "+" | "-" | "*" | "/" | "%" | "?" | ":")
+        matches!(
+            word,
+            "==" | "!=" | "<" | ">" | "<=" | ">=" | "+" | "-" | "*" | "/" | "%" | "?" | ":"
+        )
     }
 
     /// Format the conditional for display
@@ -4596,7 +4633,7 @@ impl FunctionCallInfo {
     pub fn new(function_name: String, arguments: Vec<FunctionArgument>) -> Self {
         let arg_strings: Vec<String> = arguments.iter().map(|a| a.value.clone()).collect();
         let full_expression = format!("{}({})", function_name, arg_strings.join(", "));
-        
+
         let mut argument_variables = Vec::new();
         for arg in &arguments {
             argument_variables.extend(arg.variables.clone());
@@ -4680,22 +4717,25 @@ impl FunctionCallInfo {
                 if self.arguments.len() > 2 {
                     return Err("env_var function accepts maximum two arguments".to_string());
                 }
-            },
+            }
             "uppercase" | "lowercase" | "trim" => {
                 if self.arguments.len() != 1 {
-                    return Err(format!("{} function requires exactly one argument", self.function_name));
+                    return Err(format!(
+                        "{} function requires exactly one argument",
+                        self.function_name
+                    ));
                 }
-            },
+            }
             "replace" => {
                 if self.arguments.len() != 3 {
                     return Err("replace function requires exactly three arguments".to_string());
                 }
-            },
+            }
             "join" => {
                 if self.arguments.len() < 2 {
                     return Err("join function requires at least two arguments".to_string());
                 }
-            },
+            }
             _ => {
                 // Unknown function - allow but mark as user-defined
             }
@@ -4706,10 +4746,10 @@ impl FunctionCallInfo {
     /// Infer function type from name
     fn infer_function_type(name: &str) -> FunctionType {
         match name {
-            "env_var" | "uppercase" | "lowercase" | "trim" | "replace" | "join" 
-            | "quote" | "path_exists" | "extension" | "file_name" | "parent_directory" => {
+            "env_var" | "uppercase" | "lowercase" | "trim" | "replace" | "join" | "quote"
+            | "path_exists" | "extension" | "file_name" | "parent_directory" => {
                 FunctionType::BuiltIn
-            },
+            }
             _ if name.starts_with('`') || name.contains('/') => FunctionType::ExternalCommand,
             _ => FunctionType::UserDefined,
         }
@@ -4718,10 +4758,8 @@ impl FunctionCallInfo {
     /// Infer return type from function name and arguments
     fn infer_return_type(name: &str, _arguments: &[FunctionArgument]) -> FunctionReturnType {
         match name {
-            "env_var" | "uppercase" | "lowercase" | "trim" | "replace" 
-            | "quote" | "extension" | "file_name" | "parent_directory" => {
-                FunctionReturnType::String
-            },
+            "env_var" | "uppercase" | "lowercase" | "trim" | "replace" | "quote" | "extension"
+            | "file_name" | "parent_directory" => FunctionReturnType::String,
             "path_exists" => FunctionReturnType::Boolean,
             "join" => FunctionReturnType::String,
             _ => FunctionReturnType::Unknown,
@@ -4745,7 +4783,7 @@ impl FunctionArgument {
     pub fn new(value: String, position: usize) -> Self {
         let argument_type = Self::infer_argument_type(&value);
         let variables = Self::extract_variables(&value);
-        
+
         Self {
             value,
             argument_type,
@@ -4765,9 +4803,10 @@ impl FunctionArgument {
     /// Infer argument type from value
     fn infer_argument_type(value: &str) -> ArgumentType {
         let trimmed = value.trim();
-        
-        if (trimmed.starts_with('"') && trimmed.ends_with('"')) 
-            || (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
+
+        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+        {
             ArgumentType::StringLiteral
         } else if trimmed == "true" || trimmed == "false" {
             ArgumentType::BooleanLiteral
@@ -4787,12 +4826,11 @@ impl FunctionArgument {
     /// Extract variables from argument value
     fn extract_variables(value: &str) -> Vec<String> {
         let mut variables = Vec::new();
-        
+
         // Simple implementation - extract alphanumeric words that aren't keywords
         let words: Vec<&str> = value.split_whitespace().collect();
         for word in words {
-            if word.chars().all(|c| c.is_alphanumeric() || c == '_') 
-                && !Self::is_keyword(word) {
+            if word.chars().all(|c| c.is_alphanumeric() || c == '_') && !Self::is_keyword(word) {
                 variables.push(word.to_string());
             }
         }
@@ -4819,15 +4857,16 @@ impl FunctionArgument {
         match self.argument_type {
             ArgumentType::StringLiteral => {
                 if !((self.value.starts_with('"') && self.value.ends_with('"'))
-                    || (self.value.starts_with('\'') && self.value.ends_with('\''))) {
+                    || (self.value.starts_with('\'') && self.value.ends_with('\'')))
+                {
                     errors.push("String literal must be quoted".to_string());
                 }
-            },
+            }
             ArgumentType::FunctionCall => {
                 if !self.value.contains('(') || !self.value.contains(')') {
                     errors.push("Function call must contain parentheses".to_string());
                 }
-            },
+            }
             _ => {}
         }
 
