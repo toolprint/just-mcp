@@ -5,8 +5,8 @@
 
 use super::ConfigDataCollector;
 use crate::embedded_content::resources::{
-    CompletionRequest, CompletionResult, Resource, ResourceContent, ResourceProvider,
-    ResourceTemplate, Completion
+    Completion, CompletionRequest, CompletionResult, Resource, ResourceContent, ResourceProvider,
+    ResourceTemplate,
 };
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -46,7 +46,9 @@ impl ConfigResourceProvider {
             uri: "file:///config.json".to_string(),
             name: "config.json".to_string(),
             title: Some("just-mcp Configuration".to_string()),
-            description: Some("Current runtime configuration and system state of the just-mcp server".to_string()),
+            description: Some(
+                "Current runtime configuration and system state of the just-mcp server".to_string(),
+            ),
             mime_type: Some("application/json".to_string()),
             size: None, // Will be calculated when content is generated
         }
@@ -54,9 +56,12 @@ impl ConfigResourceProvider {
 
     /// Generate the actual config.json content
     async fn generate_config_content(&self) -> Result<String> {
-        let config_data = self.collector.collect_config_data().await
+        let config_data = self
+            .collector
+            .collect_config_data()
+            .await
             .with_context(|| "Failed to collect configuration data")?;
-        
+
         serde_json::to_string_pretty(&config_data)
             .with_context(|| "Failed to serialize configuration data")
     }
@@ -73,7 +78,9 @@ impl ResourceProvider for ConfigResourceProvider {
         Self::validate_config_uri(uri)
             .with_context(|| format!("Invalid config resource URI: {uri}"))?;
 
-        let content = self.generate_config_content().await
+        let content = self
+            .generate_config_content()
+            .await
             .with_context(|| "Failed to generate config.json content")?;
 
         Ok(ResourceContent {
@@ -112,7 +119,9 @@ mod tests {
 
         // Invalid URIs
         assert!(ConfigResourceProvider::validate_config_uri("file:///other.json").is_err());
-        assert!(ConfigResourceProvider::validate_config_uri("http://example.com/config.json").is_err());
+        assert!(
+            ConfigResourceProvider::validate_config_uri("http://example.com/config.json").is_err()
+        );
         assert!(ConfigResourceProvider::validate_config_uri("file:///config.txt").is_err());
         assert!(ConfigResourceProvider::validate_config_uri("file:///docs/config.json").is_err());
     }
@@ -139,10 +148,7 @@ mod tests {
         let provider = ConfigResourceProvider::new(collector);
 
         // Valid resource read
-        let content = provider
-            .read_resource("file:///config.json")
-            .await
-            .unwrap();
+        let content = provider.read_resource("file:///config.json").await.unwrap();
 
         assert_eq!(content.uri, "file:///config.json");
         assert!(content.text.is_some());
@@ -151,11 +157,11 @@ mod tests {
 
         let text = content.text.unwrap();
         assert!(!text.is_empty());
-        
+
         // Verify it's valid JSON
         let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert!(parsed.is_object());
-        
+
         // Verify it has the expected top-level keys according to schema
         let obj = parsed.as_object().unwrap();
         assert!(obj.contains_key("server"));
@@ -168,9 +174,7 @@ mod tests {
         assert!(obj.contains_key("parsing"));
 
         // Invalid resource read
-        let result = provider
-            .read_resource("file:///other.json")
-            .await;
+        let result = provider.read_resource("file:///other.json").await;
         assert!(result.is_err());
     }
 
@@ -192,7 +196,10 @@ mod tests {
             },
         };
 
-        let result = provider.complete_resource(&completion_request).await.unwrap();
+        let result = provider
+            .complete_resource(&completion_request)
+            .await
+            .unwrap();
         assert!(result.completion.values.is_empty());
     }
 
@@ -206,7 +213,7 @@ mod tests {
 
         // Verify the structure matches the schema requirements
         let obj = config.as_object().unwrap();
-        
+
         // Check required top-level fields
         assert!(obj.contains_key("server"));
         assert!(obj.contains_key("cli"));

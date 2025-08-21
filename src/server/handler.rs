@@ -388,6 +388,66 @@ impl MessageHandler {
                     Ok(Some(serde_json::to_value(response)?))
                 }
             }
+            "_admin_set_watch_directory" => {
+                if let Some(ref admin_tools) = self.admin_tools {
+                    // Parse the arguments into SetWatchDirectoryParams
+                    let params: crate::admin::SetWatchDirectoryParams =
+                        serde_json::from_value(serde_json::to_value(arguments)?).map_err(|e| {
+                            Error::InvalidParameter(format!(
+                                "Invalid set_watch_directory parameters: {e}"
+                            ))
+                        })?;
+
+                    match admin_tools.set_watch_directory(params).await {
+                        Ok(result) => {
+                            let tool_result = json!({
+                                "content": [{
+                                    "type": "text",
+                                    "text": format!(
+                                        "Set watch directory successfully:\n- New path: {}\n- Justfile detected: {}\n{}",
+                                        result.absolute_path,
+                                        if result.justfile_detected { "Yes" } else { "No" },
+                                        if let Some(justfile_path) = result.justfile_path {
+                                            format!("- Justfile path: {justfile_path}")
+                                        } else {
+                                            "- No justfile found in directory".to_string()
+                                        }
+                                    )
+                                }],
+                                "isError": false
+                            });
+
+                            let response =
+                                JsonRpcResponse::success(request_id.clone(), tool_result);
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                        Err(e) => {
+                            let error = JsonRpcError {
+                                code: -32603,
+                                message: format!("Failed to set watch directory: {e}"),
+                                data: None,
+                            };
+
+                            let response = JsonRpcResponse::error(
+                                request_id.clone(),
+                                error.code,
+                                error.message,
+                            );
+                            Ok(Some(serde_json::to_value(response)?))
+                        }
+                    }
+                } else {
+                    let error = JsonRpcError {
+                        code: -32603,
+                        message: "Admin tools not available".to_string(),
+                        data: None,
+                    };
+
+                    let response =
+                        JsonRpcResponse::error(request_id.clone(), error.code, error.message);
+                    Ok(Some(serde_json::to_value(response)?))
+                }
+            }
             _ => {
                 let error = JsonRpcError {
                     code: -32602,

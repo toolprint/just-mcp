@@ -1036,7 +1036,9 @@ impl QueryResultProcessor {
                     .iter()
                     .any(|a| matches!(a.attribute_type, AttributeType::Confirm))
                 {
-                    errors.push("Private recipe has confirm attribute, which is unnecessary".to_string());
+                    errors.push(
+                        "Private recipe has confirm attribute, which is unnecessary".to_string(),
+                    );
                 }
             }
 
@@ -1047,7 +1049,9 @@ impl QueryResultProcessor {
                     .filter(|a| matches!(a.attribute_type, AttributeType::Group))
                     .count();
                 if group_count > 1 {
-                    errors.push("Recipe has multiple group attributes, only one is allowed".to_string());
+                    errors.push(
+                        "Recipe has multiple group attributes, only one is allowed".to_string(),
+                    );
                 }
             }
 

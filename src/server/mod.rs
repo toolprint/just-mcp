@@ -226,14 +226,15 @@ impl Server {
         }
         config_collector = config_collector.with_tool_registry(self.registry.clone());
 
-        let config_provider = Arc::new(
-            crate::config_resource::ConfigResourceProvider::new(config_collector),
-        );
+        let config_provider = Arc::new(crate::config_resource::ConfigResourceProvider::new(
+            config_collector,
+        ));
 
         // Create combined resource provider
-        let combined_provider = Arc::new(
-            crate::config_resource::CombinedResourceProvider::new(embedded_provider, config_provider),
-        );
+        let combined_provider = Arc::new(crate::config_resource::CombinedResourceProvider::new(
+            embedded_provider,
+            config_provider,
+        ));
         handler = handler.with_resource_provider(combined_provider);
 
         match handler.handle(message).await? {

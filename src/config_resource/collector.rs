@@ -5,11 +5,11 @@
 
 use crate::cli::Args;
 use anyhow::Result;
+use chrono::Utc;
 use serde_json::{json, Value};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::Utc;
 
 /// Collects configuration data from all system components
 pub struct ConfigDataCollector {
@@ -51,13 +51,19 @@ impl ConfigDataCollector {
     }
 
     /// Set resource manager for runtime statistics
-    pub fn with_resource_manager(mut self, manager: Arc<crate::resource_limits::ResourceManager>) -> Self {
+    pub fn with_resource_manager(
+        mut self,
+        manager: Arc<crate::resource_limits::ResourceManager>,
+    ) -> Self {
         self.resource_manager = Some(manager);
         self
     }
 
     /// Set tool registry for tool statistics
-    pub fn with_tool_registry(mut self, registry: Arc<Mutex<crate::registry::ToolRegistry>>) -> Self {
+    pub fn with_tool_registry(
+        mut self,
+        registry: Arc<Mutex<crate::registry::ToolRegistry>>,
+    ) -> Self {
         self.tool_registry = Some(registry);
         self
     }
@@ -119,7 +125,8 @@ impl ConfigDataCollector {
     /// Collect CLI configuration
     fn collect_cli_info(&self) -> Value {
         if let Some(ref args) = self.args {
-            let watch_directories: Vec<Value> = args.watch_dir
+            let watch_directories: Vec<Value> = args
+                .watch_dir
                 .iter()
                 .map(|dir_spec| {
                     if let Some((path, name)) = dir_spec.split_once(':') {
@@ -157,12 +164,14 @@ impl ConfigDataCollector {
     /// Collect security configuration
     fn collect_security_info(&self) -> Value {
         if let Some(ref config) = self.security_config {
-            let allowed_paths: Vec<String> = config.allowed_paths
+            let allowed_paths: Vec<String> = config
+                .allowed_paths
                 .iter()
                 .map(|p| p.to_string_lossy().to_string())
                 .collect();
 
-            let forbidden_patterns: Vec<String> = config.forbidden_patterns
+            let forbidden_patterns: Vec<String> = config
+                .forbidden_patterns
                 .iter()
                 .map(|regex| regex.as_str().to_string())
                 .collect();
@@ -310,9 +319,8 @@ impl ConfigDataCollector {
         };
 
         let rust_log = env::var("RUST_LOG").ok();
-        
-        let cache_directory = dirs::cache_dir()
-            .map(|p| p.to_string_lossy().to_string());
+
+        let cache_directory = dirs::cache_dir().map(|p| p.to_string_lossy().to_string());
 
         let temp_directory = env::temp_dir().to_string_lossy().to_string();
 
@@ -330,9 +338,10 @@ impl ConfigDataCollector {
         if let Some(ref registry) = self.tool_registry {
             let registry_guard = registry.lock().await;
             let tools = registry_guard.list_tools();
-            
+
             let total_count = tools.len();
-            let admin_tools_count = tools.iter()
+            let admin_tools_count = tools
+                .iter()
                 .filter(|tool| tool.name.starts_with("_admin_"))
                 .count();
             let justfile_tools_count = total_count - admin_tools_count;

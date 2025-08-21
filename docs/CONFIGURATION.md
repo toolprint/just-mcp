@@ -5,6 +5,7 @@ This document provides comprehensive documentation of all configuration settings
 ## Overview
 
 just-mcp offers extensive configuration options across multiple domains:
+
 - Command-line interface arguments
 - Security policies and validation
 - Resource limits and performance constraints
@@ -28,10 +29,12 @@ The primary configuration is provided through command-line arguments defined in 
 #### Watch Directory Format
 
 The `--watch-dir` argument supports two formats:
+
 - `path`: Watch directory at path with auto-generated name
 - `path:name`: Watch directory at path with custom name
 
 Example:
+
 ```bash
 just-mcp --watch-dir ./project1 --watch-dir ./project2:backend --watch-dir /opt/scripts:system
 ```
@@ -41,6 +44,7 @@ just-mcp --watch-dir ./project1 --watch-dir ./project2:backend --watch-dir /opt/
 When the `vector-search` feature is enabled, additional subcommands are available:
 
 #### Index Command
+
 ```bash
 just-mcp search index [OPTIONS]
 ```
@@ -54,6 +58,7 @@ just-mcp search index [OPTIONS]
 | `--chunk-size` | usize | 512 | Text chunk size for embedding |
 
 #### Query Command
+
 ```bash
 just-mcp search query [OPTIONS]
 ```
@@ -67,6 +72,7 @@ just-mcp search query [OPTIONS]
 | `--threshold` | f32 | None | Similarity threshold (0.0-1.0) |
 
 #### Stats Command
+
 ```bash
 just-mcp search stats [OPTIONS]
 ```
@@ -90,6 +96,7 @@ Security settings are defined in the `SecurityConfig` structure (`src/security/m
 ### Default Forbidden Patterns
 
 The security system blocks these patterns by default:
+
 - **Shell injection**: `[;&|]|\$\(|\`` - Prevents command chaining and substitution
 - **Path traversal**: `\.\.[/\\]` - Prevents directory traversal attacks  
 - **Command substitution**: `\$\{.*\}` - Prevents variable expansion attacks
@@ -97,6 +104,7 @@ The security system blocks these patterns by default:
 ### Security Validation
 
 The security validator performs these checks:
+
 - **Path validation**: Ensures all paths are within allowed directories
 - **Task name validation**: Alphanumeric, underscore, and hyphen only (1-100 chars)
 - **Parameter validation**: Checks length, forbidden patterns, and null bytes
@@ -136,6 +144,7 @@ When the `local-embeddings` feature is enabled, model caching is configured via 
 ### Model Information Tracking
 
 Each cached model stores this metadata:
+
 - **`model_id`**: Hugging Face Hub identifier
 - **`local_path`**: Local storage path
 - **`config_hash`**: SHA256 hash for integrity verification
@@ -146,6 +155,7 @@ Each cached model stores this metadata:
 ### Required Model Files
 
 The cache downloads these files for each model:
+
 - **Required**: `config.json`, `pytorch_model.bin`, `tokenizer.json`, `tokenizer_config.json`
 - **Optional**: `model.safetensors`, `special_tokens_map.json`, `vocab.txt`, `sentence_bert_config.json`, `modules.json`, `README.md`
 
@@ -163,6 +173,7 @@ The MCP server handler (`src/server/handler.rs`) supports these components:
 ### Execution Context
 
 Task execution supports these context settings:
+
 - **`working_directory`**: Custom working directory for task execution
 - **`environment`**: Environment variables passed to tasks (HashMap<String, String>)
 - **`timeout`**: Task-specific timeout in seconds (default: 300)
@@ -170,6 +181,7 @@ Task execution supports these context settings:
 ### Server Capabilities
 
 The server advertises these MCP protocol capabilities:
+
 - **Tools**: Support for listing and calling tools with change notifications
 - **Logging**: Standard MCP logging support
 - **Resources**: Static resource serving (subscribe: false, list_changed: false)
@@ -215,6 +227,7 @@ The `--log-level` command-line argument overrides `RUST_LOG` environment variabl
 ### System Paths
 
 The system uses these standard paths:
+
 - **Cache directory**: `dirs::cache_dir()` → `~/.cache/just-mcp/` (Unix) or equivalent
 - **Temporary directory**: `std::env::temp_dir()` → fallback for cache operations
 - **Working directory**: `std::env::current_dir()` → default watch directory
@@ -222,12 +235,14 @@ The system uses these standard paths:
 ## 8. Configuration Examples
 
 ### Basic Server Setup
+
 ```bash
 # Start server watching current directory with admin tools
 just-mcp --admin --log-level debug
 ```
 
 ### Multi-Directory Monitoring
+
 ```bash
 # Watch multiple directories with custom names
 just-mcp \
@@ -239,6 +254,7 @@ just-mcp \
 ```
 
 ### Vector Search Indexing
+
 ```bash
 # Index directory with local embeddings
 just-mcp search index \
@@ -250,6 +266,7 @@ just-mcp search index \
 ```
 
 ### Vector Search Querying
+
 ```bash
 # Search with similarity threshold
 just-mcp search query \

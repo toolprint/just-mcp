@@ -32,7 +32,10 @@
             "tools": {
               "type": "object",
               "properties": {
-                "list_changed": { "type": "boolean", "description": "Supports tools list change notifications" }
+                "list_changed": {
+                  "type": "boolean",
+                  "description": "Supports tools list change notifications"
+                }
               }
             },
             "logging": {
@@ -42,20 +45,32 @@
             "resources": {
               "type": "object",
               "properties": {
-                "subscribe": { "type": "boolean", "description": "Supports resource subscriptions" },
-                "list_changed": { "type": "boolean", "description": "Supports resource list change notifications" }
+                "subscribe": {
+                  "type": "boolean",
+                  "description": "Supports resource subscriptions"
+                },
+                "list_changed": {
+                  "type": "boolean",
+                  "description": "Supports resource list change notifications"
+                }
               }
             },
             "resource_templates": {
               "type": "object",
               "properties": {
-                "list_changed": { "type": "boolean", "description": "Supports resource template list change notifications" }
+                "list_changed": {
+                  "type": "boolean",
+                  "description": "Supports resource template list change notifications"
+                }
               }
             },
             "completion": {
               "type": "object",
               "properties": {
-                "argument": { "type": "boolean", "description": "Supports argument completion" }
+                "argument": {
+                  "type": "boolean",
+                  "description": "Supports argument completion"
+                }
               }
             }
           }
@@ -107,7 +122,12 @@
           "default": "info"
         }
       },
-      "required": ["watch_directories", "admin_enabled", "json_logs", "log_level"]
+      "required": [
+        "watch_directories",
+        "admin_enabled",
+        "json_logs",
+        "log_level"
+      ]
     },
     "security": {
       "type": "object",
@@ -151,7 +171,13 @@
           "default": true
         }
       },
-      "required": ["enabled", "allowed_paths", "max_parameter_length", "max_parameters", "strict_mode"]
+      "required": [
+        "enabled",
+        "allowed_paths",
+        "max_parameter_length",
+        "max_parameters",
+        "strict_mode"
+      ]
     },
     "resource_limits": {
       "type": "object",
@@ -201,7 +227,14 @@
           "minimum": 0
         }
       },
-      "required": ["enabled", "max_execution_time_seconds", "max_concurrent_executions", "max_output_size_bytes", "enforce_hard_limits", "current_executions"]
+      "required": [
+        "enabled",
+        "max_execution_time_seconds",
+        "max_concurrent_executions",
+        "max_output_size_bytes",
+        "enforce_hard_limits",
+        "current_executions"
+      ]
     },
     "features": {
       "type": "object",
@@ -415,12 +448,17 @@
           }
         }
       },
-      "required": ["cli_parser_available", "regex_parser_available", "default_parser", "parser_priority"]
+      "required": [
+        "cli_parser_available",
+        "regex_parser_available",
+        "default_parser",
+        "parser_priority"
+      ]
     }
   },
   "required": [
     "server",
-    "cli", 
+    "cli",
     "security",
     "resource_limits",
     "features",

@@ -106,6 +106,30 @@ impl AdminTools {
 
         registry.add_tool(create_recipe_tool)?;
 
+        // Register set_watch_directory() tool
+        let set_watch_directory_tool = ToolDefinition {
+            name: "_admin_set_watch_directory".to_string(),
+            description: "Clear watch directories and set a single new path. Converts relative paths to absolute.".to_string(),
+            input_schema: json!({
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory path to watch. Can be relative (will be converted to absolute) or absolute."
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }),
+            dependencies: vec![],
+            source_hash: "admin_tool_set_watch_directory_v1".to_string(),
+            last_modified: std::time::SystemTime::now(),
+            internal_name: None,
+        };
+
+        registry.add_tool(set_watch_directory_tool)?;
+
         // TODO: Add modify_recipe, remove_recipe tools in future subtasks
 
         Ok(())
@@ -404,6 +428,91 @@ impl AdminTools {
             backup_path: backup_path.to_string_lossy().to_string(),
         })
     }
+
+    pub async fn set_watch_directory(
+        &self,
+        params: SetWatchDirectoryParams,
+    ) -> Result<SetWatchDirectoryResult> {
+        info!("Setting watch directory to: {}", params.path);
+
+        // Convert relative path to absolute
+        let absolute_path = if std::path::Path::new(&params.path).is_absolute() {
+            std::path::PathBuf::from(&params.path)
+        } else {
+            std::env::current_dir()?.join(&params.path)
+        };
+
+        // Validate that the path exists
+        if !absolute_path.exists() {
+            return Err(crate::error::Error::Other(format!(
+                "Path does not exist: {}",
+                absolute_path.display()
+            )));
+        }
+
+        if !absolute_path.is_dir() {
+            return Err(crate::error::Error::Other(format!(
+                "Path is not a directory: {}",
+                absolute_path.display()
+            )));
+        }
+
+        // Check for justfile presence
+        let justfile_path = absolute_path.join("justfile");
+        let justfile_cap_path = absolute_path.join("Justfile");
+
+        let (justfile_detected, detected_justfile_path) = if justfile_path.exists() {
+            (true, Some(justfile_path.to_string_lossy().to_string()))
+        } else if justfile_cap_path.exists() {
+            (true, Some(justfile_cap_path.to_string_lossy().to_string()))
+        } else {
+            (false, None)
+        };
+
+        // Clear the registry cache (remove all non-admin tools)
+        {
+            let mut registry = self.registry.lock().await;
+            let tools_to_remove: Vec<String> = registry
+                .list_tools()
+                .iter()
+                .filter(|tool| !tool.name.starts_with("_admin_"))
+                .map(|tool| tool.name.clone())
+                .collect();
+
+            for tool_name in tools_to_remove {
+                registry.remove_tool(&tool_name)?;
+            }
+        }
+
+        // Scan the new directory if a justfile was detected
+        if justfile_detected {
+            if let Some(ref justfile_path_str) = detected_justfile_path {
+                let justfile_path = std::path::Path::new(justfile_path_str);
+                if let Err(e) = self.scan_justfile(justfile_path).await {
+                    warn!(
+                        "Error scanning justfile at {}: {}",
+                        justfile_path.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        // Send notification that tools have changed
+        self.watcher.send_tools_changed_notification();
+
+        info!(
+            "Successfully set watch directory to {} (justfile detected: {})",
+            absolute_path.display(),
+            justfile_detected
+        );
+
+        Ok(SetWatchDirectoryResult {
+            absolute_path: absolute_path.to_string_lossy().to_string(),
+            justfile_detected,
+            justfile_path: detected_justfile_path,
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -435,6 +544,18 @@ pub struct CreateRecipeResult {
     pub recipe_name: String,
     pub justfile_path: String,
     pub backup_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetWatchDirectoryParams {
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetWatchDirectoryResult {
+    pub absolute_path: String,
+    pub justfile_detected: bool,
+    pub justfile_path: Option<String>,
 }
 
 #[cfg(test)]
@@ -681,5 +802,131 @@ existing:
         assert!(content.contains("# Build frontend"));
         assert!(content.contains("build:"));
         assert!(content.contains("npm run build"));
+    }
+
+    #[tokio::test]
+    async fn test_set_watch_directory_with_justfile() {
+        let temp_dir = TempDir::new().unwrap();
+        let justfile_path = temp_dir.path().join("justfile");
+
+        // Create a test justfile
+        let content = r#"
+# Test task
+test:
+    echo "test"
+"#;
+        fs::write(&justfile_path, content).unwrap();
+
+        let registry = Arc::new(Mutex::new(ToolRegistry::new()));
+        let watcher = Arc::new(JustfileWatcher::new(registry.clone()));
+        let admin_tools = AdminTools::new(registry.clone(), watcher, vec![], vec![]);
+
+        // Test setting watch directory with absolute path
+        let params = SetWatchDirectoryParams {
+            path: temp_dir.path().to_string_lossy().to_string(),
+        };
+
+        let result = admin_tools.set_watch_directory(params).await.unwrap();
+
+        assert_eq!(
+            result.absolute_path,
+            temp_dir.path().to_string_lossy().to_string()
+        );
+        assert!(result.justfile_detected);
+        assert!(result.justfile_path.is_some());
+        assert!(result.justfile_path.unwrap().contains("justfile"));
+    }
+
+    #[tokio::test]
+    async fn test_set_watch_directory_without_justfile() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let registry = Arc::new(Mutex::new(ToolRegistry::new()));
+        let watcher = Arc::new(JustfileWatcher::new(registry.clone()));
+        let admin_tools = AdminTools::new(registry.clone(), watcher, vec![], vec![]);
+
+        // Test setting watch directory without justfile
+        let params = SetWatchDirectoryParams {
+            path: temp_dir.path().to_string_lossy().to_string(),
+        };
+
+        let result = admin_tools.set_watch_directory(params).await.unwrap();
+
+        assert_eq!(
+            result.absolute_path,
+            temp_dir.path().to_string_lossy().to_string()
+        );
+        assert!(!result.justfile_detected);
+        assert!(result.justfile_path.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_set_watch_directory_relative_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let justfile_path = temp_dir.path().join("Justfile"); // Test capitalized version
+
+        // Create a test Justfile
+        let content = r#"
+# Test task
+test:
+    echo "test"
+"#;
+        fs::write(&justfile_path, content).unwrap();
+
+        let registry = Arc::new(Mutex::new(ToolRegistry::new()));
+        let watcher = Arc::new(JustfileWatcher::new(registry.clone()));
+        let admin_tools = AdminTools::new(registry.clone(), watcher, vec![], vec![]);
+
+        // Change to parent directory and use relative path
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path().parent().unwrap()).unwrap();
+
+        let relative_path = temp_dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let params = SetWatchDirectoryParams {
+            path: relative_path.clone(),
+        };
+
+        let result = admin_tools.set_watch_directory(params).await.unwrap();
+
+        // Restore original directory
+        std::env::set_current_dir(original_dir).unwrap();
+
+        assert!(result.absolute_path.ends_with(&relative_path));
+        assert!(result.justfile_detected);
+        assert!(result.justfile_path.is_some());
+        // The actual detected justfile path should contain either "justfile" or "Justfile"
+        let justfile_path = result.justfile_path.unwrap();
+        assert!(justfile_path.contains("justfile") || justfile_path.contains("Justfile"));
+    }
+
+    #[tokio::test]
+    async fn test_set_watch_directory_errors() {
+        let registry = Arc::new(Mutex::new(ToolRegistry::new()));
+        let watcher = Arc::new(JustfileWatcher::new(registry.clone()));
+        let admin_tools = AdminTools::new(registry.clone(), watcher, vec![], vec![]);
+
+        // Test with non-existent path
+        let params = SetWatchDirectoryParams {
+            path: "/non/existent/path".to_string(),
+        };
+
+        let result = admin_tools.set_watch_directory(params).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("does not exist"));
+
+        // Test with file instead of directory
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let params = SetWatchDirectoryParams {
+            path: temp_file.path().to_string_lossy().to_string(),
+        };
+
+        let result = admin_tools.set_watch_directory(params).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a directory"));
     }
 }

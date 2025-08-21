@@ -32,7 +32,7 @@
         "name": "ui"
       },
       {
-        "path": "/Users/brian/workspace/backend", 
+        "path": "/Users/brian/workspace/backend",
         "name": "api"
       }
     ],
@@ -48,11 +48,7 @@
       "/Users/brian/workspace/backend"
     ],
     "max_parameter_length": 1024,
-    "forbidden_patterns": [
-      "[;&|]|\\$\\(|\\`",
-      "\\.\\.[/\\\\]",
-      "\\$\\{.*\\}"
-    ],
+    "forbidden_patterns": ["[;&|]|\\$\\(|\\`", "\\.\\.[/\\\\]", "\\$\\{.*\\}"],
     "max_parameters": 50,
     "strict_mode": true
   },
