@@ -15,8 +15,8 @@ mod ast_parser_tests {
         // Verify the language has expected properties
         assert!(language.version() > 0);
         assert!(language.node_kind_count() > 0);
-        // field_count() returns u16, so checking > 0 is more meaningful than >= 0
-        assert!(language.field_count() >= 0);
+        // field_count() returns u16, just verify it exists (any value is valid)
+        let _field_count = language.field_count();
     }
 
     /// Test that a parser can be created with the just language

@@ -1036,9 +1036,7 @@ impl QueryResultProcessor {
                     .iter()
                     .any(|a| matches!(a.attribute_type, AttributeType::Confirm))
                 {
-                    errors.push(format!(
-                        "Private recipe has confirm attribute, which is unnecessary"
-                    ));
+                    errors.push("Private recipe has confirm attribute, which is unnecessary".to_string());
                 }
             }
 
@@ -1049,9 +1047,7 @@ impl QueryResultProcessor {
                     .filter(|a| matches!(a.attribute_type, AttributeType::Group))
                     .count();
                 if group_count > 1 {
-                    errors.push(format!(
-                        "Recipe has multiple group attributes, only one is allowed"
-                    ));
+                    errors.push("Recipe has multiple group attributes, only one is allowed".to_string());
                 }
             }
 
@@ -1880,7 +1876,7 @@ impl QueryResultProcessor {
             }
         }
 
-        max_nesting.min(1).max(1) // At least 1, handle edge cases
+        max_nesting.max(1) // At least 1, handle edge cases
     }
 
     /// Calculate function call nesting level

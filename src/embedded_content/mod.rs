@@ -116,7 +116,7 @@ mod tests {
     fn test_registry_creation() {
         let registry = EmbeddedContentRegistry::new();
         assert!(!registry.is_empty());
-        assert!(registry.len() > 0);
+        assert!(!registry.is_empty());
     }
 
     #[test]

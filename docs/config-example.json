@@ -1,0 +1,117 @@
+{
+  "server": {
+    "name": "just-mcp",
+    "version": "0.1.2",
+    "protocol_version": "2024-11-05",
+    "capabilities": {
+      "tools": {
+        "list_changed": true
+      },
+      "logging": {},
+      "resources": {
+        "subscribe": false,
+        "list_changed": false
+      },
+      "resource_templates": {
+        "list_changed": false
+      },
+      "completion": {
+        "argument": true
+      }
+    }
+  },
+  "cli": {
+    "command": "serve",
+    "watch_directories": [
+      {
+        "path": "/Users/brian/workspace/toolprint/just-mcp",
+        "name": null
+      },
+      {
+        "path": "/Users/brian/workspace/frontend",
+        "name": "ui"
+      },
+      {
+        "path": "/Users/brian/workspace/backend", 
+        "name": "api"
+      }
+    ],
+    "admin_enabled": true,
+    "json_logs": false,
+    "log_level": "debug"
+  },
+  "security": {
+    "enabled": true,
+    "allowed_paths": [
+      "/Users/brian/workspace/toolprint/just-mcp",
+      "/Users/brian/workspace/frontend",
+      "/Users/brian/workspace/backend"
+    ],
+    "max_parameter_length": 1024,
+    "forbidden_patterns": [
+      "[;&|]|\\$\\(|\\`",
+      "\\.\\.[/\\\\]",
+      "\\$\\{.*\\}"
+    ],
+    "max_parameters": 50,
+    "strict_mode": true
+  },
+  "resource_limits": {
+    "enabled": true,
+    "max_execution_time_seconds": 300,
+    "max_memory_bytes": null,
+    "max_cpu_percent": null,
+    "max_concurrent_executions": 10,
+    "max_output_size_bytes": 10485760,
+    "enforce_hard_limits": true,
+    "current_executions": 2
+  },
+  "features": {
+    "stdio_transport": true,
+    "http_transport": false,
+    "vector_search": true,
+    "local_embeddings": true,
+    "ast_parser": true
+  },
+  "vector_search": {
+    "enabled": true,
+    "default_database_path": "./search_index.db",
+    "default_batch_size": 32,
+    "default_chunk_size": 512,
+    "default_query_limit": 10
+  },
+  "model_cache": {
+    "enabled": true,
+    "cache_directory": "/Users/brian/.cache/just-mcp/models",
+    "max_cache_size_bytes": 10737418240,
+    "max_age_days": 30,
+    "verify_integrity": true,
+    "auto_cleanup": true,
+    "download_timeout_seconds": 300,
+    "stats": {
+      "total_models": 2,
+      "loaded_models": 1,
+      "total_size_bytes": 156780544
+    }
+  },
+  "environment": {
+    "working_directory": "/Users/brian/workspace/toolprint/just-mcp",
+    "platform": "unix",
+    "rust_log": "just_mcp=debug,just_mcp::parser=trace",
+    "cache_directory": "/Users/brian/.cache",
+    "temp_directory": "/tmp"
+  },
+  "tools": {
+    "total_count": 47,
+    "admin_tools_count": 2,
+    "justfile_tools_count": 45,
+    "last_updated": "2025-01-21T14:30:45.123Z"
+  },
+  "parsing": {
+    "ast_parser_available": true,
+    "cli_parser_available": true,
+    "regex_parser_available": true,
+    "default_parser": "ast",
+    "parser_priority": ["ast", "cli", "regex"]
+  }
+}

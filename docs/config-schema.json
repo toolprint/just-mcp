@@ -1,0 +1,432 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/onegrep/just-mcp/schemas/config.json",
+  "title": "just-mcp Configuration Schema",
+  "description": "Complete configuration schema for just-mcp MCP server",
+  "type": "object",
+  "properties": {
+    "server": {
+      "type": "object",
+      "description": "Server identification and capabilities",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Server package name",
+          "example": "just-mcp"
+        },
+        "version": {
+          "type": "string",
+          "description": "Server version",
+          "pattern": "^\\d+\\.\\d+\\.\\d+",
+          "example": "0.1.2"
+        },
+        "protocol_version": {
+          "type": "string",
+          "description": "MCP protocol version",
+          "example": "2024-11-05"
+        },
+        "capabilities": {
+          "type": "object",
+          "description": "Server MCP capabilities",
+          "properties": {
+            "tools": {
+              "type": "object",
+              "properties": {
+                "list_changed": { "type": "boolean", "description": "Supports tools list change notifications" }
+              }
+            },
+            "logging": {
+              "type": "object",
+              "description": "Logging support"
+            },
+            "resources": {
+              "type": "object",
+              "properties": {
+                "subscribe": { "type": "boolean", "description": "Supports resource subscriptions" },
+                "list_changed": { "type": "boolean", "description": "Supports resource list change notifications" }
+              }
+            },
+            "resource_templates": {
+              "type": "object",
+              "properties": {
+                "list_changed": { "type": "boolean", "description": "Supports resource template list change notifications" }
+              }
+            },
+            "completion": {
+              "type": "object",
+              "properties": {
+                "argument": { "type": "boolean", "description": "Supports argument completion" }
+              }
+            }
+          }
+        }
+      },
+      "required": ["name", "version", "protocol_version", "capabilities"]
+    },
+    "cli": {
+      "type": "object",
+      "description": "Command-line interface configuration",
+      "properties": {
+        "command": {
+          "type": ["string", "null"],
+          "description": "Active command (serve, search, etc.)",
+          "enum": ["serve", "search", null]
+        },
+        "watch_directories": {
+          "type": "array",
+          "description": "Directories being watched for justfiles",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Absolute path to watched directory"
+              },
+              "name": {
+                "type": ["string", "null"],
+                "description": "Optional custom name for the watch directory"
+              }
+            },
+            "required": ["path"]
+          }
+        },
+        "admin_enabled": {
+          "type": "boolean",
+          "description": "Whether administrative tools are enabled",
+          "default": false
+        },
+        "json_logs": {
+          "type": "boolean",
+          "description": "Whether JSON log output is enabled",
+          "default": false
+        },
+        "log_level": {
+          "type": "string",
+          "description": "Current logging level",
+          "enum": ["trace", "debug", "info", "warn", "error"],
+          "default": "info"
+        }
+      },
+      "required": ["watch_directories", "admin_enabled", "json_logs", "log_level"]
+    },
+    "security": {
+      "type": "object",
+      "description": "Security configuration and validation settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether security validation is enabled"
+        },
+        "allowed_paths": {
+          "type": "array",
+          "description": "Allowed directories for justfile access",
+          "items": {
+            "type": "string",
+            "description": "Absolute path to allowed directory"
+          }
+        },
+        "max_parameter_length": {
+          "type": "integer",
+          "description": "Maximum parameter length to prevent buffer overflow",
+          "minimum": 1,
+          "default": 1024
+        },
+        "forbidden_patterns": {
+          "type": "array",
+          "description": "Forbidden command patterns for injection prevention",
+          "items": {
+            "type": "string",
+            "description": "Regular expression pattern"
+          }
+        },
+        "max_parameters": {
+          "type": "integer",
+          "description": "Maximum number of parameters per task",
+          "minimum": 1,
+          "default": 50
+        },
+        "strict_mode": {
+          "type": "boolean",
+          "description": "Enable strict mode for restrictive validation",
+          "default": true
+        }
+      },
+      "required": ["enabled", "allowed_paths", "max_parameter_length", "max_parameters", "strict_mode"]
+    },
+    "resource_limits": {
+      "type": "object",
+      "description": "Resource constraints and performance limits",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether resource limits are enforced"
+        },
+        "max_execution_time_seconds": {
+          "type": "integer",
+          "description": "Maximum execution time for tasks in seconds",
+          "minimum": 1,
+          "default": 300
+        },
+        "max_memory_bytes": {
+          "type": ["integer", "null"],
+          "description": "Maximum memory usage in bytes (null = unlimited)",
+          "minimum": 1024
+        },
+        "max_cpu_percent": {
+          "type": ["integer", "null"],
+          "description": "Maximum CPU percentage 0-100 (null = unlimited)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "max_concurrent_executions": {
+          "type": "integer",
+          "description": "Maximum concurrent task executions",
+          "minimum": 1,
+          "default": 10
+        },
+        "max_output_size_bytes": {
+          "type": "integer",
+          "description": "Maximum output size in bytes (stdout + stderr)",
+          "minimum": 1024,
+          "default": 10485760
+        },
+        "enforce_hard_limits": {
+          "type": "boolean",
+          "description": "Kill tasks exceeding limits vs warning only",
+          "default": true
+        },
+        "current_executions": {
+          "type": "integer",
+          "description": "Current number of active executions",
+          "minimum": 0
+        }
+      },
+      "required": ["enabled", "max_execution_time_seconds", "max_concurrent_executions", "max_output_size_bytes", "enforce_hard_limits", "current_executions"]
+    },
+    "features": {
+      "type": "object",
+      "description": "Compile-time and runtime feature availability",
+      "properties": {
+        "stdio_transport": {
+          "type": "boolean",
+          "description": "Standard I/O transport support",
+          "default": true
+        },
+        "http_transport": {
+          "type": "boolean",
+          "description": "HTTP transport support"
+        },
+        "vector_search": {
+          "type": "boolean",
+          "description": "Vector search capabilities"
+        },
+        "local_embeddings": {
+          "type": "boolean",
+          "description": "Local embedding model support"
+        },
+        "ast_parser": {
+          "type": "boolean",
+          "description": "AST-based justfile parsing"
+        }
+      },
+      "required": ["stdio_transport"]
+    },
+    "vector_search": {
+      "type": ["object", "null"],
+      "description": "Vector search configuration (null if feature disabled)",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether vector search is available"
+        },
+        "default_database_path": {
+          "type": "string",
+          "description": "Default database file path",
+          "default": "./search_index.db"
+        },
+        "default_batch_size": {
+          "type": "integer",
+          "description": "Default batch size for processing",
+          "minimum": 1,
+          "default": 32
+        },
+        "default_chunk_size": {
+          "type": "integer",
+          "description": "Default text chunk size for embedding",
+          "minimum": 1,
+          "default": 512
+        },
+        "default_query_limit": {
+          "type": "integer",
+          "description": "Default maximum number of search results",
+          "minimum": 1,
+          "default": 10
+        }
+      },
+      "required": ["enabled"]
+    },
+    "model_cache": {
+      "type": ["object", "null"],
+      "description": "Model cache configuration (null if local-embeddings feature disabled)",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether model caching is available"
+        },
+        "cache_directory": {
+          "type": "string",
+          "description": "Base directory for model cache"
+        },
+        "max_cache_size_bytes": {
+          "type": "integer",
+          "description": "Maximum total cache size in bytes (0 = unlimited)",
+          "minimum": 0,
+          "default": 10737418240
+        },
+        "max_age_days": {
+          "type": "integer",
+          "description": "Maximum age for unused models in days (0 = no expiration)",
+          "minimum": 0,
+          "default": 30
+        },
+        "verify_integrity": {
+          "type": "boolean",
+          "description": "Verify model integrity on load using SHA256",
+          "default": true
+        },
+        "auto_cleanup": {
+          "type": "boolean",
+          "description": "Automatically clean up old/unused models",
+          "default": true
+        },
+        "download_timeout_seconds": {
+          "type": "integer",
+          "description": "Timeout for model downloads in seconds",
+          "minimum": 1,
+          "default": 300
+        },
+        "stats": {
+          "type": "object",
+          "description": "Current cache statistics",
+          "properties": {
+            "total_models": {
+              "type": "integer",
+              "description": "Total number of cached models",
+              "minimum": 0
+            },
+            "loaded_models": {
+              "type": "integer",
+              "description": "Number of models currently loaded in memory",
+              "minimum": 0
+            },
+            "total_size_bytes": {
+              "type": "integer",
+              "description": "Total size of cached models in bytes",
+              "minimum": 0
+            }
+          },
+          "required": ["total_models", "loaded_models", "total_size_bytes"]
+        }
+      },
+      "required": ["enabled"]
+    },
+    "environment": {
+      "type": "object",
+      "description": "Environment and runtime information",
+      "properties": {
+        "working_directory": {
+          "type": "string",
+          "description": "Current working directory"
+        },
+        "platform": {
+          "type": "string",
+          "description": "Operating system platform",
+          "enum": ["unix", "windows", "unknown"]
+        },
+        "rust_log": {
+          "type": ["string", "null"],
+          "description": "Value of RUST_LOG environment variable"
+        },
+        "cache_directory": {
+          "type": ["string", "null"],
+          "description": "System cache directory path"
+        },
+        "temp_directory": {
+          "type": "string",
+          "description": "System temporary directory path"
+        }
+      },
+      "required": ["working_directory", "platform", "temp_directory"]
+    },
+    "tools": {
+      "type": "object",
+      "description": "Information about available tools",
+      "properties": {
+        "total_count": {
+          "type": "integer",
+          "description": "Total number of registered tools",
+          "minimum": 0
+        },
+        "admin_tools_count": {
+          "type": "integer",
+          "description": "Number of administrative tools",
+          "minimum": 0
+        },
+        "justfile_tools_count": {
+          "type": "integer",
+          "description": "Number of tools from justfiles",
+          "minimum": 0
+        },
+        "last_updated": {
+          "type": ["string", "null"],
+          "description": "ISO 8601 timestamp of last tool registry update",
+          "format": "date-time"
+        }
+      },
+      "required": ["total_count", "admin_tools_count", "justfile_tools_count"]
+    },
+    "parsing": {
+      "type": "object",
+      "description": "Justfile parsing configuration",
+      "properties": {
+        "ast_parser_available": {
+          "type": "boolean",
+          "description": "Whether AST parser is available"
+        },
+        "cli_parser_available": {
+          "type": "boolean",
+          "description": "Whether CLI parser is available"
+        },
+        "regex_parser_available": {
+          "type": "boolean",
+          "description": "Whether regex parser is available"
+        },
+        "default_parser": {
+          "type": "string",
+          "description": "Default parser used",
+          "enum": ["ast", "cli", "regex"]
+        },
+        "parser_priority": {
+          "type": "array",
+          "description": "Parser fallback priority order",
+          "items": {
+            "type": "string",
+            "enum": ["ast", "cli", "regex"]
+          }
+        }
+      },
+      "required": ["cli_parser_available", "regex_parser_available", "default_parser", "parser_priority"]
+    }
+  },
+  "required": [
+    "server",
+    "cli", 
+    "security",
+    "resource_limits",
+    "features",
+    "environment",
+    "tools",
+    "parsing"
+  ],
+  "additionalProperties": false
+}

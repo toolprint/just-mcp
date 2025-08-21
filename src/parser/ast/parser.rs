@@ -541,7 +541,7 @@ impl ASTJustParser {
         let recipe_nodes = self.find_recipe_nodes(&root)?;
 
         for (index, recipe_node) in recipe_nodes.iter().enumerate() {
-            match self.extract_recipe_fallback(&recipe_node, index) {
+            match self.extract_recipe_fallback(recipe_node, index) {
                 Ok(recipe) => {
                     // Avoid duplicates and empty names
                     if !recipe.name.is_empty() {

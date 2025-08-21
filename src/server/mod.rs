@@ -1,4 +1,5 @@
 use crate::admin::AdminTools;
+use crate::cli::Args;
 use crate::error::Result;
 use crate::notification::{NotificationReceiver, NotificationSender};
 use crate::registry::ToolRegistry;
@@ -25,6 +26,9 @@ pub struct Server {
     notification_receiver: Option<NotificationReceiver>,
     admin_tools: Option<Arc<AdminTools>>,
     admin_enabled: bool,
+    args: Option<Args>,
+    security_config: Option<crate::security::SecurityConfig>,
+    resource_limits: Option<crate::resource_limits::ResourceLimits>,
 }
 
 impl Server {
@@ -39,6 +43,9 @@ impl Server {
             notification_receiver: Some(receiver),
             admin_tools: None,
             admin_enabled: false,
+            args: None,
+            security_config: None,
+            resource_limits: None,
         }
     }
 
@@ -54,6 +61,21 @@ impl Server {
 
     pub fn with_admin_enabled(mut self, enabled: bool) -> Self {
         self.admin_enabled = enabled;
+        self
+    }
+
+    pub fn with_args(mut self, args: Args) -> Self {
+        self.args = Some(args);
+        self
+    }
+
+    pub fn with_security_config(mut self, config: crate::security::SecurityConfig) -> Self {
+        self.security_config = Some(config);
+        self
+    }
+
+    pub fn with_resource_limits(mut self, limits: crate::resource_limits::ResourceLimits) -> Self {
+        self.resource_limits = Some(limits);
         self
     }
 
@@ -177,12 +199,42 @@ impl Server {
             handler = handler.with_admin_tools(admin_tools.clone());
         }
 
-        // Create and configure the embedded resource provider
+        if let Some(ref config) = self.security_config {
+            handler = handler.with_security_config(config.clone());
+        }
+
+        if let Some(ref limits) = self.resource_limits {
+            handler = handler.with_resource_limits(limits.clone());
+        }
+
+        // Create and configure the combined resource provider
         let embedded_registry = Arc::new(crate::embedded_content::EmbeddedContentRegistry::new());
-        let resource_provider = Arc::new(
+        let embedded_provider = Arc::new(
             crate::embedded_content::resources::EmbeddedResourceProvider::new(embedded_registry),
         );
-        handler = handler.with_resource_provider(resource_provider);
+
+        // Create configuration data collector and provider
+        let mut config_collector = crate::config_resource::ConfigDataCollector::new();
+        if let Some(ref args) = self.args {
+            config_collector = config_collector.with_args(args.clone());
+        }
+        if let Some(ref config) = self.security_config {
+            config_collector = config_collector.with_security_config(config.clone());
+        }
+        if let Some(ref limits) = self.resource_limits {
+            config_collector = config_collector.with_resource_limits(limits.clone());
+        }
+        config_collector = config_collector.with_tool_registry(self.registry.clone());
+
+        let config_provider = Arc::new(
+            crate::config_resource::ConfigResourceProvider::new(config_collector),
+        );
+
+        // Create combined resource provider
+        let combined_provider = Arc::new(
+            crate::config_resource::CombinedResourceProvider::new(embedded_provider, config_provider),
+        );
+        handler = handler.with_resource_provider(combined_provider);
 
         match handler.handle(message).await? {
             Some(response) => {

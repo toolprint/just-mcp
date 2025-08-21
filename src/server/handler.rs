@@ -19,7 +19,7 @@ pub struct MessageHandler {
     admin_tools: Option<Arc<crate::admin::AdminTools>>,
     security_config: Option<crate::security::SecurityConfig>,
     resource_limits: Option<crate::resource_limits::ResourceLimits>,
-    resource_provider: Option<Arc<crate::embedded_content::resources::EmbeddedResourceProvider>>,
+    resource_provider: Option<Arc<dyn ResourceProvider>>,
 }
 
 impl MessageHandler {
@@ -48,9 +48,9 @@ impl MessageHandler {
         self
     }
 
-    pub fn with_resource_provider(
+    pub fn with_resource_provider<T: ResourceProvider + 'static>(
         mut self,
-        provider: Arc<crate::embedded_content::resources::EmbeddedResourceProvider>,
+        provider: Arc<T>,
     ) -> Self {
         self.resource_provider = Some(provider);
         self

@@ -3,13 +3,12 @@
 //! This module provides the concrete implementation of the VectorStore trait
 //! using libSQL/SQLite with vector search extensions.
 
-use crate::vector_search::error::VectorSearchError;
 use crate::vector_search::types::{Document, SearchResult};
 use anyhow::Result;
 use async_trait::async_trait;
 
 #[cfg(feature = "vector-search")]
-use libsql::{Builder, Connection, Database};
+use libsql::Connection;
 
 #[cfg(feature = "vector-search")]
 use ndarray::{Array1, ArrayView1};

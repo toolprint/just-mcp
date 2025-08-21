@@ -1,4 +1,6 @@
 pub mod admin;
+pub mod cli;
+pub mod config_resource;
 pub mod embedded_content;
 pub mod error;
 pub mod executor;

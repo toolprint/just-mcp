@@ -8,24 +8,24 @@ use clap::{Parser, Subcommand};
 #[cfg(feature = "vector-search")]
 use anyhow::Result;
 #[cfg(feature = "vector-search")]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature = "vector-search")]
-use just_mcp::vector_search::{
+use crate::vector_search::{
     EmbeddingProvider, LibSqlVectorStore, MockEmbeddingProvider, OpenAIEmbeddingProvider,
     VectorSearchManager,
 };
 
 #[cfg(feature = "vector-search")]
-use just_mcp::vector_search::Document;
+use crate::vector_search::Document;
 
 #[cfg(all(feature = "vector-search", feature = "local-embeddings"))]
-use just_mcp::vector_search::LocalEmbeddingProvider;
+use crate::vector_search::LocalEmbeddingProvider;
 
 /// CLI arguments for just-mcp
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "just-mcp")]
-#[command(version = just_mcp::VERSION)]
+#[command(version = crate::VERSION)]
 #[command(about = "Model Context Protocol server for justfile integration", long_about = None)]
 pub struct Args {
     #[command(subcommand)]
@@ -53,7 +53,7 @@ pub struct Args {
 }
 
 /// Available CLI commands
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// Start the MCP server (default mode)
     Serve,
@@ -68,7 +68,7 @@ pub enum Commands {
 
 /// Vector search subcommands
 #[cfg(feature = "vector-search")]
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum SearchCommands {
     /// Perform semantic search on indexed documents
     Query {
@@ -507,7 +507,7 @@ async fn index_documents<E: EmbeddingProvider>(
     println!("Found {} tasks to index", documents.len());
 
     // Index in chunks
-    let chunk_count = (documents.len() + batch_size - 1) / batch_size;
+    let chunk_count = documents.len().div_ceil(batch_size);
     println!(
         "Indexing in {} batches of up to {} documents each",
         chunk_count, batch_size
@@ -755,7 +755,7 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
 
         #[cfg(feature = "local-embeddings")]
         SearchCommands::CacheInfo { cache_dir } => {
-            use just_mcp::vector_search::{ModelCache, ModelCacheConfig};
+            use crate::vector_search::{ModelCache, ModelCacheConfig};
 
             let config = if let Some(cache_dir) = cache_dir {
                 ModelCacheConfig {
@@ -801,7 +801,7 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
 
         #[cfg(feature = "local-embeddings")]
         SearchCommands::CacheClear { cache_dir, force } => {
-            use just_mcp::vector_search::{ModelCache, ModelCacheConfig};
+            use crate::vector_search::{ModelCache, ModelCacheConfig};
 
             let config = if let Some(cache_dir) = cache_dir {
                 ModelCacheConfig {
@@ -846,7 +846,7 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
 
         #[cfg(feature = "local-embeddings")]
         SearchCommands::CacheList { cache_dir } => {
-            use just_mcp::vector_search::{ModelCache, ModelCacheConfig};
+            use crate::vector_search::{ModelCache, ModelCacheConfig};
 
             let config = if let Some(cache_dir) = cache_dir {
                 ModelCacheConfig {
@@ -914,7 +914,7 @@ pub async fn handle_search_command(search_command: SearchCommands) -> Result<()>
 /// Create a vector search manager with mock embedding provider
 #[cfg(feature = "vector-search")]
 async fn create_search_manager_mock(
-    database_path: &PathBuf,
+    database_path: &Path,
 ) -> Result<VectorSearchManager<MockEmbeddingProvider, LibSqlVectorStore>> {
     // Create mock embedding provider
     let embedding_provider = MockEmbeddingProvider::new_openai_compatible();
@@ -934,7 +934,7 @@ async fn create_search_manager_mock(
 /// Create a vector search manager with OpenAI embedding provider
 #[cfg(feature = "vector-search")]
 async fn create_search_manager_openai(
-    database_path: &PathBuf,
+    database_path: &Path,
     api_key: String,
 ) -> Result<VectorSearchManager<OpenAIEmbeddingProvider, LibSqlVectorStore>> {
     // Create OpenAI embedding provider
@@ -955,7 +955,7 @@ async fn create_search_manager_openai(
 /// Create a vector search manager with local embedding provider
 #[cfg(all(feature = "vector-search", feature = "local-embeddings"))]
 async fn create_search_manager_local(
-    database_path: &PathBuf,
+    database_path: &Path,
     cache_dir: Option<PathBuf>,
 ) -> Result<VectorSearchManager<LocalEmbeddingProvider, LibSqlVectorStore>> {
     // Create local embedding provider with custom or default config
@@ -979,7 +979,7 @@ async fn create_search_manager_local(
 
 /// Helper function for query search operations
 #[cfg(feature = "vector-search")]
-async fn query_search<E: just_mcp::vector_search::EmbeddingProvider>(
+async fn query_search<E: crate::vector_search::EmbeddingProvider>(
     manager: VectorSearchManager<E, LibSqlVectorStore>,
     query: &str,
     limit: usize,
@@ -1060,7 +1060,7 @@ fn find_justfiles(dir: &PathBuf) -> Result<Vec<PathBuf>> {
 /// Parse a justfile and extract tasks as documents
 #[cfg(feature = "vector-search")]
 fn parse_justfile(justfile_path: &PathBuf) -> Result<Vec<Document>> {
-    use just_mcp::parser::EnhancedJustfileParser;
+    use crate::parser::EnhancedJustfileParser;
     use uuid::Uuid;
 
     let content = std::fs::read_to_string(justfile_path)?;
