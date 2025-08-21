@@ -1,11 +1,24 @@
 //! Performance analysis tool for AST parser
 //!
 //! This tool measures parsing performance and provides detailed metrics.
+//! 
+//! Note: This tool requires the `ast-parser` feature to be enabled.
 
+#[cfg(not(feature = "ast-parser"))]
+fn main() {
+    eprintln!("Error: perf_analysis requires the 'ast-parser' feature");
+    eprintln!("Build with: cargo build --features ast-parser --bin perf_analysis");
+    std::process::exit(1);
+}
+
+#[cfg(feature = "ast-parser")]
 use just_mcp::parser::ast::ASTJustParser;
+#[cfg(feature = "ast-parser")]
 use std::fs;
+#[cfg(feature = "ast-parser")]
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "ast-parser")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("AST Parser Performance Analysis");
     println!("===============================\n");
@@ -31,6 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "ast-parser")]
 fn analyze_parsing(content: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Measure parser initialization
     let init_start = Instant::now();
@@ -91,6 +105,7 @@ fn analyze_parsing(content: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "ast-parser")]
 fn generate_justfile(recipe_count: usize) -> String {
     let mut content = String::new();
 
@@ -149,6 +164,7 @@ fn generate_justfile(recipe_count: usize) -> String {
     content
 }
 
+#[cfg(feature = "ast-parser")]
 fn average_duration(durations: &[Duration]) -> Duration {
     let total_nanos: u128 = durations.iter().map(|d| d.as_nanos()).sum();
     let avg_nanos = total_nanos / durations.len() as u128;

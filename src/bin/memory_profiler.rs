@@ -1,18 +1,35 @@
 //! Memory profiling tool for AST parser optimization
 //!
 //! This tool measures memory usage patterns and allocation overhead.
+//! 
+//! Note: This tool requires the `ast-parser` feature to be enabled.
 
+#[cfg(not(feature = "ast-parser"))]
+fn main() {
+    eprintln!("Error: memory_profiler requires the 'ast-parser' feature");
+    eprintln!("Build with: cargo build --features ast-parser --bin memory_profiler");
+    std::process::exit(1);
+}
+
+#[cfg(feature = "ast-parser")]
 use just_mcp::parser::ast::ASTJustParser;
+#[cfg(feature = "ast-parser")]
 use std::alloc::{GlobalAlloc, Layout, System};
+#[cfg(feature = "ast-parser")]
 use std::fs;
+#[cfg(feature = "ast-parser")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(feature = "ast-parser")]
 /// Custom allocator that tracks allocations
 struct TrackingAllocator;
 
+#[cfg(feature = "ast-parser")]
 static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
+#[cfg(feature = "ast-parser")]
 static DEALLOCATED: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(feature = "ast-parser")]
 unsafe impl GlobalAlloc for TrackingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ret = System.alloc(layout);
@@ -28,9 +45,11 @@ unsafe impl GlobalAlloc for TrackingAllocator {
     }
 }
 
+#[cfg(feature = "ast-parser")]
 #[global_allocator]
 static GLOBAL: TrackingAllocator = TrackingAllocator;
 
+#[cfg(feature = "ast-parser")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Memory Usage Analysis for AST Parser");
     println!("====================================\n");
@@ -51,11 +70,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(feature = "ast-parser")]
 fn analyze_memory_usage(recipe_count: usize) -> Result<(), Box<dyn std::error::Error>> {
     let content = generate_justfile(recipe_count);
     analyze_memory_for_content(&content)
 }
 
+#[cfg(feature = "ast-parser")]
 fn analyze_memory_for_content(content: &str) -> Result<(), Box<dyn std::error::Error>> {
     let initial_allocated = ALLOCATED.load(Ordering::SeqCst);
     let initial_deallocated = DEALLOCATED.load(Ordering::SeqCst);
@@ -109,6 +130,7 @@ fn analyze_memory_for_content(content: &str) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+#[cfg(feature = "ast-parser")]
 fn generate_justfile(recipe_count: usize) -> String {
     let mut content = String::new();
 
