@@ -210,6 +210,50 @@ impl SecurityValidator {
         shell_escape::escape(value.into()).to_string()
     }
 
+    /// Sanitize a parameter name for MCP schema compliance
+    /// MCP API requires property keys to match pattern ^[a-zA-Z0-9_.-]{1,64}
+    pub fn sanitize_parameter_name(&self, name: &str) -> String {
+        let mut sanitized = String::new();
+
+        for c in name.chars() {
+            match c {
+                // Allow alphanumeric, underscore, dot, hyphen
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '.' | '-' => {
+                    sanitized.push(c);
+                }
+                // Convert spaces to underscores
+                ' ' => {
+                    sanitized.push('_');
+                }
+                // Skip other invalid characters
+                _ => {}
+            }
+        }
+
+        // Ensure we have at least one character
+        if sanitized.is_empty() {
+            sanitized = "param".to_string();
+        }
+
+        // Limit to 64 characters to comply with MCP requirements
+        if sanitized.len() > 64 {
+            sanitized.truncate(64);
+        }
+
+        // Ensure it starts with alphanumeric or underscore (not dot or hyphen)
+        if let Some(first_char) = sanitized.chars().next() {
+            if first_char == '.' || first_char == '-' {
+                sanitized = format!("param_{sanitized}");
+                // Re-check length after prefix
+                if sanitized.len() > 64 {
+                    sanitized.truncate(64);
+                }
+            }
+        }
+
+        sanitized
+    }
+
     /// Check if a command should be allowed to execute
     pub fn validate_command(&self, command: &str) -> Result<()> {
         // Check for obvious shell injection attempts
@@ -354,5 +398,68 @@ mod tests {
             "'hello; rm -rf /'"
         );
         assert_eq!(validator.sanitize_parameter("$(whoami)"), "'$(whoami)'");
+    }
+
+    #[test]
+    fn test_parameter_name_sanitization() {
+        let validator = SecurityValidator::with_default();
+
+        // Valid parameter names (should remain unchanged)
+        assert_eq!(validator.sanitize_parameter_name("name"), "name");
+        assert_eq!(
+            validator.sanitize_parameter_name("input_file"),
+            "input_file"
+        );
+        assert_eq!(
+            validator.sanitize_parameter_name("input-file"),
+            "input-file"
+        );
+        assert_eq!(
+            validator.sanitize_parameter_name("config.json"),
+            "config.json"
+        );
+        assert_eq!(validator.sanitize_parameter_name("param123"), "param123");
+
+        // Names with spaces (spaces converted to underscores)
+        assert_eq!(
+            validator.sanitize_parameter_name("input file"),
+            "input_file"
+        );
+        assert_eq!(validator.sanitize_parameter_name("my param"), "my_param");
+
+        // Names with invalid characters (invalid chars removed)
+        assert_eq!(
+            validator.sanitize_parameter_name("input@domain"),
+            "inputdomain"
+        );
+        assert_eq!(
+            validator.sanitize_parameter_name("input+suffix"),
+            "inputsuffix"
+        );
+        assert_eq!(validator.sanitize_parameter_name("input/path"), "inputpath");
+
+        // Names starting with dots or hyphens (get param_ prefix)
+        assert_eq!(
+            validator.sanitize_parameter_name(".hidden"),
+            "param_.hidden"
+        );
+        assert_eq!(validator.sanitize_parameter_name("-flag"), "param_-flag");
+
+        // Empty or invalid-only names (become "param")
+        assert_eq!(validator.sanitize_parameter_name(""), "param");
+        assert_eq!(validator.sanitize_parameter_name("@@@@"), "param");
+        assert_eq!(validator.sanitize_parameter_name("!@#$%"), "param");
+
+        // Very long names (truncated to 64 characters)
+        let long_name = "a".repeat(100);
+        let sanitized_long = validator.sanitize_parameter_name(&long_name);
+        assert_eq!(sanitized_long.len(), 64);
+        assert_eq!(sanitized_long, "a".repeat(64));
+
+        // Long names with prefix (ensuring total length <= 64)
+        let long_name_with_dot = format!(".{}", "a".repeat(100));
+        let sanitized_long_dot = validator.sanitize_parameter_name(&long_name_with_dot);
+        assert!(sanitized_long_dot.len() <= 64);
+        assert!(sanitized_long_dot.starts_with("param_"));
     }
 }

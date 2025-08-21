@@ -46,7 +46,7 @@ pub use errors::{ASTError, ASTResult};
 #[cfg(feature = "ast-parser")]
 pub use nodes::{ASTNode, NodeIterator, NodeType};
 #[cfg(feature = "ast-parser")]
-pub use parser::{ASTJustParser, ParseTree};
+pub use parser::{ASTJustParser, ImportInfo, ParseTree};
 #[cfg(feature = "ast-parser")]
 pub use queries::{
     CommentInfo, CompiledQuery, DependencyErrorType, DependencyInfo, DependencyType,

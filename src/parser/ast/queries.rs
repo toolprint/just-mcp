@@ -61,6 +61,8 @@ pub struct QueryPatterns {
     pub strings: &'static str,
     /// Query for extracting complex expressions
     pub expressions: &'static str,
+    /// Query for extracting import statements
+    pub imports: &'static str,
 }
 
 impl QueryPatterns {
@@ -78,6 +80,7 @@ impl QueryPatterns {
             interpolations: Self::INTERPOLATION_QUERY,
             strings: Self::STRING_QUERY,
             expressions: Self::EXPRESSION_QUERY,
+            imports: Self::IMPORT_QUERY,
         }
     }
 
@@ -432,6 +435,17 @@ impl QueryPatterns {
   ":=" @expression.assign.operator
   value: (expression) @expression.assign.value
 ) @expression.assignment_value
+"#;
+
+    /// Import statement extraction query
+    ///
+    /// This query captures import statements to enable recursive parsing
+    /// of imported justfiles for complete recipe discovery.
+    const IMPORT_QUERY: &'static str = r#"
+; Import statements  
+(import
+  (string) @import.path
+) @import.statement
 "#;
 }
 

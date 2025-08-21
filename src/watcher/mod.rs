@@ -2,6 +2,7 @@ use crate::error::{Error, Result};
 use crate::notification::{Notification, NotificationSender};
 use crate::parser::{EnhancedJustfileParser, ParserPreference};
 use crate::registry::ToolRegistry;
+use crate::security::SecurityValidator;
 use crate::types::{JustTask, Parameter, ToolDefinition};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde_json::json;
@@ -25,6 +26,8 @@ pub struct JustfileWatcher {
     path_names: Arc<Mutex<HashMap<PathBuf, Option<String>>>>,
     // Whether we have multiple watch directories
     has_multiple_dirs: bool,
+    // Security validator for parameter name sanitization
+    security_validator: SecurityValidator,
 }
 
 impl JustfileWatcher {
@@ -49,6 +52,7 @@ impl JustfileWatcher {
             tool_source_map: Arc::new(Mutex::new(HashMap::new())),
             path_names: Arc::new(Mutex::new(HashMap::new())),
             has_multiple_dirs: false,
+            security_validator: SecurityValidator::with_default(),
         }
     }
 
@@ -74,6 +78,7 @@ impl JustfileWatcher {
             tool_source_map: Arc::new(Mutex::new(HashMap::new())),
             path_names: Arc::new(Mutex::new(HashMap::new())),
             has_multiple_dirs: false,
+            security_validator: SecurityValidator::with_default(),
         }
     }
 
@@ -234,7 +239,7 @@ impl JustfileWatcher {
     ) -> Result<usize> {
         let content = std::fs::read_to_string(path)?;
         let hash = ToolRegistry::compute_hash(&content);
-        let tasks = self.parser.parse_file(path)?;
+        let tasks = self.parser.parse_file_for_tools(path)?;
 
         let mut registry = self.registry.lock().await;
         let mut tool_map = self.tool_source_map.lock().await;
@@ -254,7 +259,7 @@ impl JustfileWatcher {
         // Track which tools we've seen
         let mut seen_tools = HashSet::new();
 
-        // Add or update tools from parsed tasks
+        // Add or update tools from parsed tasks (private recipes already filtered)
         for task in tasks {
             let tool = self.task_to_tool(task, &hash, path).await?;
             let tool_name = tool.name.clone();
@@ -374,6 +379,9 @@ impl JustfileWatcher {
             let mut param_schema = serde_json::Map::new();
             param_schema.insert("type".to_string(), json!("string"));
 
+            // Sanitize parameter name for MCP schema compliance
+            let sanitized_name = self.security_validator.sanitize_parameter_name(&param.name);
+
             if let Some(desc) = &param.description {
                 param_schema.insert("description".to_string(), json!(desc));
             }
@@ -381,10 +389,10 @@ impl JustfileWatcher {
             if let Some(default) = &param.default {
                 param_schema.insert("default".to_string(), json!(default));
             } else {
-                required.push(param.name.clone());
+                required.push(sanitized_name.clone());
             }
 
-            properties.insert(param.name.clone(), json!(param_schema));
+            properties.insert(sanitized_name, json!(param_schema));
         }
 
         json!({

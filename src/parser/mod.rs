@@ -68,7 +68,7 @@ pub use just_command_parser::JustCommandParser;
 
 // Re-export AST parser types when feature is enabled
 #[cfg(feature = "ast-parser")]
-pub use ast::{ASTError, ASTJustParser, ASTResult, ParseTree};
+pub use ast::{ASTError, ASTJustParser, ASTResult, ImportInfo, ParseTree};
 
 /// Legacy regex-based parser - kept for fallback compatibility
 pub struct JustfileParser {
@@ -823,6 +823,16 @@ impl EnhancedJustfileParser {
         Ok(vec![minimal_task])
     }
 
+    /// Parse justfile for MCP tool generation (excludes private recipes)
+    ///
+    /// This method filters out private recipes that start with '_' to match CLI parser behavior.
+    /// The CLI parser uses `just --summary` which automatically excludes private recipes,
+    /// so this method ensures consistent behavior across all parser types.
+    pub fn parse_file_for_tools(&self, path: &Path) -> Result<Vec<JustTask>> {
+        let tasks = self.parse_file(path)?;
+        Ok(tasks.into_iter().filter(|task| !task.is_private).collect())
+    }
+
     /// Parse content string using preference-based parsing with two-tier fallback
     pub fn parse_content(&self, content: &str) -> Result<Vec<JustTask>> {
         // Handle empty content - return empty task list rather than creating error task
@@ -1111,22 +1121,14 @@ impl EnhancedJustfileParser {
                     column: 0,
                 })?;
 
-            let tree = temp_parser
-                .parse_file(path)
-                .map_err(|e| crate::error::Error::Parse {
-                    message: format!("AST file parsing failed: {e}"),
+            // Use the new import-aware parsing method
+            let tasks = temp_parser.parse_file_with_imports(path).map_err(|e| {
+                crate::error::Error::Parse {
+                    message: format!("AST file parsing with imports failed: {e}"),
                     line: 0,
                     column: 0,
-                })?;
-
-            let tasks =
-                temp_parser
-                    .extract_recipes(&tree)
-                    .map_err(|e| crate::error::Error::Parse {
-                        message: format!("AST recipe extraction failed: {e}"),
-                        line: 0,
-                        column: 0,
-                    })?;
+                }
+            })?;
 
             Ok(tasks)
         } else {

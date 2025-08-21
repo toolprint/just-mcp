@@ -643,7 +643,7 @@ impl AdminTools {
 
         enhanced_parser.set_parser_preference(preference);
 
-        match enhanced_parser.parse_file(justfile_path) {
+        match enhanced_parser.parse_file_for_tools(justfile_path) {
             Ok(tasks) => {
                 let found_recipes: Vec<String> = tasks.into_iter().map(|t| t.name).collect();
 

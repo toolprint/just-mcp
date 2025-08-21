@@ -14,6 +14,19 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 use tree_sitter::{Language, Query, Tree};
 
+/// Information about an import statement found in a justfile
+#[derive(Debug, Clone)]
+pub struct ImportInfo {
+    /// The path to import, as found in the justfile
+    pub raw_path: String,
+    /// Whether the import is optional (uses '?')
+    pub is_optional: bool,
+    /// The resolved absolute path to the imported file
+    pub resolved_path: Option<std::path::PathBuf>,
+    /// Line number where the import was found
+    pub line_number: usize,
+}
+
 /// A wrapper around a parsed Tree-sitter tree with utility methods
 pub struct ParseTree {
     /// The parsed tree
@@ -57,6 +70,10 @@ pub struct ASTJustParser {
     tree_cache: Arc<RwLock<HashMap<u64, Arc<Tree>>>>,
     /// Cache for extracted recipes by tree hash
     recipe_cache: Arc<RwLock<HashMap<u64, Vec<JustTask>>>>,
+    /// Cache for imported files to avoid infinite recursion
+    import_cache: Arc<RwLock<HashMap<std::path::PathBuf, Vec<JustTask>>>>,
+    /// Current parsing stack to detect circular imports
+    parsing_stack: Arc<RwLock<HashSet<std::path::PathBuf>>>,
 }
 
 impl ParseTree {
@@ -176,6 +193,10 @@ impl ASTJustParser {
                             Query::new(&language, "(comment) @comment").unwrap(),
                             "empty".to_string(),
                         )),
+                        imports: Arc::new(CompiledQuery::new(
+                            Query::new(&language, "(comment) @comment").unwrap(),
+                            "empty".to_string(),
+                        )),
                     })
                 }
             }
@@ -195,6 +216,8 @@ impl ASTJustParser {
             query_bundle: valid_bundle,
             tree_cache: Arc::new(RwLock::new(HashMap::with_capacity(32))),
             recipe_cache: Arc::new(RwLock::new(HashMap::with_capacity(32))),
+            import_cache: Arc::new(RwLock::new(HashMap::with_capacity(16))),
+            parsing_stack: Arc::new(RwLock::new(HashSet::with_capacity(8))),
         })
     }
 
@@ -952,6 +975,257 @@ impl ASTJustParser {
         }
 
         errors
+    }
+
+    /// Extract import statements from a parsed tree
+    pub fn extract_imports(&self, tree: &ParseTree) -> ASTResult<Vec<ImportInfo>> {
+        if let Some(ref bundle) = self.query_bundle {
+            self.extract_imports_ast(tree, bundle)
+        } else {
+            // Fallback: create import query directly when bundle is not available
+            self.extract_imports_direct(tree)
+        }
+    }
+
+    /// Extract imports using AST queries
+    fn extract_imports_ast(
+        &self,
+        tree: &ParseTree,
+        bundle: &crate::parser::ast::cache::QueryBundle,
+    ) -> ASTResult<Vec<ImportInfo>> {
+        use crate::parser::ast::queries::QueryExecutor;
+
+        let mut executor = QueryExecutor::new(tree.source());
+        let ast_tree = tree.inner();
+
+        // Execute import query
+        tracing::debug!("Executing import query: {}", bundle.imports.name);
+        let import_results = executor.execute(&bundle.imports, ast_tree)?;
+        tracing::debug!("Import query returned {} results", import_results.len());
+
+        let mut imports = Vec::new();
+
+        for result in import_results {
+            if let Some(import_capture) = result.captures.get("import.statement") {
+                let path_capture = result.captures.get("import.path");
+                let optional_capture = result.captures.get("import.optional");
+
+                if let Some(path_capture) = path_capture {
+                    let raw_path = path_capture
+                        .text
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .to_string();
+                    let is_optional = optional_capture.is_some();
+                    let line_number = import_capture.start_position.0 + 1;
+
+                    imports.push(ImportInfo {
+                        raw_path,
+                        is_optional,
+                        resolved_path: None, // Will be resolved later
+                        line_number,
+                    });
+                }
+            }
+        }
+
+        Ok(imports)
+    }
+
+    /// Extract imports using a direct query (fallback when bundle is not available)
+    fn extract_imports_direct(&self, tree: &ParseTree) -> ASTResult<Vec<ImportInfo>> {
+        use crate::parser::ast::queries::{CompiledQuery, QueryExecutor};
+        use tree_sitter::Query;
+
+        // Create import query directly
+        let import_query_pattern = r#"
+(import
+  (string) @import.path
+) @import.statement
+"#;
+
+        let query = Query::new(&self.language, import_query_pattern).map_err(|e| {
+            ASTError::syntax_error(0, 0, format!("Import query compilation failed: {e:?}"))
+        })?;
+
+        let compiled_query = CompiledQuery::new(query, "direct_imports".to_string());
+
+        // Execute query
+        let mut executor = QueryExecutor::new(tree.source());
+        let ast_tree = tree.inner();
+        let import_results = executor.execute(&compiled_query, ast_tree)?;
+
+        let mut imports = Vec::new();
+
+        for result in import_results {
+            if let Some(import_capture) = result.captures.get("import.statement") {
+                let path_capture = result.captures.get("import.path");
+
+                if let Some(path_capture) = path_capture {
+                    let raw_path = path_capture
+                        .text
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .to_string();
+                    // Note: Without bundle, we can't detect optional imports (import?)
+                    // This would require parsing the import keyword token more carefully
+                    let is_optional = false;
+                    let line_number = import_capture.start_position.0 + 1;
+
+                    imports.push(ImportInfo {
+                        raw_path,
+                        is_optional,
+                        resolved_path: None,
+                        line_number,
+                    });
+                }
+            }
+        }
+
+        Ok(imports)
+    }
+
+    /// Parse a justfile with all its imports recursively
+    pub fn parse_file_with_imports<P: AsRef<Path>>(&mut self, path: P) -> ASTResult<Vec<JustTask>> {
+        let path = path.as_ref();
+        let canonical_path = path.canonicalize().map_err(|e| {
+            ASTError::io(format!(
+                "Failed to canonicalize path {}: {}",
+                path.display(),
+                e
+            ))
+        })?;
+
+        // Check for circular imports
+        {
+            let mut stack = self
+                .parsing_stack
+                .write()
+                .map_err(|_| ASTError::internal("Failed to acquire parsing stack lock"))?;
+            if stack.contains(&canonical_path) {
+                return Err(ASTError::invalid_structure(format!(
+                    "Circular import detected: {}",
+                    canonical_path.display()
+                )));
+            }
+            stack.insert(canonical_path.clone());
+        }
+
+        // Check import cache
+        {
+            let cache = self
+                .import_cache
+                .read()
+                .map_err(|_| ASTError::internal("Failed to acquire import cache lock"))?;
+            if let Some(cached_recipes) = cache.get(&canonical_path) {
+                // Remove from parsing stack before returning
+                let mut stack = self
+                    .parsing_stack
+                    .write()
+                    .map_err(|_| ASTError::internal("Failed to acquire parsing stack lock"))?;
+                stack.remove(&canonical_path);
+                return Ok(cached_recipes.clone());
+            }
+        }
+
+        let result = self.parse_file_with_imports_internal(&canonical_path);
+
+        // Always remove from parsing stack
+        {
+            let mut stack = self
+                .parsing_stack
+                .write()
+                .map_err(|_| ASTError::internal("Failed to acquire parsing stack lock"))?;
+            stack.remove(&canonical_path);
+        }
+
+        result
+    }
+
+    /// Internal method to parse file with imports (assumes path is in parsing stack)
+    fn parse_file_with_imports_internal(&mut self, path: &Path) -> ASTResult<Vec<JustTask>> {
+        // Parse the main file
+        let tree = self.parse_file(path)?;
+
+        // Extract recipes from this file
+        let mut all_recipes = self.extract_recipes(&tree)?;
+
+        // Extract and resolve imports
+        let imports = self.extract_imports(&tree)?;
+        let resolved_imports = self.resolve_imports(&imports, path)?;
+
+        // Recursively parse imported files
+        for import_path in resolved_imports {
+            if import_path.exists() {
+                match self.parse_file_with_imports(&import_path) {
+                    Ok(imported_recipes) => {
+                        all_recipes.extend(imported_recipes);
+                    }
+                    Err(e) => {
+                        // Find the original import info to check if it's optional
+                        let is_optional = imports.iter().any(|imp| {
+                            imp.resolved_path.as_ref() == Some(&import_path) && imp.is_optional
+                        });
+
+                        if is_optional {
+                            tracing::warn!(
+                                "Optional import {} failed: {}",
+                                import_path.display(),
+                                e
+                            );
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Cache the results
+        {
+            let mut cache = self
+                .import_cache
+                .write()
+                .map_err(|_| ASTError::internal("Failed to acquire import cache lock"))?;
+            cache.insert(path.to_path_buf(), all_recipes.clone());
+        }
+
+        Ok(all_recipes)
+    }
+
+    /// Resolve import paths relative to the importing file
+    fn resolve_imports(
+        &self,
+        imports: &[ImportInfo],
+        base_path: &Path,
+    ) -> ASTResult<Vec<std::path::PathBuf>> {
+        let base_dir = base_path.parent().ok_or_else(|| {
+            ASTError::invalid_structure("Cannot determine parent directory for imports".to_string())
+        })?;
+
+        let mut resolved = Vec::new();
+
+        for import in imports {
+            let import_path = base_dir.join(&import.raw_path);
+            let canonical_path = match import_path.canonicalize() {
+                Ok(path) => path,
+                Err(e) if import.is_optional => {
+                    tracing::debug!("Optional import {} not found: {}", import.raw_path, e);
+                    continue;
+                }
+                Err(e) => {
+                    return Err(ASTError::invalid_structure(format!(
+                        "Failed to resolve import '{}' from {}: {}",
+                        import.raw_path,
+                        base_path.display(),
+                        e
+                    )));
+                }
+            };
+            resolved.push(canonical_path);
+        }
+
+        Ok(resolved)
     }
 
     /// Check if the parser can be reused (always true for Tree-sitter)

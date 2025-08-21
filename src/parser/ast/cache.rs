@@ -91,6 +91,8 @@ pub struct QueryBundle {
     pub strings: Arc<CompiledQuery>,
     /// Expression extraction query
     pub expressions: Arc<CompiledQuery>,
+    /// Import statement extraction query
+    pub imports: Arc<CompiledQuery>,
 }
 
 impl QueryCache {
@@ -358,6 +360,7 @@ impl QueryCompiler {
             ),
             strings: Arc::new(self.compile(patterns.strings, "strings".to_string())?),
             expressions: Arc::new(self.compile(patterns.expressions, "expressions".to_string())?),
+            imports: Arc::new(self.compile(patterns.imports, "imports".to_string())?),
         })
     }
 }
