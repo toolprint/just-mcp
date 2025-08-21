@@ -1,7 +1,7 @@
 //! Performance analysis tool for AST parser
 //!
 //! This tool measures parsing performance and provides detailed metrics.
-//! 
+//!
 //! Note: This tool requires the `ast-parser` feature to be enabled.
 
 #[cfg(not(feature = "ast-parser"))]

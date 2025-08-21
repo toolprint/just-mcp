@@ -1,7 +1,7 @@
 //! Memory profiling tool for AST parser optimization
 //!
 //! This tool measures memory usage patterns and allocation overhead.
-//! 
+//!
 //! Note: This tool requires the `ast-parser` feature to be enabled.
 
 #[cfg(not(feature = "ast-parser"))]

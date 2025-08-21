@@ -6,12 +6,11 @@ This document provides comprehensive API documentation for the AST parser module
 
 1. [Module Overview](#module-overview)
 2. [Core Types](#core-types)
-3. [Parser API](#parser-api)
-4. [Query API](#query-api)
-5. [Error Handling](#error-handling)
-6. [Utility Functions](#utility-functions)
-7. [Examples](#examples)
-8. [Best Practices](#best-practices)
+3. [Query API](#query-api)
+4. [Error Handling](#error-handling)
+5. [Utility Functions](#utility-functions)
+6. [Examples](#examples)
+7. [Best Practices](#best-practices)
 
 ## Module Overview
 
@@ -52,7 +51,7 @@ pub struct ASTJustParser {
 
 #### Methods
 
-##### new() -> ASTResult<Self>
+##### new() -> ASTResult\<Self\>
 
 Creates a new AST parser instance.
 
@@ -65,7 +64,7 @@ let mut parser = ASTJustParser::new()?;
 - `Ok(ASTJustParser)` on success
 - `Err(ASTError)` if Tree-sitter initialization fails
 
-##### parse_file(&mut self, path: &Path) -> ASTResult<ParseTree>
+##### parse_file(&mut self, path: &Path) -> ASTResult\<ParseTree\>
 
 Parses a justfile from disk.
 
@@ -82,7 +81,7 @@ let tree = parser.parse_file(Path::new("justfile"))?;
 - `Ok(ParseTree)` containing the AST
 - `Err(ASTError)` on parsing failure
 
-##### parse_content(&mut self, content: &str) -> ASTResult<ParseTree>
+##### parse_content(&mut self, content: &str) -> ASTResult\<ParseTree\>
 
 Parses justfile content from a string.
 
@@ -100,7 +99,7 @@ let tree = parser.parse_content(content)?;
 - `Ok(ParseTree)` containing the AST
 - `Err(ASTError)` on parsing failure
 
-##### extract_recipes(&mut self, tree: &ParseTree) -> ASTResult<Vec<JustTask>>
+##### extract_recipes(&mut self, tree: &ParseTree) -> ASTResult\<Vec\<JustTask\>\>
 
 Extracts recipe definitions from a parsed tree.
 
@@ -194,7 +193,7 @@ Returns the source text for this node.
 let recipe_text = node.text();
 ```
 
-##### child(&self, index: usize) -> Option<ASTNode>
+##### child(&self, index: usize) -> Option\<ASTNode\>
 
 Returns a child node by index.
 
@@ -214,7 +213,7 @@ for child in node.children() {
 }
 ```
 
-##### named_child(&self, index: usize) -> Option<ASTNode>
+##### named_child(&self, index: usize) -> Option\<ASTNode\>
 
 Returns a named child by index (skips anonymous nodes).
 
@@ -222,7 +221,7 @@ Returns a named child by index (skips anonymous nodes).
 let body = node.named_child(1)?;
 ```
 
-##### child_by_field_name(&self, name: &str) -> Option<ASTNode>
+##### child_by_field_name(&self, name: &str) -> Option\<ASTNode\>
 
 Returns a child by field name.
 
@@ -230,7 +229,7 @@ Returns a child by field name.
 let params = node.child_by_field_name("parameters")?;
 ```
 
-##### parent(&self) -> Option<ASTNode>
+##### parent(&self) -> Option\<ASTNode\>
 
 Returns the parent node.
 
@@ -273,7 +272,7 @@ Creates a new query executor.
 let executor = QueryExecutor::new(language, QueryConfig::default());
 ```
 
-##### execute_query(&self, query_type: &str, tree: &Tree, source: &str) -> ASTResult<QueryResult>
+##### execute_query(&self, query_type: &str, tree: &Tree, source: &str) -> ASTResult\<QueryResult\>
 
 Executes a named query against the AST.
 

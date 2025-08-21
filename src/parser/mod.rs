@@ -530,7 +530,10 @@ impl EnhancedJustfileParser {
         // Check if file is empty - return empty task list rather than creating error task
         if let Ok(content) = std::fs::read_to_string(path) {
             if content.trim().is_empty() {
-                tracing::debug!("File {} is empty, returning empty task list", path.display());
+                tracing::debug!(
+                    "File {} is empty, returning empty task list",
+                    path.display()
+                );
                 return Ok(vec![]);
             }
         }
@@ -603,7 +606,7 @@ impl EnhancedJustfileParser {
                     );
                 }
                 Err(e) => {
-                    last_error = Some(format!("Command parsing failed: {}", e));
+                    last_error = Some(format!("Command parsing failed: {e}"));
                     tracing::warn!("Command parser failed for {}: {}", path.display(), e);
                 }
             }
@@ -636,7 +639,7 @@ impl EnhancedJustfileParser {
                 tracing::debug!("Regex parser returned empty results for {}", path.display());
             }
             Err(e) => {
-                last_error = Some(format!("Regex parsing failed: {}", e));
+                last_error = Some(format!("Regex parsing failed: {e}"));
                 tracing::warn!("Regex parser failed for {}: {}", path.display(), e);
             }
         }
@@ -728,7 +731,7 @@ impl EnhancedJustfileParser {
                     tracing::debug!("Command parser returned empty results for content");
                 }
                 Err(e) => {
-                    last_error = Some(format!("Command parsing failed: {}", e));
+                    last_error = Some(format!("Command parsing failed: {e}"));
                     tracing::warn!("Command parser failed for content: {}", e);
                 }
             }
@@ -760,7 +763,7 @@ impl EnhancedJustfileParser {
                 tracing::debug!("Regex parser returned empty results for content");
             }
             Err(e) => {
-                last_error = Some(format!("Regex parsing failed: {}", e));
+                last_error = Some(format!("Regex parsing failed: {e}"));
                 tracing::warn!("Regex parser failed for content: {}", e);
             }
         }
@@ -894,9 +897,7 @@ impl EnhancedJustfileParser {
             .and_then(|name| name.to_str())
             .unwrap_or("unknown");
 
-        let error_msg = error_details
-            .map(|e| format!(" ({})", e))
-            .unwrap_or_default();
+        let error_msg = error_details.map(|e| format!(" ({e})")).unwrap_or_default();
 
         JustTask {
             name: format!("parse-error-{}", filename.replace('.', "-")),
@@ -931,13 +932,11 @@ impl EnhancedJustfileParser {
             first_line.to_string()
         };
 
-        let error_msg = error_details
-            .map(|e| format!(" ({})", e))
-            .unwrap_or_default();
+        let error_msg = error_details.map(|e| format!(" ({e})")).unwrap_or_default();
 
         JustTask {
             name: "parse-error-content".to_string(),
-            body: format!("echo 'ERROR: Failed to parse justfile content{}'\necho 'Content preview: {}'\necho 'This is a minimal task created as fallback.'", error_msg, content_preview),
+            body: format!("echo 'ERROR: Failed to parse justfile content{error_msg}'\necho 'Content preview: {content_preview}'\necho 'This is a minimal task created as fallback.'"),
             parameters: vec![],
             dependencies: vec![],
             comments: vec![
@@ -961,7 +960,7 @@ impl EnhancedJustfileParser {
         F: FnOnce(&mut ParsingMetrics),
     {
         if let Ok(mut metrics) = self.metrics.write() {
-            update_fn(&mut *metrics);
+            update_fn(&mut metrics);
         }
     }
 
