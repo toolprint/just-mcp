@@ -60,7 +60,7 @@ fail:
 
     // Test 1: Execute simple task with default parameter
     let mut executor = TaskExecutor::new();
-    let tool_name = format!("just_greet_{}", justfile_path.display());
+    let tool_name = format!("greet_{}", justfile_path.display());
     println!("Tool name: {}", tool_name);
     let request = ExecutionRequest {
         tool_name,
@@ -91,7 +91,7 @@ fail:
     params.insert("name".to_string(), json!("Alice"));
 
     let request = ExecutionRequest {
-        tool_name: format!("just_greet_{}", justfile_path.display()),
+        tool_name: format!("greet_{}", justfile_path.display()),
         parameters: params,
         context: Default::default(),
     };
@@ -106,7 +106,7 @@ fail:
 
     // Test 3: Execute failing task
     let request = ExecutionRequest {
-        tool_name: format!("just_fail_{}", justfile_path.display()),
+        tool_name: format!("fail_{}", justfile_path.display()),
         parameters: HashMap::new(),
         context: Default::default(),
     };
@@ -211,7 +211,7 @@ async fn test_executor_error_handling() {
 
     // Test with non-existent justfile
     let request = ExecutionRequest {
-        tool_name: "just_test_/path/to/nonexistent/justfile".to_string(),
+        tool_name: "test_/path/to/nonexistent/justfile".to_string(),
         parameters: HashMap::new(),
         context: Default::default(),
     };

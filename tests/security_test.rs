@@ -31,7 +31,7 @@ test name:
     params.insert("name".to_string(), serde_json::json!("World"));
 
     let request = ExecutionRequest {
-        tool_name: format!("just_test_{}", justfile_path.display()),
+        tool_name: format!("test_{}", justfile_path.display()),
         parameters: params,
         context: ExecutionContext {
             working_directory: Some(temp_dir.path().to_string_lossy().to_string()),
@@ -58,7 +58,7 @@ async fn test_security_rejects_path_traversal() {
 
     // Try to access a file outside allowed paths
     let request = ExecutionRequest {
-        tool_name: "just_test_/etc/passwd".to_string(),
+        tool_name: "test_/etc/passwd".to_string(),
         parameters: HashMap::new(),
         context: ExecutionContext {
             working_directory: None,
@@ -97,7 +97,7 @@ test:
 
     // Try to inject command via task name
     let request = ExecutionRequest {
-        tool_name: format!("just_test;rm -rf /__{}", justfile_path.display()),
+        tool_name: format!("test;rm -rf /__{}", justfile_path.display()),
         parameters: HashMap::new(),
         context: ExecutionContext {
             working_directory: Some(temp_dir.path().to_string_lossy().to_string()),
@@ -138,7 +138,7 @@ test name:
     params.insert("name".to_string(), serde_json::json!("hello; rm -rf /"));
 
     let request = ExecutionRequest {
-        tool_name: format!("just_test_{}", justfile_path.display()),
+        tool_name: format!("test_{}", justfile_path.display()),
         parameters: params,
         context: ExecutionContext {
             working_directory: Some(temp_dir.path().to_string_lossy().to_string()),
@@ -179,7 +179,7 @@ echo_param value:
     params.insert("value".to_string(), serde_json::json!("test; echo gotcha"));
 
     let request = ExecutionRequest {
-        tool_name: format!("just_echo_param_{}", justfile_path.display()),
+        tool_name: format!("echo_param_{}", justfile_path.display()),
         parameters: params,
         context: ExecutionContext {
             working_directory: Some(temp_dir.path().to_string_lossy().to_string()),

@@ -36,7 +36,7 @@ impl AdminTools {
 
         // Register sync() tool
         let sync_tool = ToolDefinition {
-            name: "admin_sync".to_string(),
+            name: "_admin_sync".to_string(),
             description: "Manually re-scan justfiles and update the tool registry".to_string(),
             input_schema: json!({
                 "$schema": "http://json-schema.org/draft-07/schema#",
@@ -55,7 +55,7 @@ impl AdminTools {
 
         // Register create_task() tool
         let create_task_tool = ToolDefinition {
-            name: "admin_create_task".to_string(),
+            name: "_admin_create_task".to_string(),
             description: "Create a new task in a justfile with AI assistance".to_string(),
             input_schema: json!({
                 "$schema": "http://json-schema.org/draft-07/schema#",
@@ -126,7 +126,7 @@ impl AdminTools {
             let tools_to_remove: Vec<String> = registry
                 .list_tools()
                 .iter()
-                .filter(|tool| !tool.name.starts_with("admin_"))
+                .filter(|tool| !tool.name.starts_with("_admin_"))
                 .map(|tool| tool.name.clone())
                 .collect();
 
@@ -300,11 +300,11 @@ impl AdminTools {
         {
             let registry = self.registry.lock().await;
 
-            // Check for any tool that starts with "just_{task_name}"
-            // This handles both single directory (just_taskname) and multi-directory (just_taskname@name) cases
-            let task_prefix = format!("just_{}", params.task_name);
+            // Check for any tool that matches the task name exactly or with @name suffix
+            // This handles both single directory (taskname) and multi-directory (taskname@name) cases
             let existing_task = registry.list_tools().iter().any(|tool| {
-                tool.name == task_prefix || tool.name.starts_with(&format!("{task_prefix}@"))
+                tool.name == params.task_name
+                    || tool.name.starts_with(&format!("{}@", params.task_name))
             });
 
             if existing_task {
@@ -316,9 +316,9 @@ impl AdminTools {
             }
 
             // Check for admin tool conflicts
-            if params.task_name.starts_with("admin_") {
+            if params.task_name.starts_with("_admin_") {
                 return Err(crate::error::Error::Other(
-                    "Task names starting with 'admin_' are reserved".to_string(),
+                    "Task names starting with '_admin_' are reserved".to_string(),
                 ));
             }
         }
@@ -455,7 +455,7 @@ mod tests {
         // Check that sync tool was registered
         let reg = registry.lock().await;
         let tools = reg.list_tools();
-        assert!(tools.iter().any(|t| t.name == "admin_sync"));
+        assert!(tools.iter().any(|t| t.name == "_admin_sync"));
     }
 
     #[tokio::test]
@@ -503,7 +503,7 @@ build:
         // Should have at least 2 tools from our test justfile
         let our_justfile_tools: Vec<_> = tools
             .iter()
-            .filter(|t| t.name.starts_with("just_") && !t.name.starts_with("admin_"))
+            .filter(|t| !t.name.starts_with("_admin_"))
             .collect();
         assert!(
             our_justfile_tools.len() >= 2,
@@ -621,10 +621,10 @@ existing:
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("already exists"));
 
-        // Try to create a task with admin_ prefix
+        // Try to create a task with _admin_ prefix
         let params = CreateTaskParams {
             watch_name: None, // Use default
-            task_name: "admin_task".to_string(),
+            task_name: "_admin_task".to_string(),
             description: None,
             recipe: "echo \"admin\"".to_string(),
             parameters: None,

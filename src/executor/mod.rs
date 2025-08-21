@@ -57,7 +57,7 @@ impl TaskExecutor {
         self.resource_manager.can_execute()?;
 
         // Extract task name and justfile path from tool name
-        // Tool names are in format: just_taskname_/path/to/justfile
+        // Tool names are in format: taskname_/path/to/justfile
         let (task_name, justfile_path) = self.parse_tool_name(&request.tool_name)?;
         info!(
             "Parsed task name: {}, justfile path: {}",
@@ -108,19 +108,18 @@ impl TaskExecutor {
     }
 
     fn parse_tool_name(&self, tool_name: &str) -> Result<(String, String)> {
-        // Tool names are in format: just_taskname_/path/to/justfile
-        if !tool_name.starts_with("just_") {
+        // Tool names are in format: taskname_/path/to/justfile
+        // Handle admin tools with _admin prefix
+        if tool_name.starts_with("_admin") {
             return Err(Error::InvalidParameter(format!(
-                "Invalid tool name: {tool_name}"
+                "Admin tool execution not supported: {tool_name}"
             )));
         }
-
-        let without_prefix = &tool_name[5..]; // Remove "just_"
 
         // Find the underscore that separates task name from path
         // We need to find the first underscore followed by a '/'
         let mut found_pos = None;
-        let chars: Vec<char> = without_prefix.chars().collect();
+        let chars: Vec<char> = tool_name.chars().collect();
 
         for i in 0..chars.len() {
             if chars[i] == '_' && i + 1 < chars.len() && chars[i + 1] == '/' {
@@ -130,8 +129,8 @@ impl TaskExecutor {
         }
 
         if let Some(pos) = found_pos {
-            let task_name = without_prefix[..pos].to_string();
-            let justfile_path = without_prefix[pos + 1..].to_string();
+            let task_name = tool_name[..pos].to_string();
+            let justfile_path = tool_name[pos + 1..].to_string();
             Ok((task_name, justfile_path))
         } else {
             Err(Error::InvalidParameter(format!(
@@ -376,25 +375,25 @@ mod tests {
         let executor = TaskExecutor::new();
 
         // Valid tool name
-        let result = executor.parse_tool_name("just_build_/home/user/project/justfile");
+        let result = executor.parse_tool_name("build_/home/user/project/justfile");
         assert!(result.is_ok());
         let (task, path) = result.unwrap();
         assert_eq!(task, "build");
         assert_eq!(path, "/home/user/project/justfile");
 
         // Valid tool name with underscore in path
-        let result = executor.parse_tool_name("just_test_/home/user_name/test_project/justfile");
+        let result = executor.parse_tool_name("test_/home/user_name/test_project/justfile");
         assert!(result.is_ok());
         let (task, path) = result.unwrap();
         assert_eq!(task, "test");
         assert_eq!(path, "/home/user_name/test_project/justfile");
 
-        // Invalid tool name (no prefix)
-        let result = executor.parse_tool_name("build_/home/user/project/justfile");
+        // Admin tool name (should be rejected)
+        let result = executor.parse_tool_name("_admin_sync");
         assert!(result.is_err());
 
         // Invalid tool name (no separator)
-        let result = executor.parse_tool_name("just_build");
+        let result = executor.parse_tool_name("build");
         assert!(result.is_err());
     }
 

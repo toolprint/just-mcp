@@ -24,6 +24,7 @@ pub struct Server {
     notification_sender: Option<NotificationSender>,
     notification_receiver: Option<NotificationReceiver>,
     admin_tools: Option<Arc<AdminTools>>,
+    admin_enabled: bool,
 }
 
 impl Server {
@@ -37,6 +38,7 @@ impl Server {
             notification_sender: Some(sender),
             notification_receiver: Some(receiver),
             admin_tools: None,
+            admin_enabled: false,
         }
     }
 
@@ -47,6 +49,11 @@ impl Server {
 
     pub fn with_watch_names(mut self, configs: Vec<(PathBuf, Option<String>)>) -> Self {
         self.watch_configs = configs;
+        self
+    }
+
+    pub fn with_admin_enabled(mut self, enabled: bool) -> Self {
+        self.admin_enabled = enabled;
         self
     }
 
@@ -91,18 +98,23 @@ impl Server {
             }
         }
 
-        // Initialize admin tools
-        let admin_tools = Arc::new(AdminTools::new(
-            self.registry.clone(),
-            watcher_arc.clone(),
-            self.watch_paths.clone(),
-            self.watch_configs.clone(),
-        ));
+        // Initialize admin tools (only if admin flag is enabled)
+        if self.admin_enabled {
+            tracing::info!("Admin tools enabled");
+            let admin_tools = Arc::new(AdminTools::new(
+                self.registry.clone(),
+                watcher_arc.clone(),
+                self.watch_paths.clone(),
+                self.watch_configs.clone(),
+            ));
 
-        // Register admin tools in the registry
-        admin_tools.register_admin_tools().await?;
+            // Register admin tools in the registry
+            admin_tools.register_admin_tools().await?;
 
-        self.admin_tools = Some(admin_tools.clone());
+            self.admin_tools = Some(admin_tools.clone());
+        } else {
+            tracing::info!("Admin tools disabled");
+        }
 
         let watcher_for_task = watcher_arc.clone();
         let watcher_handle = tokio::spawn(async move {

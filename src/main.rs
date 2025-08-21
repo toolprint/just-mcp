@@ -90,7 +90,8 @@ async fn start_mcp_server(args: &Args) -> Result<()> {
     let transport = Box::new(StdioTransport::new());
     let mut server = Server::new(transport)
         .with_watch_paths(watch_paths)
-        .with_watch_names(watch_configs);
+        .with_watch_names(watch_configs)
+        .with_admin_enabled(args.admin);
 
     server.run().await?;
 

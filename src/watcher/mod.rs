@@ -301,21 +301,21 @@ impl JustfileWatcher {
         let path_names = self.path_names.lock().await;
         let configured_name = path_names.get(path).and_then(|n| n.as_ref());
 
-        // Always create the internal name with full path for execution
-        let internal_name = format!("just_{}_{}", task.name, path.display());
+        // Always create the internal name with full path for execution (keep underscore format for parsing)
+        let internal_name = format!("{}_{}", task.name, path.display());
 
-        // Build the display name based on configuration
+        // Build the display name based on configuration (no just_ prefix)
         let display_name = if self.has_multiple_dirs {
             // Multiple directories: add @name suffix if we have a name
             if let Some(name) = configured_name {
-                format!("just_{}@{}", task.name, name)
+                format!("{}@{}", task.name, name)
             } else {
                 // Fall back to full path if no name configured
-                format!("just_{}_{}", task.name, path.display())
+                format!("{}_{}", task.name, path.display())
             }
         } else {
-            // Single directory: no suffix in the display name
-            format!("just_{}", task.name)
+            // Single directory: just use the task name
+            task.name.clone()
         };
 
         // Generate description from comments or use default
@@ -414,7 +414,7 @@ test:
         let reg = registry.lock().await;
         let tools = reg.list_tools();
         assert_eq!(tools.len(), 1);
-        assert!(tools[0].name.contains("just_test"));
+        assert_eq!(tools[0].name, "test");
     }
 
     #[tokio::test]
