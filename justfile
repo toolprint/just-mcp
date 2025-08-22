@@ -40,7 +40,9 @@ help:
     echo "  just format             - Format all code (Rust + JSON + Markdown)"
     echo "  just lint               - Lint all code with fixes"
     echo "  just check              - Run format + lint + test (full validation)"
-    echo "  just install            - Install binaries locally"
+    echo "  just install            - Install with default features"
+    echo "  just install-all-features - Install with all possible features"
+    echo "  just install-tq         - Install tq for env support"
     echo "  just dev                - Start development environment"
     echo "  just ci                 - Run all CI checks"
     echo "  just clean              - Clean all build artifacts"
@@ -135,7 +137,7 @@ build mode="debug":
         just build-rust
     fi
 
-# Install tq (TOML query tool) for better TOML parsing
+# Install tq (TOML query tool) for env support
 [group('dev')]
 install-tq:
     just install-rust-tq
@@ -145,10 +147,6 @@ install-tq:
 release-info:
     just release-rust-info
 
-# Legacy install commands (use unified 'install' command instead)
-[group('dev')]
-install-with-vector-search:
-    just install vector-search
 
 # Clean build artifacts and dependencies
 [group('dev')]
@@ -233,17 +231,42 @@ lint target="all" fix="false":
             ;;
     esac
 
-# Unified install command
+# Install with default features
 [group('dev')]
-install features="":
+install:
+    just install-rust
+
+# Install with all possible features
+[group('dev')]
+install-all-features:
     #!/usr/bin/env bash
-    if [ -n "{{features}}" ]; then
-        just _validate "{{features}}" "vector-search"
-        if [ "{{features}}" = "vector-search" ]; then
-            just install-rust-vector-search
+    just _info "Installing with all possible features"
+    echo "Features: vector-search, local-embeddings, ultrafast-framework"
+    echo ""
+    
+    # Build release with all features first
+    if just build-rust-release-all-features; then
+        # Install using cargo install with all features
+        echo "🚀 Running: cargo install --path . --force --all-features"
+        if cargo install --path . --force --all-features; then
+            echo ""
+            just _success "Installation with all features completed successfully!"
+            echo ""
+            
+            # Show what was installed
+            binaries=$(just _get-binaries)
+            echo "📦 Installed binaries: $binaries"
+            echo "🔬 Enabled features: vector-search, local-embeddings, ultrafast-framework"
+            echo ""
+            echo "🎯 You can now use the full feature set including:"
+            echo "   • Vector search and semantic indexing"
+            echo "   • Local embedding models"
+            echo "   • Ultra-fast MCP framework"
+        else
+            just _error "Installation" "Installation with all features failed!"
         fi
     else
-        just install-rust
+        just _error "Installation" "Build with all features failed!"
     fi
 
 # Unified check command (format + lint + test)
@@ -325,7 +348,7 @@ quickstart:
     echo "  • Run 'just help' to see all available commands"
     echo "  • Edit code and use 'just check' before committing"
     echo "  • Try vector search demos: 'just demo-vector-search'"
-    echo "  • Use 'just install' to install binaries locally"
+    echo "  • Use 'just install' for default features or 'just install-all-features' for full capabilities"
     echo ""
     echo "📚 DOCUMENTATION:"
     echo "  • Project docs: docs/refactor/justfile-refactor.md"
@@ -566,12 +589,13 @@ rust-help:
     echo "  just test-rust [--coverage]        - Run Rust tests"
     echo "  just format-rust [--check]         - Format Rust code"
     echo "  just lint-rust [--fix]             - Lint Rust code with Clippy"
-    echo "  just install-rust [features]       - Install Rust binaries"
+    echo "  just install                        - Install with default features"
+    echo "  just install-all-features           - Install with all possible features"
     echo "  just clean-rust                    - Clean Rust artifacts"
     echo "  just pre-commit-rust               - Run pre-commit validation"
     echo ""
     echo "Unified commands:"
-    echo "  just build, just test, just format, just lint, just install"
+    echo "  just build, just test, just format, just lint, just install, just install-all-features"
 
 # Show all available help topics
 [group('help')]

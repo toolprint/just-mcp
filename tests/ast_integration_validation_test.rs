@@ -4,7 +4,7 @@
 //! all existing project recipes and ensures consistency with the regex parser.
 
 use anyhow::Result;
-use just_mcp::parser::{EnhancedJustfileParser, JustfileParser};
+use just_mcp::parser::{EnhancedJustfileParser, JustfileParser, ParserPreference};
 #[cfg(feature = "ast-parser")]
 use just_mcp::types::JustTask;
 #[cfg(feature = "ast-parser")]
@@ -69,7 +69,7 @@ fn get_all_project_justfiles() -> Result<Vec<PathBuf>> {
         for entry in entries {
             if let Ok(entry) = entry {
                 let path = entry.path();
-                if path.is_file() && path.extension().map_or(false, |ext| ext == "just") {
+                if path.is_file() && path.extension().is_some_and(|ext| ext == "just") {
                     justfiles.push(path);
                 }
             }
@@ -98,8 +98,7 @@ fn test_justfile_parsing(path: &PathBuf) -> Result<ParsingTestResult> {
 
     // Test AST parser
     let ast_start = Instant::now();
-    let mut enhanced_parser = EnhancedJustfileParser::new()?;
-    enhanced_parser.set_ast_parser_only();
+    let enhanced_parser = EnhancedJustfileParser::new_with_preference(ParserPreference::Ast)?;
 
     match enhanced_parser.parse_file(path) {
         Ok(tasks) => {
@@ -176,8 +175,7 @@ fn check_parsing_consistency(ast_tasks: &[JustTask], regex_tasks: &[JustTask]) -
     for task_name in ast_map.keys() {
         if !regex_map.contains_key(task_name) {
             issues.push(format!(
-                "Task '{}' found in AST but not in regex parser",
-                task_name
+                "Task '{task_name}' found in AST but not in regex parser"
             ));
         }
     }
@@ -185,8 +183,7 @@ fn check_parsing_consistency(ast_tasks: &[JustTask], regex_tasks: &[JustTask]) -
     for task_name in regex_map.keys() {
         if !ast_map.contains_key(task_name) {
             issues.push(format!(
-                "Task '{}' found in regex but not in AST parser",
-                task_name
+                "Task '{task_name}' found in regex but not in AST parser"
             ));
         }
     }
@@ -222,8 +219,7 @@ fn check_parsing_consistency(ast_tasks: &[JustTask], regex_tasks: &[JustTask]) -
 
             if ast_param_names != regex_param_names {
                 issues.push(format!(
-                    "Task '{}': parameter names differ: AST={:?}, Regex={:?}",
-                    task_name, ast_param_names, regex_param_names
+                    "Task '{task_name}': parameter names differ: AST={ast_param_names:?}, Regex={regex_param_names:?}"
                 ));
             }
 
@@ -233,8 +229,7 @@ fn check_parsing_consistency(ast_tasks: &[JustTask], regex_tasks: &[JustTask]) -
 
             if ast_deps != regex_deps {
                 issues.push(format!(
-                    "Task '{}': dependencies differ: AST={:?}, Regex={:?}",
-                    task_name, ast_deps, regex_deps
+                    "Task '{task_name}': dependencies differ: AST={ast_deps:?}, Regex={regex_deps:?}"
                 ));
             }
         }
@@ -301,16 +296,16 @@ fn test_all_project_justfiles_with_ast_parser() -> Result<()> {
         );
 
         if let Some(ref error) = result.ast_error {
-            println!("  AST Error: {}", error);
+            println!("  AST Error: {error}");
         }
         if let Some(ref error) = result.regex_error {
-            println!("  Regex Error: {}", error);
+            println!("  Regex Error: {error}");
         }
 
         if !result.consistency_issues.is_empty() {
             println!("  Consistency Issues:");
             for issue in &result.consistency_issues {
-                println!("    - {}", issue);
+                println!("    - {issue}");
             }
         }
     }
@@ -384,8 +379,7 @@ fn test_all_project_justfiles_with_ast_parser() -> Result<()> {
         // that are actually feature differences, not bugs.
         assert!(
             consistency_rate <= 10.0,
-            "Average consistency issues per file should be <= 10 (AST parser finds imported recipes), got {:.1}",
-            consistency_rate
+            "Average consistency issues per file should be <= 10 (AST parser finds imported recipes), got {consistency_rate:.1}"
         );
     }
 
@@ -407,7 +401,7 @@ fn test_enhanced_parser_fallback_behavior() -> Result<()> {
     let test_file = &justfiles[0];
     println!("Testing fallback behavior with: {}", test_file.display());
 
-    let mut enhanced_parser = EnhancedJustfileParser::new()?;
+    let enhanced_parser = EnhancedJustfileParser::new()?;
     enhanced_parser.reset_metrics();
 
     // Parse the file (should use the three-tier fallback system)
@@ -427,12 +421,11 @@ fn test_enhanced_parser_fallback_behavior() -> Result<()> {
     println!("{}", enhanced_parser.get_diagnostics());
 
     // Test different parser configurations
-    let mut ast_only_parser = EnhancedJustfileParser::new()?;
-    ast_only_parser.set_ast_parser_only();
+    let ast_only_parser = EnhancedJustfileParser::new_with_preference(ParserPreference::Ast)?;
     let ast_only_tasks = ast_only_parser.parse_file(test_file)?;
 
-    let mut regex_only_parser = EnhancedJustfileParser::new()?;
-    regex_only_parser.set_legacy_parser_only();
+    #[allow(deprecated)]
+    let regex_only_parser = EnhancedJustfileParser::new_with_preference(ParserPreference::Regex)?;
     let regex_only_tasks = regex_only_parser.parse_file(test_file)?;
 
     println!("Enhanced parser: {} tasks", tasks.len());
@@ -483,7 +476,7 @@ fn test_regex_parser_baseline() -> Result<()> {
         successful_files,
         justfiles.len()
     );
-    println!("  Total tasks parsed: {}", total_tasks);
+    println!("  Total tasks parsed: {total_tasks}");
 
     // Baseline expectations
     assert!(
@@ -573,7 +566,7 @@ greet name="World":
     ];
 
     for (name, content) in test_cases {
-        println!("Testing {} syntax...", name);
+        println!("Testing {name} syntax...");
 
         // Parse with AST parser
         let tree = ast_parser.parse_content(content)?;
@@ -588,13 +581,11 @@ greet name="World":
         // Both should find at least one task
         assert!(
             !ast_tasks.is_empty(),
-            "AST parser should find tasks in {}",
-            name
+            "AST parser should find tasks in {name}"
         );
         assert!(
             !regex_tasks.is_empty(),
-            "Regex parser should find tasks in {}",
-            name
+            "Regex parser should find tasks in {name}"
         );
 
         // Check for major consistency issues

@@ -38,7 +38,7 @@ deploy target="prod" region="us-east-1":
 
     match result {
         Ok(report) => {
-            println!("Basic report:\n{}", report);
+            println!("Basic report:\n{report}");
             // Basic checks - the report should contain the structure we expect
             assert!(report.contains("Parser Diagnostic Report"));
             assert!(report.contains("## Summary"));
@@ -49,10 +49,10 @@ deploy target="prod" region="us-east-1":
         Err(e) => {
             // If just command is not available, we should get a specific error
             if e.to_string().contains("just --summary") {
-                println!("Just command not available, skipping test: {}", e);
+                println!("Just command not available, skipping test: {e}");
                 return;
             }
-            panic!("Parser doctor failed unexpectedly: {}", e);
+            panic!("Parser doctor failed unexpectedly: {e}");
         }
     }
 }
@@ -91,7 +91,7 @@ test: simple
 
     match result {
         Ok(report) => {
-            println!("Verbose report:\n{}", report);
+            println!("Verbose report:\n{report}");
             // Verbose mode should include the Issues sections
             assert!(report.contains("Parser Diagnostic Report"));
             assert!(report.contains("## Summary"));
@@ -101,10 +101,10 @@ test: simple
         Err(e) => {
             // If just command is not available, we should get a specific error
             if e.to_string().contains("just --summary") {
-                println!("Just command not available, skipping test: {}", e);
+                println!("Just command not available, skipping test: {e}");
                 return;
             }
-            panic!("Parser doctor verbose mode failed unexpectedly: {}", e);
+            panic!("Parser doctor verbose mode failed unexpectedly: {e}");
         }
     }
 }

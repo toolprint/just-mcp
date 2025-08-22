@@ -1,6 +1,6 @@
 //! Test to verify AST parser is used by default when available
 
-use just_mcp::parser::EnhancedJustfileParser;
+use just_mcp::parser::{EnhancedJustfileParser, ParserPreference};
 #[cfg(feature = "ast-parser")]
 use tempfile::TempDir;
 
@@ -114,8 +114,8 @@ fn test_parser_works_without_ast_feature() {
 fn test_parser_configuration_methods() {
     let mut parser = EnhancedJustfileParser::new().unwrap();
 
-    // Test disabling AST parser
-    parser.set_ast_parsing_enabled(false);
+    // Test using CLI parser only
+    parser.set_parser_preference(ParserPreference::Cli);
     let content = "test:\n    echo 'test'";
     let _ = parser.parse_content(content).unwrap();
 
@@ -125,9 +125,9 @@ fn test_parser_configuration_methods() {
         "Should not attempt AST parsing when disabled"
     );
 
-    // Re-enable and test
+    // Switch to AST parser and test
     parser.reset_metrics();
-    parser.set_ast_parsing_enabled(true);
+    parser.set_parser_preference(ParserPreference::Ast);
     let _ = parser.parse_content(content).unwrap();
 
     let metrics = parser.get_metrics();

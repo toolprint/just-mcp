@@ -1,4 +1,4 @@
-use just_mcp::parser::EnhancedJustfileParser;
+use just_mcp::parser::{EnhancedJustfileParser, ParserPreference};
 use std::fs;
 use tempfile::TempDir;
 
@@ -107,7 +107,7 @@ test: clean
             // Check if imported tasks are found (this depends on Just CLI availability)
             if EnhancedJustfileParser::is_just_available() {
                 println!("Just CLI available - should resolve imports");
-                println!("Found tasks: {:?}", task_names);
+                println!("Found tasks: {task_names:?}");
                 for task in &tasks {
                     println!(
                         "  Task: '{}' with {} deps: {:?}",
@@ -127,7 +127,7 @@ test: clean
             }
         }
         Err(e) => {
-            println!("Parser failed (expected if Just CLI not available): {}", e);
+            println!("Parser failed (expected if Just CLI not available): {e}");
         }
     }
 }
@@ -138,7 +138,8 @@ fn test_enhanced_parser_fallback_behavior() {
     let mut parser = EnhancedJustfileParser::new().unwrap();
 
     // Force legacy mode
-    parser.set_legacy_parser_only();
+    #[allow(deprecated)]
+    parser.set_parser_preference(ParserPreference::Regex);
 
     let content = r#"
 # Simple task
@@ -154,7 +155,7 @@ simple:
 #[test]
 fn test_just_availability_detection() {
     let available = EnhancedJustfileParser::is_just_available();
-    println!("Just CLI available: {}", available);
+    println!("Just CLI available: {available}");
 
     // This test documents the environment state
     // Don't assert as it depends on system setup
@@ -272,9 +273,7 @@ _helper:
     for expected in &expected_tasks {
         assert!(
             task_names.contains(expected),
-            "Should find task '{}', found: {:?}",
-            expected,
-            task_names
+            "Should find task '{expected}', found: {task_names:?}"
         );
     }
 
@@ -320,7 +319,7 @@ deploy: test
 
     // Verify specific tasks exist
     let task_names: Vec<&str> = tasks.iter().map(|t| t.name.as_str()).collect();
-    println!("Extracted task names: {:?}", task_names);
+    println!("Extracted task names: {task_names:?}");
 
     // Check that parsing was successful (not minimal task creation)
     let metrics = parser.get_metrics();
@@ -429,9 +428,12 @@ fn test_parsing_metrics_and_diagnostics() {
     // AST parser can be extremely fast (sub-millisecond) for small content,
     // so total_parse_time_ms might be 0 due to rounding. Just verify the
     // timing mechanism is working by checking that attempts were made.
+    // Note: total_parse_time_ms >= 0 is always true for u64, so we check attempts instead
+    let total_parsing_attempts =
+        final_metrics.ast_attempts + final_metrics.command_attempts + final_metrics.regex_attempts;
     assert!(
-        final_metrics.total_parse_time_ms >= 0,
-        "Should have recorded parse time (even if 0 for very fast parsing)"
+        total_parsing_attempts > 0,
+        "Should have made parsing attempts"
     );
 
     // Test diagnostics output
@@ -440,7 +442,7 @@ fn test_parsing_metrics_and_diagnostics() {
     assert!(diagnostics.contains("success rate"));
     assert!(diagnostics.contains("%"));
 
-    println!("Parsing diagnostics:\n{}", diagnostics);
+    println!("Parsing diagnostics:\n{diagnostics}");
 }
 
 /// Test parser configuration and method selection
@@ -453,22 +455,23 @@ hello:
     echo "world"
 "#;
 
-    // Test with AST parsing disabled
-    parser.set_ast_parsing_enabled(false);
+    // Test with CLI parsing only
+    parser.set_parser_preference(ParserPreference::Cli);
     let tasks1 = parser
         .parse_content(test_content)
         .expect("Should parse with AST disabled");
     assert!(!tasks1.is_empty());
 
-    // Test with command parsing disabled
-    parser.set_command_parsing_enabled(false);
+    // Test with AST parsing only
+    parser.set_parser_preference(ParserPreference::Ast);
     let tasks2 = parser
         .parse_content(test_content)
         .expect("Should parse with command disabled");
     assert!(!tasks2.is_empty());
 
     // Test with only regex parsing (legacy mode)
-    parser.set_legacy_parser_only();
+    #[allow(deprecated)]
+    parser.set_parser_preference(ParserPreference::Regex);
     let tasks3 = parser
         .parse_content(test_content)
         .expect("Should parse with regex only");

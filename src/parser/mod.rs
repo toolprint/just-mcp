@@ -1742,7 +1742,7 @@ test:
     fn test_just_availability() {
         // This test will pass/fail based on whether just is installed
         let available = EnhancedJustfileParser::is_just_available();
-        println!("Just CLI available: {}", available);
+        println!("Just CLI available: {available}");
         // Don't assert on this as it depends on environment
     }
 }

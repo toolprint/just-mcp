@@ -245,7 +245,7 @@ test coverage="true":
         let parser = EnhancedJustfileParser::new_with_preference(preference.clone()).unwrap();
         let tasks = parser.parse_file(&justfile_path).unwrap();
 
-        assert_eq!(tasks.len(), 2, "Failed with preference: {}", preference);
+        assert_eq!(tasks.len(), 2, "Failed with preference: {preference}");
 
         let build_task = tasks.iter().find(|t| t.name == "build").unwrap();
         // Comments parsing varies by parser - just check that the task exists
@@ -299,7 +299,7 @@ random text here
         }
         Err(e) => {
             // Some parsers might return errors for invalid content
-            println!("Got expected error for invalid content: {}", e);
+            println!("Got expected error for invalid content: {e}");
         }
     }
 }

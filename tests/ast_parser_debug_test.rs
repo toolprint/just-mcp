@@ -54,7 +54,7 @@ test:
     let demo_sample = demo_lines.join("\n");
 
     println!("\n=== Testing demo justfile sample ===");
-    println!("Content sample:\n{}", demo_sample);
+    println!("Content sample:\n{demo_sample}");
 
     let tree = ast_parser.parse_content(&demo_sample)?;
     let ast_tasks = ast_parser.extract_recipes(&tree)?;
@@ -103,7 +103,7 @@ fn print_ast_node_wrapper(node: &just_mcp::parser::ast::ASTNode, depth: usize) {
     } else {
         format!(" \"{}\"", text.replace("\n", "\\n"))
     };
-    println!("{}{} {}", indent, kind, formatted_text);
+    println!("{indent}{kind} {formatted_text}");
 
     for child in node.children() {
         print_ast_node_wrapper(&child, depth + 1);

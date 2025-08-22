@@ -83,7 +83,7 @@ mod ast_parser_foundation_tests {
         let mut trees = Vec::new();
         for content in &contents {
             let result = parser.parse_content(content);
-            assert!(result.is_ok(), "Failed to parse content: {}", content);
+            assert!(result.is_ok(), "Failed to parse content: {content}");
             trees.push(result.unwrap());
         }
 
@@ -127,13 +127,11 @@ recipe2 param="default":
         // Root node should start at a reasonable position
         assert!(
             start_line <= 1,
-            "Start line should be 0 or 1, got {}",
-            start_line
+            "Start line should be 0 or 1, got {start_line}"
         );
         assert!(
             start_col <= 1,
-            "Start column should be 0 or 1, got {}",
-            start_col
+            "Start column should be 0 or 1, got {start_col}"
         );
         assert!(end_line >= start_line, "End line should be >= start line");
 
@@ -154,7 +152,7 @@ recipe2 param="default":
         let debug_output = utils::debug_tree(&root, 0);
         // Should contain either "justfile" or "source_file"
         assert!(debug_output.contains("justfile") || debug_output.contains("source_file"));
-        println!("Debug tree output:\n{}", debug_output);
+        println!("Debug tree output:\n{debug_output}");
     }
 
     /// Test error handling for malformed content
@@ -190,11 +188,7 @@ recipe2 param="default":
                 }
                 Err(e) => {
                     // Parse error should be recoverable
-                    assert!(
-                        e.is_recoverable(),
-                        "Parse error should be recoverable: {}",
-                        e
-                    );
+                    assert!(e.is_recoverable(), "Parse error should be recoverable: {e}");
 
                     // Test diagnostic information
                     let diag = e.diagnostic_info();
@@ -247,7 +241,7 @@ deploy: build test
                 }
             }
             Err(e) => {
-                println!("Recipe extraction failed: {}", e);
+                println!("Recipe extraction failed: {e}");
                 // Error should be recoverable to allow fallback parsers
                 assert!(
                     e.is_recoverable(),
@@ -273,7 +267,7 @@ deploy: build test
         assert_eq!(diag.column, Some(5));
 
         // Test error display
-        let error_str = format!("{}", syntax_error);
+        let error_str = format!("{syntax_error}");
         assert!(error_str.contains("line 10"));
         assert!(error_str.contains("column 5"));
     }
@@ -362,7 +356,7 @@ test:
         ];
 
         for (name, content) in test_cases {
-            println!("Testing: {}", name);
+            println!("Testing: {name}");
 
             let result = parser.parse_content(content);
             assert!(
@@ -392,7 +386,7 @@ test:
                     println!("  Extracted {} recipes from '{}'", recipes.len(), name);
                 }
                 Err(e) => {
-                    println!("  Recipe extraction failed for '{}': {}", name, e);
+                    println!("  Recipe extraction failed for '{name}': {e}");
                 }
             }
         }

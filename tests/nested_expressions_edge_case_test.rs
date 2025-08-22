@@ -8,7 +8,7 @@
 mod nested_expressions_edge_cases {
     use just_mcp::parser::ast::queries::{
         ArgumentType, ConditionalExpressionInfo, ConditionalType, ExpressionEvaluator,
-        FunctionArgument, FunctionCallInfo, QueryResultProcessor,
+        FunctionCallInfo,
     };
     use std::collections::HashMap;
 
@@ -69,7 +69,7 @@ mod nested_expressions_edge_cases {
 
         // The current simple variable extraction only gets words that aren't in function calls
         // Just verify the structure exists, variable extraction may be limited
-        println!("Extracted variables: {:?}", variables);
+        println!("Extracted variables: {variables:?}");
         // The current implementation may have limited variable extraction from complex expressions
         // Just check that the conditional was created successfully
         assert!(mixed_expr.is_valid());
@@ -163,7 +163,7 @@ mod nested_expressions_edge_cases {
 
         for case in malformed_cases {
             let result = ExpressionEvaluator::parse_function_call(case);
-            assert!(result.is_err(), "Expected '{}' to fail parsing", case);
+            assert!(result.is_err(), "Expected '{case}' to fail parsing");
         }
     }
 
@@ -189,7 +189,7 @@ mod nested_expressions_edge_cases {
         // Test handling of very long expressions
         let mut long_condition = String::from("x");
         for i in 1..100 {
-            long_condition.push_str(&format!(" && var{}", i));
+            long_condition.push_str(&format!(" && var{i}"));
         }
 
         let long_conditional = ConditionalExpressionInfo::if_then_else(
@@ -245,13 +245,13 @@ mod nested_expressions_edge_cases {
 
         for i in 0..100 {
             let complex_conditional = ConditionalExpressionInfo::if_then_else(
-                format!("condition_{}", i),
-                format!("value_true_{}", i),
-                format!("value_false_{}", i),
+                format!("condition_{i}"),
+                format!("value_true_{i}"),
+                format!("value_false_{i}"),
             );
 
             let complex_function = FunctionCallInfo::simple(
-                format!("function_{}", i),
+                format!("function_{i}"),
                 vec![
                     format!("arg1_{}", i),
                     format!("arg2_{}", i),
@@ -292,7 +292,7 @@ mod nested_expressions_edge_cases {
 
         for (expr, expected_args) in edge_cases {
             let parsed = ExpressionEvaluator::parse_function_call(expr);
-            assert!(parsed.is_ok(), "Failed to parse: {}", expr);
+            assert!(parsed.is_ok(), "Failed to parse: {expr}");
 
             let func_call = parsed.unwrap();
             assert_eq!(func_call.arguments.len(), expected_args.len());
@@ -314,7 +314,7 @@ mod nested_expressions_edge_cases {
         if conditional_result.is_ok() {
             let conditional = conditional_result.unwrap();
             let variables = conditional.get_all_variables();
-            println!("Circular expression variables: {:?}", variables);
+            println!("Circular expression variables: {variables:?}");
 
             // The current variable extraction is simple and may not detect all function names
             // Just check that the parsing completed without errors
@@ -333,13 +333,13 @@ mod nested_expressions_edge_cases {
 
         for i in 0..1000 {
             let conditional = ConditionalExpressionInfo::if_then_else(
-                format!("condition_{}", i),
-                format!("true_branch_{}", i),
-                format!("false_branch_{}", i),
+                format!("condition_{i}"),
+                format!("true_branch_{i}"),
+                format!("false_branch_{i}"),
             );
 
             let function =
-                FunctionCallInfo::simple(format!("func_{}", i), vec![format!("arg_{}", i)]);
+                FunctionCallInfo::simple(format!("func_{i}"), vec![format!("arg_{}", i)]);
 
             expressions.push((conditional, function));
         }

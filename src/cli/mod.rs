@@ -26,7 +26,21 @@ use crate::vector_search::LocalEmbeddingProvider;
 #[derive(Parser, Debug, Clone)]
 #[command(name = "just-mcp")]
 #[command(version = crate::VERSION)]
-#[command(about = "Model Context Protocol server for justfile integration", long_about = None)]
+#[command(about = "Model Context Protocol server for justfile integration")]
+#[command(long_about = "
+Model Context Protocol server for justfile integration
+
+FEATURES:
+  - Framework server: Uses ultrafast-mcp framework for enhanced protocol compliance and MCP features
+  - Dynamic tool registration: Automatically updates available tools when justfiles change
+  - Resources and Prompts: Full MCP protocol support including /just:do-it slash command
+  
+EXAMPLES:
+  just-mcp                                    # Start framework server in current directory
+  just-mcp --watch-dir ./project              # Monitor specific directory
+  just-mcp --admin                            # Enable admin tools for diagnostics
+  just-mcp search query --query 'build app'   # Search indexed justfiles
+")]
 pub struct Args {
     #[command(subcommand)]
     pub command: Option<Commands>,

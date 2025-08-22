@@ -49,6 +49,14 @@ impl ToolRegistry {
         self.tools.values().collect()
     }
 
+    pub fn get_all_tools(&self) -> Vec<ToolDefinition> {
+        self.tools.values().cloned().collect()
+    }
+
+    pub fn clear(&mut self) {
+        self.tools.clear();
+    }
+
     pub fn subscribe_changes(&self) -> broadcast::Receiver<ChangeEvent> {
         self.change_tx.subscribe()
     }

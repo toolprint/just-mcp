@@ -410,7 +410,7 @@ mod conditional_function_tests {
 
     #[test]
     fn test_error_handling() {
-        let mut variables = HashMap::new();
+        let variables = HashMap::new();
 
         // Test missing variable in conditional
         let conditional =

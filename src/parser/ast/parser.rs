@@ -1535,7 +1535,7 @@ deploy: build test
                 }
             }
             Err(e) => {
-                println!("Parse failed as expected: {}", e);
+                println!("Parse failed as expected: {e}");
                 assert!(e.is_recoverable());
             }
         }
@@ -1566,7 +1566,7 @@ deploy: build test
         assert!(stats.language_version > 0);
         assert!(stats.node_kind_count > 0);
         // field_count can be 0, so we just check it's defined
-        println!("Parser stats: {:?}", stats);
+        println!("Parser stats: {stats:?}");
     }
 
     #[test]
@@ -1603,7 +1603,7 @@ deploy: build test
 
         for (input, _expected) in test_cases {
             let result = parser.parse_parameters(input, "test");
-            assert!(result.is_ok(), "Failed to parse: {}", input);
+            assert!(result.is_ok(), "Failed to parse: {input}");
 
             let params = result.unwrap();
 
@@ -1619,7 +1619,7 @@ deploy: build test
 
         // Test cache stats
         let stats = parser.cache_stats();
-        println!("Cache stats: {:?}", stats);
+        println!("Cache stats: {stats:?}");
 
         // Cache should be accessible
         let cache = parser.query_cache();

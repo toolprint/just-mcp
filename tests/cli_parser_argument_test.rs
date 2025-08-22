@@ -4,7 +4,7 @@ use just_mcp::parser::ParserPreference;
 
 #[test]
 fn test_default_cli_args() {
-    let args = Args::try_parse_from(&["just-mcp"]).unwrap();
+    let args = Args::try_parse_from(["just-mcp"]).unwrap();
 
     // Check default values
     assert_eq!(args.parser, "auto");
@@ -21,15 +21,14 @@ fn test_parser_argument_valid_values() {
     let valid_preferences = vec!["auto", "ast", "cli", "regex"];
 
     for preference in valid_preferences {
-        let args = Args::try_parse_from(&["just-mcp", "--parser", preference]).unwrap();
+        let args = Args::try_parse_from(["just-mcp", "--parser", preference]).unwrap();
         assert_eq!(args.parser, preference);
 
         // Verify it can be parsed as ParserPreference
         let parsed_preference = args.parser.parse::<ParserPreference>();
         assert!(
             parsed_preference.is_ok(),
-            "Failed to parse preference: {}",
-            preference
+            "Failed to parse preference: {preference}"
         );
     }
 }
@@ -41,15 +40,14 @@ fn test_parser_argument_invalid_values() {
 
     for preference in invalid_preferences {
         // clap should accept any string value for the parser argument
-        let args = Args::try_parse_from(&["just-mcp", "--parser", preference]).unwrap();
+        let args = Args::try_parse_from(["just-mcp", "--parser", preference]).unwrap();
         assert_eq!(args.parser, preference);
 
         // But ParserPreference parsing should fail for invalid values
         let parsed_preference = args.parser.parse::<ParserPreference>();
         assert!(
             parsed_preference.is_err(),
-            "Expected parsing to fail for: {}",
-            preference
+            "Expected parsing to fail for: {preference}"
         );
     }
 }
@@ -57,7 +55,7 @@ fn test_parser_argument_invalid_values() {
 #[test]
 fn test_parser_argument_default_value() {
     // When no --parser argument is provided, it should default to "auto"
-    let args = Args::try_parse_from(&["just-mcp"]).unwrap();
+    let args = Args::try_parse_from(["just-mcp"]).unwrap();
     assert_eq!(args.parser, "auto");
 
     // Verify default can be parsed as ParserPreference
@@ -67,7 +65,7 @@ fn test_parser_argument_default_value() {
 
 #[test]
 fn test_combined_cli_arguments() {
-    let args = Args::try_parse_from(&[
+    let args = Args::try_parse_from([
         "just-mcp",
         "--parser",
         "cli",
@@ -89,7 +87,7 @@ fn test_combined_cli_arguments() {
 
 #[test]
 fn test_multiple_watch_directories_with_parser() {
-    let args = Args::try_parse_from(&[
+    let args = Args::try_parse_from([
         "just-mcp",
         "--parser",
         "ast",
@@ -109,7 +107,7 @@ fn test_multiple_watch_directories_with_parser() {
 #[test]
 fn test_parser_argument_help_text() {
     // Test that the help system includes our parser argument
-    let result = Args::try_parse_from(&["just-mcp", "--help"]);
+    let result = Args::try_parse_from(["just-mcp", "--help"]);
     assert!(result.is_err()); // Help returns an error in clap
 
     let error = result.unwrap_err();
@@ -145,9 +143,9 @@ fn test_parser_preference_parsing_edge_cases() {
     for (input, should_succeed) in test_cases {
         let result = input.parse::<ParserPreference>();
         if should_succeed {
-            assert!(result.is_ok(), "Expected '{}' to parse successfully", input);
+            assert!(result.is_ok(), "Expected '{input}' to parse successfully");
         } else {
-            assert!(result.is_err(), "Expected '{}' to fail parsing", input);
+            assert!(result.is_err(), "Expected '{input}' to fail parsing");
         }
     }
 }
@@ -157,7 +155,7 @@ fn test_deprecation_warning_for_regex_parser() {
     // This test captures stderr to verify deprecation warnings are printed
     // Note: This is a behavioral test - the warning should be printed to stderr
 
-    let args = Args::try_parse_from(&["just-mcp", "--parser", "regex"]).unwrap();
+    let args = Args::try_parse_from(["just-mcp", "--parser", "regex"]).unwrap();
     assert_eq!(args.parser, "regex");
 
     // When we parse the regex preference, it should succeed but emit a warning
@@ -171,7 +169,7 @@ fn test_deprecation_warning_for_regex_parser() {
 #[test]
 fn test_serve_command_with_parser_argument() {
     // Test explicit serve command with parser argument
-    let args = Args::try_parse_from(&["just-mcp", "--parser", "cli", "serve"]).unwrap();
+    let args = Args::try_parse_from(["just-mcp", "--parser", "cli", "serve"]).unwrap();
 
     assert_eq!(args.parser, "cli");
     assert!(matches!(args.command, Some(just_mcp::cli::Commands::Serve)));
@@ -198,8 +196,8 @@ fn test_long_and_short_form_compatibility() {
     // Test that our parser argument doesn't conflict with existing short forms
 
     // Make sure --parser doesn't have a short form that conflicts
-    let args1 = Args::try_parse_from(&["just-mcp", "--parser", "cli"]).unwrap();
-    let args2 = Args::try_parse_from(&["just-mcp", "--parser=cli"]).unwrap();
+    let args1 = Args::try_parse_from(["just-mcp", "--parser", "cli"]).unwrap();
+    let args2 = Args::try_parse_from(["just-mcp", "--parser=cli"]).unwrap();
 
     assert_eq!(args1.parser, "cli");
     assert_eq!(args2.parser, "cli");
@@ -209,7 +207,7 @@ fn test_long_and_short_form_compatibility() {
 #[test]
 fn test_integration_with_existing_arguments() {
     // Verify our new parser argument integrates well with all existing arguments
-    let args = Args::try_parse_from(&[
+    let args = Args::try_parse_from([
         "just-mcp",
         "--parser",
         "ast",

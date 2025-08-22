@@ -16,10 +16,8 @@ pub const TEST_BASE_DIR: &str = "test-fixtures";
 /// * If directory creation fails
 pub fn create_test_dir(test_name: &str) -> PathBuf {
     let test_dir = Path::new(TEST_BASE_DIR).join(test_name);
-    fs::create_dir_all(&test_dir).expect(&format!(
-        "Failed to create test directory: {}",
-        test_dir.display()
-    ));
+    fs::create_dir_all(&test_dir)
+        .unwrap_or_else(|_| panic!("Failed to create test directory: {}", test_dir.display()));
     test_dir
 }
 
@@ -43,10 +41,8 @@ pub fn create_test_dir_with_justfile(test_name: &str) -> (PathBuf, PathBuf) {
 pub fn cleanup_test_dir(test_name: &str) {
     let test_dir = Path::new(TEST_BASE_DIR).join(test_name);
     if test_dir.exists() {
-        fs::remove_dir_all(&test_dir).expect(&format!(
-            "Failed to remove test directory: {}",
-            test_dir.display()
-        ));
+        fs::remove_dir_all(&test_dir)
+            .unwrap_or_else(|_| panic!("Failed to remove test directory: {}", test_dir.display()));
     }
 }
 
@@ -73,9 +69,7 @@ pub fn get_test_dir_path(test_name: &str) -> PathBuf {
 #[allow(dead_code)]
 pub fn create_test_justfile(test_name: &str, content: &str) -> PathBuf {
     let (_, justfile_path) = create_test_dir_with_justfile(test_name);
-    fs::write(&justfile_path, content).expect(&format!(
-        "Failed to write justfile: {}",
-        justfile_path.display()
-    ));
+    fs::write(&justfile_path, content)
+        .unwrap_or_else(|_| panic!("Failed to write justfile: {}", justfile_path.display()));
     justfile_path
 }
