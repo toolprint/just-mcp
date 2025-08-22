@@ -1,7 +1,6 @@
 # just-mcp
 
 [![CI](https://github.com/onegrep/just-mcp/actions/workflows/dagger-ci.yml/badge.svg)](https://github.com/onegrep/just-mcp/actions/workflows/dagger-ci.yml)
-[![Release](https://github.com/onegrep/just-mcp/actions/workflows/dagger-release.yml/badge.svg)](https://github.com/onegrep/just-mcp/actions/workflows/dagger-release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-1.88+-blue.svg)](https://www.rust-lang.org)
 [![MCP](https://img.shields.io/badge/MCP-1.0-green.svg)](https://modelcontextprotocol.io/)
@@ -13,18 +12,11 @@
 
 This enables AI assistants to understand, explore, and execute a project's common development workflows similar to how a human would.
 
-## Table of Contents
+## Quick Start
 
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Usage](#usage)
-- [Vector Search](#vector-search-optional) *(Optional Feature)*
-- [Configuration](#configuration)
-- [Architecture](#architecture)
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
+1. Install [just](https://github.com/casey/just?tab=readme-ov-file#packages) - `cargo install just`
+2. Install [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) - `cargo install cargo-binstall`
+3. `cargo binstall --git https://github.com/toolprint/just-mcp just-mcp`
 
 ## Features
 
@@ -80,25 +72,33 @@ This enables AI assistants to understand, explore, and execute a project's commo
 - `just` command runner ([installation guide](https://just.systems/man/en/chapter_4.html))
 - Rust 1.88.0 (only needed for building from source)
 
-### Pre-built Binaries (Recommended)
+### Using cargo-binstall (Recommended)
 
-Download the latest release for your platform:
+The fastest way to install just-mcp is using [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), which downloads pre-built binaries from GitHub releases.
+
+```bash
+# Install cargo-binstall if you haven't already
+cargo install cargo-binstall
+
+# Install just-mcp from GitHub releases (not on crates.io)
+cargo binstall --git https://github.com/toolprint/just-mcp just-mcp
+```
+
+This will automatically download the appropriate pre-built binary for your platform from the GitHub releases.
+
+### Pre-built Binaries
+
+Download the latest release from [GitHub Releases](https://github.com/toolprint/just-mcp/releases/latest):
 
 ```bash
 # Linux x86_64
-curl -L https://github.com/onegrep/just-mcp/releases/latest/download/just-mcp-v0.1.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
+curl -L https://github.com/toolprint/just-mcp/releases/latest/download/just-mcp-v0.2.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
 
 # Linux ARM64
-curl -L https://github.com/onegrep/just-mcp/releases/latest/download/just-mcp-v0.1.0-aarch64-unknown-linux-gnu.tar.gz | tar xz
+curl -L https://github.com/toolprint/just-mcp/releases/latest/download/just-mcp-v0.2.0-aarch64-unknown-linux-gnu.tar.gz | tar xz
 
-# macOS x86_64 (Intel)
-curl -L https://github.com/onegrep/just-mcp/releases/latest/download/just-mcp-v0.1.0-x86_64-apple-darwin.tar.gz | tar xz
-
-# macOS ARM64 (Apple Silicon)
-curl -L https://github.com/onegrep/just-mcp/releases/latest/download/just-mcp-v0.1.0-aarch64-apple-darwin.tar.gz | tar xz
-
-# macOS Universal Binary (works on both Intel and Apple Silicon)
-curl -L https://github.com/onegrep/just-mcp/releases/latest/download/just-mcp-v0.1.0-universal2-apple-darwin.tar.gz | tar xz
+# macOS (Universal Binary - works on both Intel and Apple Silicon)
+curl -L https://github.com/toolprint/just-mcp/releases/latest/download/just-mcp-v0.2.0-universal2-apple-darwin.tar.gz | tar xz
 ```
 
 Then move the binary to your PATH:
@@ -112,7 +112,7 @@ mv just-mcp ~/.local/bin/
 ### From Source
 
 ```bash
-git clone https://github.com/onegrep/just-mcp.git
+git clone https://github.com/toolprint/just-mcp.git
 cd just-mcp
 cargo install --path .
 
