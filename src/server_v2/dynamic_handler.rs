@@ -8,10 +8,14 @@
 
 use crate::error::Result;
 use crate::registry::ToolRegistry;
-use crate::types::ToolDefinition;
+use crate::types::{ToolDefinition, ExecutionRequest, ExecutionResult};
+use crate::executor::TaskExecutor;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+#[cfg(feature = "ultrafast-framework")]
+use ultrafast_mcp_sequential_thinking::SequentialThinkingServer;
 
 /// Dynamic tool management wrapper for the ultrafast-mcp framework
 ///
@@ -25,6 +29,9 @@ pub struct DynamicToolHandler {
     /// Reference to the existing tool registry for compatibility
     registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
     
+    /// Task executor for tool execution
+    executor: Arc<tokio::sync::Mutex<TaskExecutor>>,
+    
     /// Handle to the framework for notifying of tool changes
     #[cfg(feature = "ultrafast-framework")]
     framework_handle: Option<FrameworkHandle>,
@@ -33,16 +40,29 @@ pub struct DynamicToolHandler {
 /// Handle to the ultrafast-mcp framework for tool updates
 #[cfg(feature = "ultrafast-framework")]
 pub struct FrameworkHandle {
-    // TODO: Add framework-specific handle type
-    // This will be defined when ultrafast-mcp is integrated
+    /// Reference to the sequential thinking server
+    sequential_server: Arc<SequentialThinkingServer>,
+}
+
+/// Framework-compatible tool representation
+#[cfg(feature = "ultrafast-framework")]
+#[derive(Debug, Clone)]
+pub struct FrameworkTool {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
 }
 
 impl DynamicToolHandler {
     /// Create a new dynamic tool handler
-    pub fn new(registry: Arc<tokio::sync::Mutex<ToolRegistry>>) -> Self {
+    pub fn new(
+        registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
+        executor: Arc<tokio::sync::Mutex<TaskExecutor>>,
+    ) -> Self {
         Self {
             tools: Arc::new(RwLock::new(HashMap::new())),
             registry,
+            executor,
             #[cfg(feature = "ultrafast-framework")]
             framework_handle: None,
         }
@@ -53,6 +73,29 @@ impl DynamicToolHandler {
     pub fn with_framework_handle(mut self, handle: FrameworkHandle) -> Self {
         self.framework_handle = Some(handle);
         self
+    }
+
+    /// Execute a tool using the existing TaskExecutor
+    pub async fn execute_tool(&self, tool_name: &str, parameters: serde_json::Value) -> Result<ExecutionResult> {
+        tracing::debug!("Executing tool: {} with parameters: {}", tool_name, parameters);
+
+        // Convert parameters to HashMap<String, serde_json::Value>
+        let params = if let serde_json::Value::Object(map) = parameters {
+            map.into_iter().collect()
+        } else {
+            HashMap::new()
+        };
+
+        // Create execution request
+        let request = ExecutionRequest {
+            tool_name: tool_name.to_string(),
+            parameters: params,
+            context: Default::default(),
+        };
+
+        // Execute using the existing TaskExecutor
+        let mut executor = self.executor.lock().await;
+        executor.execute(request).await
     }
 
     /// Update tools based on registry changes
@@ -102,10 +145,20 @@ impl DynamicToolHandler {
     async fn notify_framework_of_changes(&self) -> Result<()> {
         #[cfg(feature = "ultrafast-framework")]
         {
-            if let Some(_handle) = &self.framework_handle {
-                // TODO: Implement framework notification
-                // This will be completed in Task 176
-                tracing::debug!("Framework notification not yet implemented");
+            if let Some(handle) = &self.framework_handle {
+                tracing::debug!("Notifying framework of tool changes");
+                
+                // Convert our ToolDefinitions to framework-compatible tools
+                let tools = self.tools.read().await;
+                let framework_tools: Vec<_> = tools.values()
+                    .map(|tool| self.convert_to_framework_tool(tool))
+                    .collect::<Result<Vec<_>>>()?;
+                
+                // For now, we don't have a direct API to update tools dynamically in ultrafast-mcp
+                // The framework expects tools to be registered at server creation time
+                // This is a limitation we'll need to work around in Task 176
+                tracing::warn!("Dynamic tool updates not yet fully supported by framework");
+                tracing::debug!("Would register {} tools with framework", framework_tools.len());
             }
         }
 
@@ -115,6 +168,18 @@ impl DynamicToolHandler {
         }
 
         Ok(())
+    }
+
+    /// Convert our ToolDefinition to framework-compatible format
+    #[cfg(feature = "ultrafast-framework")]
+    fn convert_to_framework_tool(&self, tool: &ToolDefinition) -> Result<FrameworkTool> {
+        // TODO: Implement actual conversion when framework tool format is defined
+        // For now, create a placeholder that represents what we'd need
+        Ok(FrameworkTool {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            input_schema: tool.input_schema.clone(),
+        })
     }
 
     /// Get current tool definitions for framework registration
@@ -133,6 +198,21 @@ impl DynamicToolHandler {
     pub async fn has_tool(&self, name: &str) -> bool {
         let tools = self.tools.read().await;
         tools.contains_key(name)
+    }
+}
+
+#[cfg(feature = "ultrafast-framework")]
+impl FrameworkHandle {
+    /// Create a new framework handle
+    pub fn new(sequential_server: Arc<SequentialThinkingServer>) -> Self {
+        Self {
+            sequential_server,
+        }
+    }
+
+    /// Get the sequential thinking server reference
+    pub fn sequential_server(&self) -> &Arc<SequentialThinkingServer> {
+        &self.sequential_server
     }
 }
 
@@ -162,7 +242,8 @@ mod tests {
     #[tokio::test]
     async fn test_dynamic_handler_creation() {
         let registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
-        let handler = DynamicToolHandler::new(registry);
+        let executor = Arc::new(tokio::sync::Mutex::new(TaskExecutor::new()));
+        let handler = DynamicToolHandler::new(registry, executor);
 
         assert_eq!(handler.tool_count().await, 0);
         assert!(!handler.has_tool("test").await);
@@ -171,7 +252,8 @@ mod tests {
     #[tokio::test]
     async fn test_tool_sync_from_registry() {
         let registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
-        let handler = DynamicToolHandler::new(registry.clone());
+        let executor = Arc::new(tokio::sync::Mutex::new(TaskExecutor::new()));
+        let handler = DynamicToolHandler::new(registry.clone(), executor);
 
         // Add tool to registry
         let test_tool = create_test_tool("test_tool");
@@ -195,7 +277,8 @@ mod tests {
     #[tokio::test]
     async fn test_tool_diff_calculation() {
         let registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
-        let handler = DynamicToolHandler::new(registry.clone());
+        let executor = Arc::new(tokio::sync::Mutex::new(TaskExecutor::new()));
+        let handler = DynamicToolHandler::new(registry.clone(), executor);
 
         // Add initial tool
         let tool1 = create_test_tool("tool1");

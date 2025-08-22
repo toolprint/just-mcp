@@ -10,7 +10,10 @@
 //! - Seamless migration from custom implementation
 
 use crate::error::Result;
+use crate::registry::ToolRegistry;
+use crate::executor::TaskExecutor;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 pub mod dynamic_handler;
 pub mod prompts;
@@ -30,17 +33,28 @@ pub struct FrameworkServer {
     admin_enabled: bool,
     #[cfg(feature = "ultrafast-framework")]
     sequential_thinking_server: Option<SequentialThinkingServer>,
+    #[cfg(feature = "ultrafast-framework")]
+    dynamic_tool_handler: Option<Arc<dynamic_handler::DynamicToolHandler>>,
+    registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
+    executor: Arc<tokio::sync::Mutex<TaskExecutor>>,
 }
 
 impl FrameworkServer {
     /// Create a new framework server instance
     pub fn new() -> Self {
+        let registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
+        let executor = Arc::new(tokio::sync::Mutex::new(TaskExecutor::new()));
+        
         Self {
             watch_paths: vec![PathBuf::from(".")],
             watch_configs: vec![(PathBuf::from("."), None)],
             admin_enabled: false,
             #[cfg(feature = "ultrafast-framework")]
             sequential_thinking_server: None,
+            #[cfg(feature = "ultrafast-framework")]
+            dynamic_tool_handler: None,
+            registry,
+            executor,
         }
     }
 
@@ -72,9 +86,22 @@ impl FrameworkServer {
 
         // Create sequential thinking server with default configuration
         let sequential_server = SequentialThinkingServer::new();
+        let sequential_server_arc = Arc::new(sequential_server);
 
-        // Store the server
-        self.sequential_thinking_server = Some(sequential_server);
+        // Create dynamic tool handler
+        let dynamic_handler = dynamic_handler::DynamicToolHandler::new(
+            self.registry.clone(),
+            self.executor.clone(),
+        );
+
+        // Create framework handle and connect to dynamic handler
+        let framework_handle = dynamic_handler::FrameworkHandle::new(sequential_server_arc.clone());
+        let dynamic_handler = dynamic_handler.with_framework_handle(framework_handle);
+        let dynamic_handler_arc = Arc::new(dynamic_handler);
+
+        // Store references
+        self.sequential_thinking_server = Some((*sequential_server_arc).clone());
+        self.dynamic_tool_handler = Some(dynamic_handler_arc);
 
         tracing::info!("Framework server initialized successfully");
         Ok(())
@@ -126,6 +153,22 @@ impl FrameworkServer {
         }
 
         Ok(())
+    }
+
+    /// Get access to the tool registry
+    pub fn registry(&self) -> &Arc<tokio::sync::Mutex<ToolRegistry>> {
+        &self.registry
+    }
+
+    /// Get access to the task executor
+    pub fn executor(&self) -> &Arc<tokio::sync::Mutex<TaskExecutor>> {
+        &self.executor
+    }
+
+    /// Get access to the dynamic tool handler
+    #[cfg(feature = "ultrafast-framework")]
+    pub fn dynamic_tool_handler(&self) -> Option<&Arc<dynamic_handler::DynamicToolHandler>> {
+        self.dynamic_tool_handler.as_ref()
     }
 }
 
@@ -242,5 +285,55 @@ mod tests {
             // If we get here without panicking, the basic startup works
             assert!(true, "Framework server startup completed without errors");
         }
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "ultrafast-framework")]
+    async fn test_dynamic_tool_handler_integration() {
+        use crate::types::ToolDefinition;
+        use serde_json::json;
+        use std::time::SystemTime;
+        
+        let mut server = FrameworkServer::new();
+        
+        // Initialize the server
+        let result = server.initialize().await;
+        assert!(result.is_ok());
+        
+        // Verify dynamic tool handler was created
+        assert!(server.dynamic_tool_handler().is_some());
+        
+        let dynamic_handler = server.dynamic_tool_handler().unwrap();
+        
+        // Test adding tools to registry and syncing to dynamic handler
+        {
+            let mut registry = server.registry().lock().await;
+            let test_tool = ToolDefinition {
+                name: "test_build".to_string(),
+                description: "Build the project".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }),
+                dependencies: vec![],
+                source_hash: "test_hash".to_string(),
+                last_modified: SystemTime::now(),
+                internal_name: Some("test_build_/Users/test/justfile".to_string()),
+            };
+            registry.add_tool(test_tool).unwrap();
+        }
+        
+        // Sync tools from registry to dynamic handler
+        dynamic_handler.sync_tools_from_registry().await.unwrap();
+        
+        // Verify tool is now available in dynamic handler
+        assert_eq!(dynamic_handler.tool_count().await, 1);
+        assert!(dynamic_handler.has_tool("test_build").await);
+        
+        let tools = dynamic_handler.get_tool_definitions().await;
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name, "test_build");
+        assert_eq!(tools[0].description, "Build the project");
     }
 }
