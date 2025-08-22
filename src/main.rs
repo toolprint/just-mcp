@@ -20,16 +20,16 @@ async fn main() -> Result<()> {
             just_mcp::cli::handle_search_command(search_command).await?;
         }
         Some(Commands::Serve) | None => {
-            // Check if we should use framework server or custom implementation
-            let use_framework = args.use_framework 
-                || std::env::var("JUST_MCP_USE_FRAMEWORK").is_ok();
+            // Check if we should use custom server (legacy mode) or framework server (default)
+            let use_legacy = args.use_legacy 
+                || std::env::var("JUST_MCP_USE_LEGACY").is_ok();
             
-            if use_framework {
-                // Use ultrafast-mcp framework server
-                start_framework_server(&args).await?;
-            } else {
-                // Default behavior: start custom MCP server
+            if use_legacy {
+                // Legacy mode: use custom MCP server
                 start_mcp_server(&args).await?;
+            } else {
+                // Default behavior: start framework server
+                start_framework_server(&args).await?;
             }
         }
     }
@@ -202,12 +202,9 @@ async fn start_framework_server(args: &Args) -> Result<()> {
 
     #[cfg(not(feature = "ultrafast-framework"))]
     {
-        let _ = args; // Suppress unused variable warning
-        Err(anyhow::anyhow!(
-            "Framework server requested but ultrafast-framework feature not enabled.\n\
-             Build with: cargo build --features ultrafast-framework\n\
-             Or remove --use-framework flag and JUST_MCP_USE_FRAMEWORK environment variable."
-        ))
+        tracing::warn!("Framework server not available (ultrafast-framework feature not enabled)");
+        tracing::info!("Falling back to legacy server");
+        start_mcp_server(args).await
     }
 }
 

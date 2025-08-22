@@ -1,8 +1,15 @@
 use crate::error::Result;
-use crate::server::protocol::JsonRpcNotification;
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tracing::info;
+
+/// Simple JSON-RPC notification structure for legacy server compatibility
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct JsonRpcNotification {
+    pub jsonrpc: String,
+    pub method: String,
+    pub params: Value,
+}
 
 #[derive(Debug, Clone)]
 pub enum Notification {

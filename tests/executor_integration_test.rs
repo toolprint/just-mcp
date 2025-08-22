@@ -1,3 +1,9 @@
+// Legacy executor integration tests - custom handler removed
+// These tests are disabled as the custom MCP handler has been removed
+// in favor of the ultrafast-mcp framework.
+
+/* Original tests commented out - custom handler removed
+
 use just_mcp::executor::TaskExecutor;
 use just_mcp::registry::ToolRegistry;
 use just_mcp::server::handler::MessageHandler;
@@ -219,3 +225,4 @@ async fn test_executor_error_handling() {
     let result = executor.execute(request).await;
     assert!(result.is_err());
 }
+*/

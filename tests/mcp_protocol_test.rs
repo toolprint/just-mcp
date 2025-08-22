@@ -1,3 +1,9 @@
+// Legacy protocol tests - custom transport layer removed
+// These tests are disabled as the custom MCP transport layer has been removed
+// in favor of the ultrafast-mcp framework transport layer.
+
+/* Original tests commented out - custom transport layer removed
+
 use just_mcp::server::protocol::{JsonRpcRequest, JsonRpcResponse};
 use serde_json::json;
 
@@ -143,3 +149,4 @@ async fn test_unknown_method() {
     let error = response_obj.get("error").unwrap();
     assert_eq!(error.get("code").unwrap(), -32601);
 }
+*/
