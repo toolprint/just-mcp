@@ -31,18 +31,14 @@ use crate::vector_search::LocalEmbeddingProvider;
 Model Context Protocol server for justfile integration
 
 FEATURES:
-  - Framework server (default): Uses ultrafast-mcp framework for enhanced protocol compliance  
-  - Legacy server: Original full-featured implementation with justfile monitoring
-  
-SWITCHING MODES:
-  --use-legacy             Use legacy server instead of framework implementation
-  JUST_MCP_USE_LEGACY      Environment variable alternative to --use-legacy
+  - Framework server: Uses ultrafast-mcp framework for enhanced protocol compliance and MCP features
+  - Dynamic tool registration: Automatically updates available tools when justfiles change
+  - Resources and Prompts: Full MCP protocol support including /just:do-it slash command
   
 EXAMPLES:
   just-mcp                                    # Start framework server in current directory
   just-mcp --watch-dir ./project              # Monitor specific directory
-  just-mcp --use-legacy                       # Use legacy server
-  JUST_MCP_USE_LEGACY=1 just-mcp              # Use legacy server via env var
+  just-mcp --admin                            # Enable admin tools for diagnostics
   just-mcp search query --query 'build app'   # Search indexed justfiles
 ")]
 pub struct Args {
@@ -75,12 +71,6 @@ pub struct Args {
         help = "Parser to use: auto (AST→CLI fallback), ast (AST only), cli (CLI only), regex (deprecated)"
     )]
     pub parser: String,
-
-    #[arg(
-        long = "use-legacy",
-        help = "Use legacy server instead of framework implementation"
-    )]
-    pub use_legacy: bool,
 }
 
 /// Available CLI commands

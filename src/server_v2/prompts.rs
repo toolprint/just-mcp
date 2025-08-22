@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 #[cfg(feature = "ultrafast-framework")]
 use ultrafast_mcp::{
-    GetPromptRequest, GetPromptResponse, ListPromptsRequest, ListPromptsResponse, MCPError,
+    GetPromptRequest, GetPromptResponse, ListPromptsRequest, ListPromptsResponse,
     MCPResult, Prompt as FrameworkPrompt, PromptArgument as FrameworkPromptArgument, PromptHandler,
 };
 
