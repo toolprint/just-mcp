@@ -5,6 +5,7 @@
 //! and all existing natural language task execution capabilities.
 
 use crate::error::Result;
+use super::error_adapter::{ErrorAdapter, ToMcpError};
 use std::sync::Arc;
 
 #[cfg(feature = "ultrafast-framework")]
@@ -145,7 +146,12 @@ impl PromptHandler for FrameworkPromptProvider {
                     messages,
                 })
             }
-            None => Err(MCPError::invalid_request(format!("Prompt '{}' not found", request.name))),
+            None => {
+                let error = crate::error::Error::Other(format!("Prompt '{}' not found", request.name));
+                let error_info = ErrorAdapter::extract_error_info(&error);
+                tracing::warn!("Prompt not found: {} - {}", request.name, error_info.user_message);
+                Err(error.to_mcp_error())
+            },
         }
     }
 }

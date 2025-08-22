@@ -11,6 +11,7 @@ use crate::registry::ToolRegistry;
 use crate::types::{ToolDefinition, ExecutionRequest, ExecutionResult};
 use crate::executor::TaskExecutor;
 use crate::admin::AdminTools;
+use super::error_adapter::ErrorAdapter;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -134,7 +135,9 @@ impl DynamicToolHandler {
         let tool = tools.get(tool_name)
             .ok_or_else(|| {
                 tracing::warn!("Tool not found: {}", tool_name);
-                crate::error::Error::TaskNotFound(tool_name.to_string())
+                let error = crate::error::Error::TaskNotFound(tool_name.to_string());
+                tracing::debug!("Error info: {:?}", ErrorAdapter::extract_error_info(&error));
+                error
             })?;
         
         // Use internal_name if available, otherwise fall back to tool name
@@ -636,64 +639,136 @@ impl FrameworkToolHandler {
     ///
     /// This method is the bridge between the framework's MCP tool interface
     /// and our TaskExecutor, preserving all existing security and resource limits.
+    /// It uses the ErrorAdapter to ensure proper framework-compatible error handling.
     pub async fn handle_mcp_tool_call(&self, call: McpToolCall) -> Result<McpToolResult> {
         tracing::info!("Framework handling MCP tool call: {}", call.name);
         
         // Execute the tool using our existing execution pipeline
-        let execution_result = self.handle_tool_call(&call.name, call.arguments).await?;
-        
-        // Convert ExecutionResult to MCP-compatible format
-        let mcp_result = self.convert_execution_result_to_mcp(execution_result)?;
-        
-        tracing::debug!("MCP tool call completed successfully: {}", call.name);
-        Ok(mcp_result)
+        match self.handle_tool_call(&call.name, call.arguments).await {
+            Ok(execution_result) => {
+                // Check if execution actually succeeded
+                if execution_result.success {
+                    // Convert successful ExecutionResult to MCP-compatible format
+                    let mcp_result = self.convert_execution_result_to_mcp(execution_result)?;
+                    tracing::debug!("MCP tool call completed successfully: {}", call.name);
+                    Ok(mcp_result)
+                } else {
+                    // Execution returned failure - convert to enhanced MCP format with error details
+                    let mcp_result = self.convert_failed_execution_to_mcp(execution_result)?;
+                    tracing::warn!("MCP tool call completed with execution failure: {}", call.name);
+                    Ok(mcp_result)
+                }
+            }
+            Err(error) => {
+                // Extract error information for enhanced logging
+                let error_info = ErrorAdapter::extract_error_info(&error);
+                tracing::error!(
+                    "MCP tool call failed: {} - {} (category: {:?}, retryable: {})",
+                    call.name, 
+                    error_info.user_message,
+                    ErrorAdapter::categorize_error(&error),
+                    error_info.is_retryable
+                );
+                
+                // Log technical details for debugging
+                tracing::debug!("Technical error details: {}", error_info.technical_details);
+                
+                // Return error (framework will handle conversion)
+                Err(error)
+            }
+        }
     }
 
-    /// Convert ExecutionResult to MCP-compatible format
+    /// Convert failed ExecutionResult to MCP-compatible format with enhanced error handling
+    ///
+    /// This method specifically handles failed executions, providing rich error information
+    /// while maintaining MCP protocol compatibility.
+    pub fn convert_failed_execution_to_mcp(&self, result: crate::types::ExecutionResult) -> Result<McpToolResult> {
+        let mut content = Vec::new();
+        
+        // Add failure summary
+        content.push(McpContent::Text {
+            text: format!("Tool execution failed with exit code {:?}", result.exit_code),
+        });
+        
+        // Add stderr if available (most important for debugging)
+        if !result.stderr.is_empty() {
+            content.push(McpContent::Text {
+                text: format!("Error output: {}", result.stderr),
+            });
+        }
+        
+        // Add stdout if available (might contain useful context)
+        if !result.stdout.is_empty() {
+            content.push(McpContent::Text {
+                text: format!("Standard output: {}", result.stdout),
+            });
+        }
+        
+        // Add specific error message if available
+        if let Some(error) = &result.error {
+            content.push(McpContent::Text {
+                text: format!("Error details: {}", error),
+            });
+        }
+        
+        // Add troubleshooting hint based on error characteristics
+        let troubleshooting_hint = if result.exit_code == Some(127) {
+            "This usually indicates a command not found error. Check if the required tool is installed."
+        } else if result.exit_code == Some(1) {
+            "The command executed but failed. Check the error output above for specific details."
+        } else if result.exit_code == Some(2) {
+            "This often indicates incorrect command usage. Verify the task parameters and justfile syntax."
+        } else {
+            "Check the justfile syntax, task dependencies, and system environment."
+        };
+        
+        content.push(McpContent::Text {
+            text: format!("Troubleshooting: {}", troubleshooting_hint),
+        });
+        
+        Ok(McpToolResult {
+            content,
+            is_error: Some(true),
+        })
+    }
+
+    /// Convert successful ExecutionResult to MCP-compatible format
     ///
     /// This preserves all execution information while making it compatible
     /// with the MCP protocol that the framework expects.
     fn convert_execution_result_to_mcp(&self, result: crate::types::ExecutionResult) -> Result<McpToolResult> {
         let mut content = Vec::new();
         
-        // Add stdout as text content if available
+        // Add success indicator
+        content.push(McpContent::Text {
+            text: format!("✓ Tool execution completed successfully (exit code: {:?})", result.exit_code),
+        });
+        
+        // Add stdout as primary output if available
         if !result.stdout.is_empty() {
             content.push(McpContent::Text {
-                text: result.stdout,
+                text: format!("Output:\n{}", result.stdout),
             });
         }
         
-        // Add stderr as text content if available and execution failed
+        // For successful executions, stderr might contain warnings or non-fatal information
         if !result.stderr.is_empty() {
             content.push(McpContent::Text {
-                text: format!("STDERR: {}", result.stderr),
+                text: format!("Warnings/Info:\n{}", result.stderr),
             });
         }
         
-        // Add error information if available
-        if let Some(error) = &result.error {
+        // If we have no stdout but execution succeeded, provide helpful feedback
+        if result.stdout.is_empty() && result.stderr.is_empty() {
             content.push(McpContent::Text {
-                text: format!("ERROR: {}", error),
-            });
-        }
-        
-        // Add execution metadata
-        let metadata = format!(
-            "Execution completed: success={}, exit_code={:?}",
-            result.success, result.exit_code
-        );
-        content.push(McpContent::Text { text: metadata });
-        
-        // If no content was generated, add a default message
-        if content.is_empty() {
-            content.push(McpContent::Text {
-                text: "Tool execution completed with no output".to_string(),
+                text: "The task completed successfully with no output. This is normal for many tasks like cleanup, setup, or silent operations.".to_string(),
             });
         }
         
         Ok(McpToolResult {
             content,
-            is_error: Some(!result.success),
+            is_error: Some(false), // Explicitly mark as successful
         })
     }
 
@@ -1125,7 +1200,7 @@ mod tests {
                 error: Some("Tool execution failed".to_string()),
             };
             
-            let mcp_error_result = framework_handler.convert_execution_result_to_mcp(error_result).unwrap();
+            let mcp_error_result = framework_handler.convert_failed_execution_to_mcp(error_result).unwrap();
             assert_eq!(mcp_error_result.is_error, Some(true));
             
             // Check for stderr and error content
@@ -1142,7 +1217,8 @@ mod tests {
             let all_content = content_strings.join(" ");
             assert!(all_content.contains("Command failed"));
             assert!(all_content.contains("Tool execution failed"));
-            assert!(all_content.contains("success=false"));
+            // The new error format includes different content
+            assert!(all_content.contains("failed with exit code"));
         }
     }
 

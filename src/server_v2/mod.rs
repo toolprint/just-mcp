@@ -14,10 +14,12 @@ use crate::registry::ToolRegistry;
 use crate::executor::TaskExecutor;
 use crate::watcher::JustfileWatcher;
 use crate::admin::AdminTools;
+use self::error_adapter::{ErrorAdapter, ErrorCategory};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 pub mod dynamic_handler;
+pub mod error_adapter;
 pub mod prompts;
 pub mod resources;
 
@@ -179,8 +181,27 @@ impl FrameworkServer {
             &sequential_server_arc, 
             framework_tool_handler
         ).await {
-            tracing::warn!("Failed to register tool handler with framework: {}", e);
-            // Continue anyway - the server can still function without framework integration
+            let error_info = ErrorAdapter::extract_error_info(&e);
+            let error_category = ErrorAdapter::categorize_error(&e);
+            
+            tracing::warn!(
+                "Failed to register tool handler with framework: {} (category: {:?}, retryable: {})", 
+                error_info.user_message, error_category, error_info.is_retryable
+            );
+            tracing::debug!("Technical error details: {}", error_info.technical_details);
+            
+            // Continue anyway if it's not a critical error
+            match error_category {
+                ErrorCategory::SystemError | ErrorCategory::ExternalError => {
+                    tracing::info!("Continuing without full framework integration - tool execution will still work");
+                }
+                ErrorCategory::InternalError => {
+                    tracing::error!("Internal error during framework setup - this may affect functionality");
+                }
+                ErrorCategory::UserError => {
+                    tracing::warn!("Configuration error during framework setup - check settings");
+                }
+            }
         }
 
         tracing::info!("Framework server initialized successfully");
@@ -278,8 +299,42 @@ impl FrameworkServer {
                 // This handles the MCP protocol automatically
                 // Tool execution integration will be completed in subsequent iterations
                 tracing::info!("Starting framework server with stdio transport");
-                framework_server.run_stdio().await
-                    .map_err(|e| crate::error::Error::Other(format!("Framework server error: {}", e)))?;
+                
+                match framework_server.run_stdio().await {
+                    Ok(()) => {
+                        tracing::info!("Framework server completed successfully");
+                    }
+                    Err(e) => {
+                        // Create a framework error and analyze it
+                        let framework_error = crate::error::Error::Other(format!("Framework server error: {}", e));
+                        let error_info = ErrorAdapter::extract_error_info(&framework_error);
+                        let error_category = ErrorAdapter::categorize_error(&framework_error);
+                        
+                        tracing::error!(
+                            "Framework server failed: {} (category: {:?}, retryable: {})",
+                            error_info.user_message, error_category, error_info.is_retryable
+                        );
+                        tracing::debug!("Framework server technical error: {}", error_info.technical_details);
+                        
+                        // Provide actionable error information
+                        match error_category {
+                            ErrorCategory::SystemError => {
+                                tracing::error!("System-level error - check system resources, permissions, or environment");
+                            }
+                            ErrorCategory::ExternalError => {
+                                tracing::error!("External dependency error - check network connectivity or external tools");
+                            }
+                            ErrorCategory::UserError => {
+                                tracing::error!("Configuration error - check server settings and command-line arguments");
+                            }
+                            ErrorCategory::InternalError => {
+                                tracing::error!("Internal framework error - this may be a bug, please report with logs");
+                            }
+                        }
+                        
+                        return Err(framework_error);
+                    }
+                }
             } else {
                 return Err(crate::error::Error::Other(
                     "Framework server not initialized".into(),
