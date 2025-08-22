@@ -16,13 +16,9 @@ pub mod dynamic_handler;
 pub mod prompts;
 pub mod resources;
 
-// Note: Exact API structure will be determined during Task 173
-// For now, we'll use a placeholder approach until the actual API is explored
+// Import only what we need from ultrafast-mcp-sequential-thinking
 #[cfg(feature = "ultrafast-framework")]
-mod framework_placeholder {
-    // This will be replaced with actual types during Task 173
-    pub struct UltrafastMcpServer;
-}
+use ultrafast_mcp_sequential_thinking::SequentialThinkingServer;
 
 /// Framework-based MCP server implementation
 ///
@@ -33,7 +29,7 @@ pub struct FrameworkServer {
     watch_configs: Vec<(PathBuf, Option<String>)>,
     admin_enabled: bool,
     #[cfg(feature = "ultrafast-framework")]
-    framework_server: Option<framework_placeholder::UltrafastMcpServer>,
+    sequential_thinking_server: Option<SequentialThinkingServer>,
 }
 
 impl FrameworkServer {
@@ -44,7 +40,7 @@ impl FrameworkServer {
             watch_configs: vec![(PathBuf::from("."), None)],
             admin_enabled: false,
             #[cfg(feature = "ultrafast-framework")]
-            framework_server: None,
+            sequential_thinking_server: None,
         }
     }
 
@@ -74,10 +70,13 @@ impl FrameworkServer {
     pub async fn initialize(&mut self) -> Result<()> {
         tracing::info!("Initializing ultrafast-mcp framework server");
 
-        // TODO: Initialize framework server
-        // This will be implemented in Task 173
-        tracing::warn!("Framework initialization not yet implemented");
+        // Create sequential thinking server with default configuration
+        let sequential_server = SequentialThinkingServer::new();
 
+        // Store the server
+        self.sequential_thinking_server = Some(sequential_server);
+
+        tracing::info!("Framework server initialized successfully");
         Ok(())
     }
 
@@ -100,9 +99,31 @@ impl FrameworkServer {
 
         tracing::info!("Starting framework-based MCP server");
 
-        // TODO: Start framework server main loop
-        // This will be implemented in Task 173
-        tracing::warn!("Framework server loop not yet implemented");
+        #[cfg(feature = "ultrafast-framework")]
+        {
+            if let Some(sequential_server) = &self.sequential_thinking_server {
+                tracing::info!("Starting ultrafast-mcp sequential thinking server");
+                
+                // Create an MCP server from the sequential thinking server
+                let framework_server = sequential_server.clone().create_mcp_server();
+                
+                // Start the framework server with stdio transport
+                // This handles the MCP protocol automatically
+                framework_server.run_stdio().await
+                    .map_err(|e| crate::error::Error::Other(format!("Framework server error: {}", e)))?;
+            } else {
+                return Err(crate::error::Error::Other(
+                    "Framework server not initialized".into(),
+                ));
+            }
+        }
+
+        #[cfg(not(feature = "ultrafast-framework"))]
+        {
+            return Err(crate::error::Error::Other(
+                "ultrafast-framework feature not enabled".into(),
+            ));
+        }
 
         Ok(())
     }
@@ -150,9 +171,12 @@ mod tests {
         
         #[cfg(feature = "ultrafast-framework")]
         {
-            // Framework available - should not error but warn about incomplete implementation
+            // Framework available - should initialize successfully
             let result = server.initialize().await;
             assert!(result.is_ok());
+            
+            // Verify server was initialized
+            assert!(server.sequential_thinking_server.is_some());
         }
 
         #[cfg(not(feature = "ultrafast-framework"))]
@@ -160,6 +184,27 @@ mod tests {
             // Framework not available - should error
             let result = server.initialize().await;
             assert!(result.is_err());
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "ultrafast-framework")]
+    async fn test_framework_server_basic_functionality() {
+        let mut server = FrameworkServer::new();
+        
+        // Initialize the server
+        let result = server.initialize().await;
+        assert!(result.is_ok());
+        
+        // Test basic server capabilities
+        if let Some(sequential_server) = &server.sequential_thinking_server {
+            // Test server info
+            let info = sequential_server.info();
+            assert!(info.name.contains("sequential-thinking"));
+            
+            // Test capabilities
+            let capabilities = sequential_server.capabilities();
+            assert!(capabilities.tools.is_some());
         }
     }
 }
