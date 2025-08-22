@@ -114,6 +114,9 @@ zigbuild-release version="v0.1.0":
     docker run --rm -v $(pwd):/io -w /io ghcr.io/rust-cross/cargo-zigbuild:latest \
         bash -c '
             set -euo pipefail
+            # Enable assertions for C code (required by tree-sitter-just)
+            export CFLAGS="-UNDEBUG"
+            export CXXFLAGS="-UNDEBUG"
             echo "📦 Adding Rust targets..." && \
             rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin && \
             echo "🔨 Building Linux x86_64..." && \
@@ -146,7 +149,7 @@ zigbuild-test target="x86_64-apple-darwin":
     
     echo "🧪 Testing cargo-zigbuild for {{target}}..."
     docker run --rm -v $(pwd):/io -w /io ghcr.io/rust-cross/cargo-zigbuild:latest \
-        bash -c "set -euo pipefail && rustup target add {{target}} && cargo zigbuild --release --target {{target}}"
+        bash -c "set -euo pipefail && export CFLAGS='-UNDEBUG' && export CXXFLAGS='-UNDEBUG' && rustup target add {{target}} && cargo zigbuild --release --target {{target}}"
     
     just _success "Build successful! Binary at: target/{{target}}/release/just-mcp"
 
@@ -163,7 +166,7 @@ zigbuild-target target version="v0.1.0":
     
     echo "🔨 Building {{target}} release using cargo-zigbuild..."
     docker run --rm -v $(pwd):/io -w /io ghcr.io/rust-cross/cargo-zigbuild:latest \
-        bash -c "set -euo pipefail && rustup target add {{target}} && cargo zigbuild --release --target {{target}}"
+        bash -c "set -euo pipefail && export CFLAGS='-UNDEBUG' && export CXXFLAGS='-UNDEBUG' && rustup target add {{target}} && cargo zigbuild --release --target {{target}}"
     
     echo "📦 Packaging {{target}} release artifact..."
     just _package_single_target "{{target}}" "{{version}}"

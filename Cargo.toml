@@ -61,7 +61,7 @@ ndarray = { version = "0.16", optional = true }
 sqlite-vss = { version = "0.1", optional = true, features = ["download-libs"] }
 
 # HTTP client for embedding providers
-reqwest = { version = "0.12", features = ["json"], optional = true }
+reqwest = { version = "0.12", features = ["json", "native-tls-vendored"], optional = true }
 
 # Local embedding model support with Candle
 candle-core = { version = "0.8", optional = true }
@@ -80,6 +80,10 @@ streaming-iterator = { version = "0.1", optional = true }
 
 # ultrafast-mcp integration for framework-based MCP server
 ultrafast-mcp = { version = "202506018.1.0", features = ["core"], optional = true }
+
+# OpenSSL with vendored feature for cross-compilation support
+[target.'cfg(all())'.dependencies]
+openssl = { version = "0.10", features = ["vendored"] }
 
 [dev-dependencies]
 mockall = "0.13"

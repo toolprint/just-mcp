@@ -68,6 +68,9 @@ jobs:
       - name: Build with zigbuild
         run: |
           source $HOME/.cargo/env
+          # Enable assertions for C code (required by tree-sitter-just)
+          export CFLAGS="-UNDEBUG"
+          export CXXFLAGS="-UNDEBUG"
           cargo zigbuild --release --target ${{ matrix.target }}
 
       - name: Prepare artifacts
