@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 use tracing;
 
 #[cfg(feature = "ultrafast-framework")]
-use ultrafast_mcp_sequential_thinking::SequentialThinkingServer;
+use ultrafast_mcp::{ToolHandler, CallToolRequest, CallToolResult};
 
 /// Dynamic tool management wrapper for the ultrafast-mcp framework
 ///
@@ -46,8 +46,7 @@ pub struct DynamicToolHandler {
 /// Handle to the ultrafast-mcp framework for tool updates
 #[cfg(feature = "ultrafast-framework")]
 pub struct FrameworkHandle {
-    /// Reference to the sequential thinking server
-    sequential_server: Arc<SequentialThinkingServer>,
+    // Simplified framework handle without sequential thinking server dependency
 }
 
 /// Framework-compatible tool representation
@@ -948,6 +947,66 @@ impl FrameworkHandle {
     pub fn is_valid(&self) -> bool {
         // Basic validity check - in a real implementation this might check connection status
         true
+    }
+}
+
+/// Implementation of ultrafast-mcp ToolHandler trait for DynamicToolHandler
+#[cfg(feature = "ultrafast-framework")]
+#[async_trait::async_trait]
+impl ToolHandler for DynamicToolHandler {
+    async fn list_tools(&self) -> Result<Vec<ultrafast_mcp::Tool>, ultrafast_mcp::McpError> {
+        tracing::debug!("ToolHandler::list_tools called");
+        
+        let tools = self.tools.read().await;
+        let framework_tools: Vec<ultrafast_mcp::Tool> = tools
+            .values()
+            .map(|tool| ultrafast_mcp::Tool {
+                name: tool.name.clone(),
+                description: Some(tool.description.clone()),
+                input_schema: tool.input_schema.clone(),
+            })
+            .collect();
+        
+        tracing::debug!("ToolHandler returning {} tools", framework_tools.len());
+        Ok(framework_tools)
+    }
+    
+    async fn call_tool(
+        &self,
+        request: ultrafast_mcp::CallToolRequest,
+    ) -> Result<ultrafast_mcp::CallToolResult, ultrafast_mcp::McpError> {
+        tracing::info!("ToolHandler::call_tool: {}", request.name);
+        
+        match self.execute_tool(&request.name, request.arguments.unwrap_or_default()).await {
+            Ok(execution_result) => {
+                if execution_result.success {
+                    Ok(ultrafast_mcp::CallToolResult {
+                        content: vec![ultrafast_mcp::types::TextContent {
+                            type_: "text".to_string(),
+                            text: execution_result.stdout,
+                        }],
+                        is_error: Some(false),
+                    })
+                } else {
+                    Ok(ultrafast_mcp::CallToolResult {
+                        content: vec![ultrafast_mcp::types::TextContent {
+                            type_: "text".to_string(),
+                            text: format!(
+                                "Tool execution failed:\nstdout: {}\nstderr: {}\nexit_code: {:?}",
+                                execution_result.stdout,
+                                execution_result.stderr,
+                                execution_result.exit_code
+                            ),
+                        }],
+                        is_error: Some(true),
+                    })
+                }
+            }
+            Err(e) => {
+                tracing::error!("Tool execution error: {}", e);
+                Err(ultrafast_mcp::McpError::InternalError(e.to_string()))
+            }
+        }
     }
 }
 
