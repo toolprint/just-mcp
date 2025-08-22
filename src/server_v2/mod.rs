@@ -38,6 +38,8 @@ pub struct FrameworkServer {
     dynamic_tool_handler: Option<Arc<dynamic_handler::DynamicToolHandler>>,
     #[cfg(feature = "ultrafast-framework")]
     resource_provider: Option<Arc<resources::FrameworkResourceProvider>>,
+    #[cfg(feature = "ultrafast-framework")]
+    prompt_provider: Option<Arc<prompts::FrameworkPromptProvider>>,
     registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
     executor: Arc<tokio::sync::Mutex<TaskExecutor>>,
     watcher: Option<Arc<JustfileWatcher>>,
@@ -59,6 +61,8 @@ impl FrameworkServer {
             dynamic_tool_handler: None,
             #[cfg(feature = "ultrafast-framework")]
             resource_provider: None,
+            #[cfg(feature = "ultrafast-framework")]
+            prompt_provider: None,
             registry,
             executor,
             watcher: None,
@@ -127,10 +131,18 @@ impl FrameworkServer {
         ).await?;
         let resource_provider_arc = Arc::new(resource_provider);
         
+        // Initialize prompt provider with search adapter
+        let prompt_provider = prompts::create_framework_prompt_provider(
+            self.registry.clone(),
+            None, // Will use mock search adapter for now
+        ).await?;
+        let prompt_provider_arc = Arc::new(prompt_provider);
+        
         // Store references
         self.sequential_thinking_server = Some((*sequential_server_arc).clone());
         self.dynamic_tool_handler = Some(dynamic_handler_arc.clone());
         self.resource_provider = Some(resource_provider_arc.clone());
+        self.prompt_provider = Some(prompt_provider_arc.clone());
         
         // Register our tool handler with the framework
         // This is the key integration that enables tool execution through the framework
@@ -189,6 +201,24 @@ impl FrameworkServer {
                     // Update server capabilities to include resources
                     // Note: We may need to create a new server instance with updated capabilities
                     // For now, the framework will handle capability reporting automatically
+                }
+                
+                // Add prompt provider if available (including /just:do-it)
+                if let Some(prompt_provider) = &self.prompt_provider {
+                    tracing::info!("Registering prompt provider with framework server");
+                    framework_server = framework_server.with_prompt_handler(prompt_provider.clone());
+                    
+                    // Log available prompts
+                    let prompts = prompt_provider.list_prompts().await?;
+                    tracing::info!("Framework server has {} prompts available", prompts.len());
+                    for prompt in prompts.iter() {
+                        tracing::debug!("Available prompt: {}", prompt);
+                    }
+                    
+                    // Verify /just:do-it is available
+                    if prompts.iter().any(|p| p.contains("do-it")) {
+                        tracing::info!("✓ /just:do-it slash command is available through framework");
+                    }
                 }
                 
                 // TODO: Integrate our dynamic tool handler with the framework server
@@ -252,6 +282,12 @@ impl FrameworkServer {
     #[cfg(feature = "ultrafast-framework")]
     pub fn dynamic_tool_handler(&self) -> Option<&Arc<dynamic_handler::DynamicToolHandler>> {
         self.dynamic_tool_handler.as_ref()
+    }
+    
+    /// Get access to the prompt provider
+    #[cfg(feature = "ultrafast-framework")]
+    pub fn prompt_provider(&self) -> Option<&Arc<prompts::FrameworkPromptProvider>> {
+        self.prompt_provider.as_ref()
     }
 
     /// Register our tool handler with the framework

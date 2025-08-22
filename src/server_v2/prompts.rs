@@ -7,28 +7,16 @@
 use crate::error::Result;
 use std::sync::Arc;
 
-// Note: Exact API structure will be determined during Task 173
-// Placeholder types for framework prompts until actual API is confirmed
 #[cfg(feature = "ultrafast-framework")]
-mod framework_types {
-    pub struct Prompt {
-        pub name: String,
-        pub description: String,
-        pub template: String,
-        pub arguments: serde_json::Value,
-    }
+use ultrafast_mcp::{
+    PromptHandler, 
+    ListPromptsRequest, ListPromptsResponse, GetPromptRequest, GetPromptResponse,
+    Prompt as FrameworkPrompt, PromptArgument as FrameworkPromptArgument,
+    MCPResult, MCPError
+};
 
-    pub trait PromptProvider {
-        type Error;
-        async fn get_prompt(&self, name: &str) -> std::result::Result<Prompt, Self::Error>;
-        async fn list_prompts(&self) -> std::result::Result<Vec<String>, Self::Error>;
-        async fn execute_prompt(
-            &self,
-            name: &str,
-            arguments: serde_json::Value,
-        ) -> std::result::Result<String, Self::Error>;
-    }
-}
+#[cfg(feature = "ultrafast-framework")]
+use ultrafast_mcp::types::{PromptMessage as FrameworkPromptMessage, PromptContent, PromptRole};
 
 /// Framework-compatible prompt provider wrapper
 ///
@@ -85,32 +73,80 @@ impl FrameworkPromptProvider {
 }
 
 #[cfg(feature = "ultrafast-framework")]
-impl framework_types::PromptProvider for FrameworkPromptProvider {
-    type Error = crate::error::Error;
-
-    async fn get_prompt(&self, name: &str) -> std::result::Result<framework_types::Prompt, Self::Error> {
-        match self.prompt_registry.get_prompt_definition(name).await {
-            Some(prompt_def) => Ok(framework_types::Prompt {
-                name: prompt_def.name.clone(),
-                description: prompt_def.description.clone(),
-                template: prompt_def.description.clone(), // Use description as template placeholder
-                arguments: serde_json::Value::Object(serde_json::Map::new()),
-            }),
-            None => Err(crate::error::Error::Other(format!("Prompt '{}' not found", name))),
+#[async_trait::async_trait]
+impl PromptHandler for FrameworkPromptProvider {
+    /// List available prompts including /just:do-it
+    async fn list_prompts(&self, _request: ListPromptsRequest) -> MCPResult<ListPromptsResponse> {
+        let prompt_definitions = self.prompt_registry.list_prompts().await;
+        
+        let prompts = prompt_definitions.into_iter().map(|def| {
+            // Convert our prompt arguments to framework format
+            let arguments = def.arguments.into_iter().map(|arg| {
+                FrameworkPromptArgument {
+                    name: arg.name,
+                    description: Some(arg.description),
+                    required: Some(arg.required),
+                }
+            }).collect();
+            
+            FrameworkPrompt {
+                name: def.name,
+                description: Some(def.description),
+                arguments: Some(arguments),
+            }
+        }).collect();
+        
+        Ok(ListPromptsResponse { 
+            prompts,
+            next_cursor: None, // No pagination for now
+        })
+    }
+    
+    /// Get a specific prompt definition
+    async fn get_prompt(&self, request: GetPromptRequest) -> MCPResult<GetPromptResponse> {
+        match self.prompt_registry.get_prompt_definition(&request.name).await {
+            Some(def) => {
+                // Convert prompt arguments to framework format
+                let _arguments: Vec<FrameworkPromptArgument> = def.arguments.into_iter().map(|arg| {
+                    FrameworkPromptArgument {
+                        name: arg.name,
+                        description: Some(arg.description),
+                        required: Some(arg.required),
+                    }
+                }).collect();
+                
+                // Create system message for the prompt
+                let system_message = format!(
+                    "You are an AI assistant helping with justfile task execution. The user wants to: {}",
+                    def.description
+                );
+                
+                // Create user message template
+                let user_message_template = "{{request}}";
+                
+                // Create proper PromptMessage objects
+                let messages = vec![
+                    FrameworkPromptMessage {
+                        role: PromptRole::System,
+                        content: PromptContent::Text {
+                            text: system_message,
+                        },
+                    },
+                    FrameworkPromptMessage {
+                        role: PromptRole::User,
+                        content: PromptContent::Text {
+                            text: user_message_template.to_string(),
+                        },
+                    }
+                ];
+                
+                Ok(GetPromptResponse {
+                    description: Some(def.description),
+                    messages,
+                })
+            }
+            None => Err(MCPError::invalid_request(format!("Prompt '{}' not found", request.name))),
         }
-    }
-
-    async fn list_prompts(&self) -> std::result::Result<Vec<String>, Self::Error> {
-        let definitions = self.prompt_registry.list_prompts().await;
-        Ok(definitions.into_iter().map(|def| def.name).collect())
-    }
-
-    async fn execute_prompt(
-        &self,
-        name: &str,
-        arguments: serde_json::Value,
-    ) -> std::result::Result<String, Self::Error> {
-        self.execute_prompt(name, arguments).await
     }
 }
 
@@ -123,17 +159,38 @@ pub async fn create_framework_prompt_provider(
     search_adapter: Option<Arc<crate::prompts::search_adapter::SearchAdapter>>,
 ) -> Result<FrameworkPromptProvider> {
     // Create prompt registry with default config
-    let prompt_registry = crate::prompts::PromptRegistry::new(crate::prompts::traits::PromptConfig::default());
+    let prompt_config = crate::prompts::traits::PromptConfig::default();
+    
+    // If no search adapter provided, create a mock one for now
+    let adapter = search_adapter.unwrap_or_else(|| {
+        let mock_provider = crate::prompts::search_adapter::MockSearchProvider::new();
+        Arc::new(crate::prompts::search_adapter::SearchAdapter::with_provider(
+            Arc::new(mock_provider),
+            prompt_config.clone(),
+        ))
+    });
+    
+    // Build prompt registry with the do-it prompt automatically registered
+    let prompt_registry = Arc::new(
+        crate::prompts::registry::PromptRegistryBuilder::new()
+            .with_config(prompt_config)
+            .with_search_adapter(adapter)
+            .with_defaults(true) // KEY: Automatically register do-it prompt
+            .build()
+            .await?,
+    );
 
-    // Register the do-it prompt if we have a search adapter
-    if let Some(adapter) = search_adapter {
-        prompt_registry.register_do_it_prompt(adapter).await?;
+    let prompt_count = prompt_registry.list_prompts().await.len();
+    tracing::info!("Framework prompt provider created with {} prompts", prompt_count);
+    
+    // Verify /just:do-it is available
+    if prompt_registry.has_prompt("do-it").await {
+        tracing::info!("/just:do-it slash command successfully registered and available");
+    } else {
+        tracing::warn!("/just:do-it slash command not found - this is unexpected!");
     }
 
-    tracing::info!("Framework prompt provider created with {} prompts", 
-                   prompt_registry.list_prompts().await.len());
-
-    Ok(FrameworkPromptProvider::new(Arc::new(prompt_registry)))
+    Ok(FrameworkPromptProvider::new(prompt_registry))
 }
 
 /// Ensure /just:do-it slash command is available
@@ -179,13 +236,23 @@ mod tests {
         let prompts = provider.list_prompts().await.unwrap();
         // Should have at least the default prompts including /just:do-it
         assert!(!prompts.is_empty());
+        assert_eq!(prompts.len(), 1); // Should have do-it prompt
+        assert!(prompts.contains(&"do-it".to_string()));
     }
 
     #[tokio::test]
     async fn test_do_it_prompt_availability() {
         let tool_registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
         
-        let provider = create_framework_prompt_provider(tool_registry, None)
+        // Create mock search adapter
+        let mock_provider = crate::prompts::search_adapter::MockSearchProvider::new();
+        let config = crate::prompts::traits::PromptConfig::default();
+        let search_adapter = Arc::new(crate::prompts::search_adapter::SearchAdapter::with_provider(
+            Arc::new(mock_provider),
+            config,
+        ));
+        
+        let provider = create_framework_prompt_provider(tool_registry, Some(search_adapter))
             .await
             .unwrap();
 
