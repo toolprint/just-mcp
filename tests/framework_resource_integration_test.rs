@@ -5,7 +5,7 @@
 #[cfg(feature = "ultrafast-framework")]
 mod framework_tests {
     use just_mcp::registry::ToolRegistry;
-    use just_mcp::server_v2::resources::create_framework_resource_provider;
+    use just_mcp::server::resources::create_framework_resource_provider;
     use std::sync::Arc;
     use tokio::sync::Mutex;
 

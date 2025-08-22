@@ -89,7 +89,7 @@ async fn start_framework_server(args: &Args) -> Result<()> {
         }
 
         // Create and configure the framework server
-        let mut framework_server = just_mcp::server_v2::FrameworkServer::new()
+        let mut framework_server = just_mcp::server::FrameworkServer::new()
             .with_watch_paths(watch_paths)
             .with_watch_names(absolute_configs)
             .with_admin_enabled(args.admin);

@@ -5,7 +5,7 @@
 
 #[cfg(all(test, feature = "ultrafast-framework"))]
 mod tests {
-    use just_mcp::server_v2::FrameworkServer;
+    use just_mcp::server::FrameworkServer;
 
     #[tokio::test]
     async fn test_framework_server_prompt_integration() {
