@@ -108,10 +108,6 @@ all = ["stdio", "http", "vector-search", "local-embeddings", "ast-parser", "ultr
 name = "just-mcp"
 path = "src/main.rs"
 
-[[bin]]
-name = "perf-analysis"
-path = "src/bin/perf_analysis.rs"
-required-features = ["ast-parser"]
 
 [[bench]]
 name = "ast_parser_bench"
@@ -121,8 +117,6 @@ harness = false
 [package.metadata.binstall]
 # Default package URL template for GitHub releases
 pkg-url = "{ repo }/releases/download/v{ version }/just-mcp-v{ version }-{ target }.tar.gz"
-# Binary directory within the archive
-bin-dir = "{ bin }{ binary-ext }"
 # Package format
 pkg-fmt = "tgz"
 
