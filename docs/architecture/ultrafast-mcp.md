@@ -13,6 +13,7 @@ After implementation is complete, we will update our version of this package to 
 The current just-mcp implementation includes approximately 2,000 lines of custom MCP protocol code:
 
 **Core Components:**
+
 - `src/server/mod.rs` - Custom JSON-RPC 2.0 server (400+ lines)
 - `src/server/handler.rs` - Request/response handling (600+ lines)
 - `src/registry/mod.rs` - Tool registration system (300+ lines)
@@ -20,6 +21,7 @@ The current just-mcp implementation includes approximately 2,000 lines of custom
 - `src/executor/mod.rs` - Tool execution (200+ lines)
 
 **Key Characteristics:**
+
 - Manual JSON-RPC 2.0 implementation over stdio
 - Static tool registration with manual updates
 - Limited to Tools only (no Resources or Prompts)
@@ -27,6 +29,7 @@ The current just-mcp implementation includes approximately 2,000 lines of custom
 - Tight coupling between protocol and business logic
 
 **Maintenance Challenges:**
+
 - Protocol compliance requires constant updates
 - Error-prone manual JSON handling
 - Limited extensibility for new MCP features
@@ -48,6 +51,7 @@ main.rs → Server → Registry ← Watcher
 ### Framework Overview
 
 The ultrafast-mcp framework provides:
+
 - **Robust MCP Protocol Implementation** - Fully compliant with latest specs
 - **Multiple Transport Support** - stdio, HTTP, WebSocket ready
 - **Resource Management** - Built-in support for Resources and Prompts
@@ -74,6 +78,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
 ### Phase 1: Foundation Setup (Days 1-2)
 
 **Objectives:**
+
 - Establish ultrafast-mcp framework integration
 - Create new server module structure
 - Implement basic initialization patterns
@@ -81,12 +86,14 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
 **Implementation Steps:**
 
 1. **Dependency Integration**
+
    ```toml
    [dependencies]
    ultrafast-mcp = "v202506018.1.0"  # Latest version
    ```
 
 2. **New Server Module Structure**
+
    ```
    src/
    ├── server/
@@ -102,6 +109,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
    - Maintain backward compatibility for initial testing
 
 **Deliverables:**
+
 - Working framework-based server
 - Basic tool registration functional
 - Integration tests passing
@@ -109,6 +117,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
 ### Phase 2: Dynamic Tool System (Days 3-4)
 
 **Objectives:**
+
 - Create dynamic tool management system
 - Implement tool registration/deregistration
 - Migrate existing tool execution logic
@@ -116,6 +125,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
 **Key Components:**
 
 1. **DynamicToolHandler**
+
    ```rust
    pub struct DynamicToolHandler {
        tools: Arc<RwLock<HashMap<String, ToolDefinition>>>,
@@ -135,6 +145,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
    - Keep custom tool naming convention
 
 **Deliverables:**
+
 - Dynamic tool registration working
 - Tool execution maintaining current behavior
 - File watcher integration functional
@@ -142,6 +153,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
 ### Phase 3: Core Migration (Days 5-6)
 
 **Objectives:**
+
 - Replace all custom MCP protocol handling
 - Integrate file watcher with framework patterns
 - Update parser system integration
@@ -164,15 +176,15 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
    - Preserve AST parser capabilities
 
 **Deliverables:**
+
 - Complete protocol migration
 - All existing functionality preserved
 - Performance benchmarks met
 
-
-
 ### Phase 4: Cleanup & Testing (Days 7-8)
 
 **Objectives:**
+
 - Remove old MCP implementation
 - Add comprehensive tests for new architecture
 - Update documentation and examples
@@ -198,6 +210,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
    - Update API examples
 
 **Deliverables:**
+
 - Clean codebase with old implementation removed
 - Comprehensive test coverage
 - Updated documentation
@@ -205,6 +218,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
 ### Future Work
 
 **Objectives:**
+
 - Implement Resources support for justfile metadata
 - Add Prompts support for AI-driven task execution
 - Enhance tool definitions with framework capabilities
@@ -212,6 +226,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
 **Capabilities:**
 
 1. **Resources Implementation**
+
    ```rust
    // Justfile metadata as resources
    - just://metadata/{path}     # Justfile information
@@ -220,6 +235,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
    ```
 
 2. **Prompts Support**
+
    ```rust
    // AI-driven task execution prompts
    - "Execute justfile task with natural language"
@@ -234,6 +250,7 @@ IMPORTANT: The FOCUS of this plan is to remove our custom MCP transport implemen
    - Framework-provided capabilities
 
 **Deliverables:**
+
 - Resources providing justfile metadata
 - Prompts enabling AI-driven execution
 - Enhanced tool capabilities
@@ -261,11 +278,13 @@ impl DynamicToolHandler {
 ### Resource Providers (Future work)
 
 **Justfile Metadata Resources:**
+
 - `just://metadata/{path}` - Parsed justfile information
 - `just://tasks/{path}` - Available tasks with descriptions
 - `just://documentation/{path}` - Generated help documentation
 
 **Implementation Pattern:**
+
 ```rust
 #[async_trait]
 impl ResourceProvider for JustfileResourceProvider {

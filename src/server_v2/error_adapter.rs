@@ -2,9 +2,9 @@
 //!
 //! This module provides error handling alignment between just-mcp's internal
 //! error types and the ultrafast-mcp framework's expected error formats.
-//! 
+//!
 //! The key requirement is to preserve the quality and meaningfulness of error
-//! messages while ensuring compatibility with MCP protocol standards and 
+//! messages while ensuring compatibility with MCP protocol standards and
 //! framework expectations.
 
 use crate::error::{Error as JustMcpError, Result as JustMcpResult};
@@ -238,7 +238,11 @@ impl ErrorAdapter {
                 is_user_error: true,
                 is_retryable: false,
             },
-            JustMcpError::Execution { command, exit_code, stderr } => ErrorInfo {
+            JustMcpError::Execution {
+                command,
+                exit_code,
+                stderr,
+            } => ErrorInfo {
                 error_type: "execution_failure".to_string(),
                 user_message: if stderr.is_empty() {
                     format!("Command failed with exit code {:?}", exit_code)
@@ -252,9 +256,16 @@ impl ErrorAdapter {
                 is_user_error: false, // Could be system or justfile issue
                 is_retryable: true,
             },
-            JustMcpError::Parse { message, line, column } => ErrorInfo {
+            JustMcpError::Parse {
+                message,
+                line,
+                column,
+            } => ErrorInfo {
                 error_type: "parse_error".to_string(),
-                user_message: format!("Syntax error at line {}, column {}: {}", line, column, message),
+                user_message: format!(
+                    "Syntax error at line {}, column {}: {}",
+                    line, column, message
+                ),
                 technical_details: format!("Parse error: {}:{}:{}", line, column, message),
                 is_user_error: true, // User needs to fix justfile
                 is_retryable: false,
@@ -289,10 +300,10 @@ impl ErrorAdapter {
     /// or indicate system/configuration issues.
     pub fn is_user_correctable(error: &JustMcpError) -> bool {
         match error {
-            JustMcpError::TaskNotFound(_) |
-            JustMcpError::InvalidParameter(_) |
-            JustMcpError::Parse { .. } |
-            JustMcpError::InvalidToolName(_) => true,
+            JustMcpError::TaskNotFound(_)
+            | JustMcpError::InvalidParameter(_)
+            | JustMcpError::Parse { .. }
+            | JustMcpError::InvalidToolName(_) => true,
             _ => false,
         }
     }
@@ -302,11 +313,11 @@ impl ErrorAdapter {
     /// This helps clients determine retry strategies.
     pub fn is_retryable(error: &JustMcpError) -> bool {
         match error {
-            JustMcpError::Timeout(_) |
-            JustMcpError::Io(_) |
-            JustMcpError::Watch(_) |
-            JustMcpError::Execution { .. } |
-            JustMcpError::ToolNotFound(_) => true,
+            JustMcpError::Timeout(_)
+            | JustMcpError::Io(_)
+            | JustMcpError::Watch(_)
+            | JustMcpError::Execution { .. }
+            | JustMcpError::ToolNotFound(_) => true,
             _ => false,
         }
     }
@@ -344,25 +355,25 @@ impl ErrorAdapter {
     /// Categorize errors for monitoring and alerting
     pub fn categorize_error(error: &JustMcpError) -> ErrorCategory {
         match error {
-            JustMcpError::TaskNotFound(_) |
-            JustMcpError::InvalidParameter(_) |
-            JustMcpError::Parse { .. } |
-            JustMcpError::InvalidToolName(_) => ErrorCategory::UserError,
+            JustMcpError::TaskNotFound(_)
+            | JustMcpError::InvalidParameter(_)
+            | JustMcpError::Parse { .. }
+            | JustMcpError::InvalidToolName(_) => ErrorCategory::UserError,
 
-            JustMcpError::Io(_) |
-            JustMcpError::Watch(_) |
-            JustMcpError::Timeout(_) => ErrorCategory::SystemError,
+            JustMcpError::Io(_) | JustMcpError::Watch(_) | JustMcpError::Timeout(_) => {
+                ErrorCategory::SystemError
+            }
 
-            JustMcpError::Registry(_) |
-            JustMcpError::Server(_) |
-            JustMcpError::Internal(_) |
-            JustMcpError::Json(_) |
-            JustMcpError::Regex(_) => ErrorCategory::InternalError,
+            JustMcpError::Registry(_)
+            | JustMcpError::Server(_)
+            | JustMcpError::Internal(_)
+            | JustMcpError::Json(_)
+            | JustMcpError::Regex(_) => ErrorCategory::InternalError,
 
-            JustMcpError::Execution { .. } |
-            JustMcpError::JustCommand(_) |
-            JustMcpError::ToolNotFound(_) |
-            JustMcpError::Other(_) => ErrorCategory::ExternalError,
+            JustMcpError::Execution { .. }
+            | JustMcpError::JustCommand(_)
+            | JustMcpError::ToolNotFound(_)
+            | JustMcpError::Other(_) => ErrorCategory::ExternalError,
         }
     }
 }
@@ -387,7 +398,9 @@ impl ToMcpError for JustMcpError {
 impl<T> ToMcpError for JustMcpResult<T> {
     fn to_mcp_error(self) -> MCPError {
         match self {
-            Ok(_) => MCPError::internal_error("Attempted to convert successful result to error".to_string()),
+            Ok(_) => MCPError::internal_error(
+                "Attempted to convert successful result to error".to_string(),
+            ),
             Err(e) => ErrorAdapter::to_mcp_error(e),
         }
     }
@@ -415,7 +428,7 @@ mod tests {
     fn test_error_info_extraction() {
         let error = JustMcpError::TaskNotFound("build".to_string());
         let info = ErrorAdapter::extract_error_info(&error);
-        
+
         assert_eq!(info.error_type, "task_not_found");
         assert!(info.user_message.contains("build"));
         assert!(info.is_user_error);
@@ -428,14 +441,15 @@ mod tests {
             ErrorAdapter::categorize_error(&JustMcpError::TaskNotFound("test".to_string())),
             ErrorCategory::UserError
         );
-        
+
         assert_eq!(
             ErrorAdapter::categorize_error(&JustMcpError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound, "test"
+                std::io::ErrorKind::NotFound,
+                "test"
             ))),
             ErrorCategory::SystemError
         );
-        
+
         assert_eq!(
             ErrorAdapter::categorize_error(&JustMcpError::Internal("test".to_string())),
             ErrorCategory::InternalError
@@ -444,17 +458,25 @@ mod tests {
 
     #[test]
     fn test_user_correctable_detection() {
-        assert!(ErrorAdapter::is_user_correctable(&JustMcpError::TaskNotFound("build".to_string())));
-        assert!(ErrorAdapter::is_user_correctable(&JustMcpError::InvalidParameter("bad param".to_string())));
-        assert!(!ErrorAdapter::is_user_correctable(&JustMcpError::Internal("internal".to_string())));
+        assert!(ErrorAdapter::is_user_correctable(
+            &JustMcpError::TaskNotFound("build".to_string())
+        ));
+        assert!(ErrorAdapter::is_user_correctable(
+            &JustMcpError::InvalidParameter("bad param".to_string())
+        ));
+        assert!(!ErrorAdapter::is_user_correctable(&JustMcpError::Internal(
+            "internal".to_string()
+        )));
     }
 
     #[test]
     fn test_retryable_detection() {
-        assert!(ErrorAdapter::is_retryable(&JustMcpError::Timeout("timeout".to_string())));
-        assert!(ErrorAdapter::is_retryable(&JustMcpError::Io(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied, "permission"
-        ))));
+        assert!(ErrorAdapter::is_retryable(&JustMcpError::Timeout(
+            "timeout".to_string()
+        )));
+        assert!(ErrorAdapter::is_retryable(&JustMcpError::Io(
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission")
+        )));
         assert!(!ErrorAdapter::is_retryable(&JustMcpError::Parse {
             message: "syntax error".to_string(),
             line: 1,
@@ -467,7 +489,7 @@ mod tests {
     fn test_mcp_error_conversion() {
         let error = JustMcpError::TaskNotFound("build".to_string());
         let mcp_error = ErrorAdapter::to_mcp_error(error);
-        
+
         // Verify the error message contains helpful information
         let error_msg = format!("{}", mcp_error);
         assert!(error_msg.contains("build"));
@@ -485,7 +507,7 @@ mod tests {
             stderr: String::new(),
             error: None,
         };
-        
+
         let mcp_result = ErrorAdapter::execution_result_to_mcp_result(success_result.clone());
         assert!(mcp_result.is_ok());
         assert_eq!(mcp_result.unwrap().success, true);
@@ -498,10 +520,10 @@ mod tests {
             stderr: "Command failed".to_string(),
             error: Some("Task execution failed".to_string()),
         };
-        
+
         let mcp_error_result = ErrorAdapter::execution_result_to_mcp_result(error_result);
         assert!(mcp_error_result.is_err());
-        
+
         let error_msg = format!("{}", mcp_error_result.unwrap_err());
         assert!(error_msg.contains("execution failed"));
         assert!(error_msg.contains("Command failed"));
@@ -526,14 +548,15 @@ mod tests {
 
         for error in errors {
             let info = ErrorAdapter::extract_error_info(&error);
-            
+
             // Verify all fields are populated
             assert!(!info.error_type.is_empty());
             assert!(!info.user_message.is_empty());
             assert!(!info.technical_details.is_empty());
-            
+
             // Verify user message is more friendly than technical details
-            assert!(info.user_message.len() <= info.technical_details.len() * 2); // Rough heuristic
+            assert!(info.user_message.len() <= info.technical_details.len() * 2);
+            // Rough heuristic
         }
     }
 
@@ -575,7 +598,7 @@ mod tests {
         for (error, _expected_type, expected_content) in test_cases {
             let mcp_error = ErrorAdapter::to_mcp_error(error);
             let error_msg = format!("{}", mcp_error);
-            
+
             // Verify error message contains expected content
             for content in expected_content {
                 assert!(
@@ -585,7 +608,7 @@ mod tests {
                     content
                 );
             }
-            
+
             // Verify error message is helpful and actionable
             assert!(
                 error_msg.len() > 20,
@@ -609,17 +632,26 @@ mod tests {
         ];
 
         for error in user_errors {
-            assert_eq!(ErrorAdapter::categorize_error(&error), ErrorCategory::UserError);
+            assert_eq!(
+                ErrorAdapter::categorize_error(&error),
+                ErrorCategory::UserError
+            );
             assert!(ErrorAdapter::is_user_correctable(&error));
         }
 
         let system_errors = vec![
-            JustMcpError::Io(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied")),
+            JustMcpError::Io(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "permission denied",
+            )),
             JustMcpError::Timeout("operation timed out".to_string()),
         ];
 
         for error in system_errors {
-            assert_eq!(ErrorAdapter::categorize_error(&error), ErrorCategory::SystemError);
+            assert_eq!(
+                ErrorAdapter::categorize_error(&error),
+                ErrorCategory::SystemError
+            );
             assert!(!ErrorAdapter::is_user_correctable(&error));
             assert!(ErrorAdapter::is_retryable(&error));
         }
@@ -635,14 +667,16 @@ mod tests {
         };
 
         let error_info = ErrorAdapter::extract_error_info(&original_error);
-        
+
         // Verify all important information is preserved
         assert!(error_info.technical_details.contains("important-task"));
         assert!(error_info.technical_details.contains("--flag value"));
         assert!(error_info.technical_details.contains("127"));
         assert!(error_info.technical_details.contains("command not found"));
-        
+
         // Verify user message is more digestible but still informative
-        assert!(error_info.user_message.contains("failed") || error_info.user_message.contains("error"));
+        assert!(
+            error_info.user_message.contains("failed") || error_info.user_message.contains("error")
+        );
     }
 }

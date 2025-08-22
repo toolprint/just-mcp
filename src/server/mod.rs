@@ -228,7 +228,6 @@ impl Server {
 
         Ok(())
     }
-
 }
 
 #[cfg(test)]

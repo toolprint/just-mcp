@@ -6,12 +6,12 @@
 //! The key challenge is that ultrafast-mcp assumes static tool registration,
 //! but just-mcp needs dynamic updates when justfiles change.
 
-use crate::error::Result;
-use crate::registry::ToolRegistry;
-use crate::types::{ToolDefinition, ExecutionRequest, ExecutionResult};
-use crate::executor::TaskExecutor;
-use crate::admin::AdminTools;
 use super::error_adapter::ErrorAdapter;
+use crate::admin::AdminTools;
+use crate::error::Result;
+use crate::executor::TaskExecutor;
+use crate::registry::ToolRegistry;
+use crate::types::{ExecutionRequest, ExecutionResult, ToolDefinition};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -28,16 +28,16 @@ use ultrafast_mcp_sequential_thinking::SequentialThinkingServer;
 pub struct DynamicToolHandler {
     /// Internal tool state synchronized with ToolRegistry
     tools: Arc<RwLock<HashMap<String, ToolDefinition>>>,
-    
+
     /// Reference to the existing tool registry for compatibility
     registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
-    
+
     /// Task executor for tool execution
     executor: Arc<tokio::sync::Mutex<TaskExecutor>>,
-    
+
     /// Admin tools for admin command execution
     admin_tools: Option<Arc<AdminTools>>,
-    
+
     /// Handle to the framework for notifying of tool changes
     #[cfg(feature = "ultrafast-framework")]
     framework_handle: Option<FrameworkHandle>,
@@ -101,13 +101,13 @@ impl DynamicToolHandler {
         self.framework_handle = Some(handle);
         self
     }
-    
+
     /// Set admin tools for admin command execution
     pub fn with_admin_tools(mut self, admin_tools: Arc<AdminTools>) -> Self {
         self.admin_tools = Some(admin_tools);
         self
     }
-    
+
     /// Check if admin tools are available
     pub fn has_admin_tools(&self) -> bool {
         self.admin_tools.is_some()
@@ -118,36 +118,37 @@ impl DynamicToolHandler {
     /// This method is the core bridge between framework tool calls and our
     /// execution systems, preserving all existing security validation, resource
     /// limits, and execution patterns. Admin tools are handled specially.
-    pub async fn execute_tool(&self, tool_name: &str, parameters: serde_json::Value) -> Result<ExecutionResult> {
+    pub async fn execute_tool(
+        &self,
+        tool_name: &str,
+        parameters: serde_json::Value,
+    ) -> Result<ExecutionResult> {
         tracing::info!(
-            "DynamicToolHandler executing tool: {} with parameters: {}", 
-            tool_name, 
+            "DynamicToolHandler executing tool: {} with parameters: {}",
+            tool_name,
             serde_json::to_string(&parameters).unwrap_or_else(|_| "<unparseable>".to_string())
         );
-        
+
         // Check if this is an admin tool
         if tool_name.starts_with("_admin_") {
             return self.execute_admin_tool(tool_name, parameters).await;
         }
-        
+
         // Get the tool definition to find the internal name
         let tools = self.tools.read().await;
-        let tool = tools.get(tool_name)
-            .ok_or_else(|| {
-                tracing::warn!("Tool not found: {}", tool_name);
-                let error = crate::error::Error::TaskNotFound(tool_name.to_string());
-                tracing::debug!("Error info: {:?}", ErrorAdapter::extract_error_info(&error));
-                error
-            })?;
-        
+        let tool = tools.get(tool_name).ok_or_else(|| {
+            tracing::warn!("Tool not found: {}", tool_name);
+            let error = crate::error::Error::TaskNotFound(tool_name.to_string());
+            tracing::debug!("Error info: {:?}", ErrorAdapter::extract_error_info(&error));
+            error
+        })?;
+
         // Use internal_name if available, otherwise fall back to tool name
         // The internal_name contains the full path information that TaskExecutor needs
-        let execution_tool_name = tool.internal_name.as_ref()
-            .unwrap_or(&tool.name)
-            .clone();
-        
+        let execution_tool_name = tool.internal_name.as_ref().unwrap_or(&tool.name).clone();
+
         tracing::debug!(
-            "Using execution tool name: {} (from internal_name: {})", 
+            "Using execution tool name: {} (from internal_name: {})",
             execution_tool_name,
             tool.internal_name.is_some()
         );
@@ -173,17 +174,21 @@ impl DynamicToolHandler {
         // parameter sanitization, path validation, and error handling
         let mut executor = self.executor.lock().await;
         let result = executor.execute(request).await;
-        
+
         match &result {
             Ok(exec_result) => {
                 tracing::info!(
                     "Tool execution completed: {} - success: {}, exit_code: {:?}",
-                    tool_name, exec_result.success, exec_result.exit_code
+                    tool_name,
+                    exec_result.success,
+                    exec_result.exit_code
                 );
                 if !exec_result.success {
                     tracing::warn!(
                         "Tool execution failed: {} - stderr: {}, error: {:?}",
-                        tool_name, exec_result.stderr, exec_result.error
+                        tool_name,
+                        exec_result.stderr,
+                        exec_result.error
                     );
                 }
             }
@@ -191,7 +196,7 @@ impl DynamicToolHandler {
                 tracing::error!("Tool execution error: {} - {}", tool_name, e);
             }
         }
-        
+
         result
     }
 
@@ -199,12 +204,18 @@ impl DynamicToolHandler {
     ///
     /// This method handles special admin commands like sync, parser_doctor, etc.
     /// using the AdminTools class instead of the regular TaskExecutor.
-    async fn execute_admin_tool(&self, tool_name: &str, parameters: serde_json::Value) -> Result<ExecutionResult> {
+    async fn execute_admin_tool(
+        &self,
+        tool_name: &str,
+        parameters: serde_json::Value,
+    ) -> Result<ExecutionResult> {
         tracing::info!("Executing admin tool: {}", tool_name);
-        
-        let admin_tools = self.admin_tools.as_ref()
+
+        let admin_tools = self
+            .admin_tools
+            .as_ref()
             .ok_or_else(|| crate::error::Error::Other("Admin tools not available".to_string()))?;
-        
+
         // Convert parameters to appropriate types and execute based on tool name
         let result = match tool_name {
             "_admin_sync" => {
@@ -212,21 +223,26 @@ impl DynamicToolHandler {
                 ExecutionResult {
                     success: true,
                     exit_code: Some(0),
-                    stdout: format!("Sync completed: {} files scanned, {} recipes found in {} ms", 
-                                  sync_result.scanned_files, sync_result.found_recipes, sync_result.duration_ms),
-                    stderr: if sync_result.errors.is_empty() { 
-                        String::new() 
-                    } else { 
-                        sync_result.errors.join("; ") 
+                    stdout: format!(
+                        "Sync completed: {} files scanned, {} recipes found in {} ms",
+                        sync_result.scanned_files,
+                        sync_result.found_recipes,
+                        sync_result.duration_ms
+                    ),
+                    stderr: if sync_result.errors.is_empty() {
+                        String::new()
+                    } else {
+                        sync_result.errors.join("; ")
                     },
                     error: None,
                 }
             }
             "_admin_parser_doctor" => {
-                let verbose = parameters.get("verbose")
+                let verbose = parameters
+                    .get("verbose")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                
+
                 let report = admin_tools.parser_doctor(verbose).await?;
                 ExecutionResult {
                     success: true,
@@ -237,62 +253,85 @@ impl DynamicToolHandler {
                 }
             }
             "_admin_set_watch_directory" => {
-                let path = parameters.get("path")
+                let path = parameters
+                    .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| crate::error::Error::Other("Missing 'path' parameter".to_string()))?;
-                
+                    .ok_or_else(|| {
+                        crate::error::Error::Other("Missing 'path' parameter".to_string())
+                    })?;
+
                 let params = crate::admin::SetWatchDirectoryParams {
                     path: path.to_string(),
                 };
-                
+
                 let result = admin_tools.set_watch_directory(params).await?;
                 ExecutionResult {
                     success: true,
                     exit_code: Some(0),
-                    stdout: format!("Watch directory set to: {} (justfile detected: {})", 
-                                  result.absolute_path, result.justfile_detected),
+                    stdout: format!(
+                        "Watch directory set to: {} (justfile detected: {})",
+                        result.absolute_path, result.justfile_detected
+                    ),
                     stderr: String::new(),
                     error: None,
                 }
             }
             "_admin_create_recipe" => {
                 // Extract parameters for create_recipe
-                let recipe_name = parameters.get("recipe_name")
+                let recipe_name = parameters
+                    .get("recipe_name")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| crate::error::Error::Other("Missing 'recipe_name' parameter".to_string()))?;
-                
-                let recipe = parameters.get("recipe")
+                    .ok_or_else(|| {
+                        crate::error::Error::Other("Missing 'recipe_name' parameter".to_string())
+                    })?;
+
+                let recipe = parameters
+                    .get("recipe")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| crate::error::Error::Other("Missing 'recipe' parameter".to_string()))?;
-                
-                let watch_name = parameters.get("watch_name")
+                    .ok_or_else(|| {
+                        crate::error::Error::Other("Missing 'recipe' parameter".to_string())
+                    })?;
+
+                let watch_name = parameters
+                    .get("watch_name")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                
-                let description = parameters.get("description")
+
+                let description = parameters
+                    .get("description")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                
-                let parameters_array = parameters.get("parameters")
+
+                let parameters_array =
+                    parameters
+                        .get("parameters")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|item| {
+                                    if let Some(obj) = item.as_object() {
+                                        let name = obj.get("name")?.as_str()?.to_string();
+                                        let default = obj
+                                            .get("default")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string());
+                                        Some(crate::admin::RecipeParameter { name, default })
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect()
+                        });
+
+                let dependencies = parameters
+                    .get("dependencies")
                     .and_then(|v| v.as_array())
                     .map(|arr| {
-                        arr.iter().filter_map(|item| {
-                            if let Some(obj) = item.as_object() {
-                                let name = obj.get("name")?.as_str()?.to_string();
-                                let default = obj.get("default").and_then(|v| v.as_str()).map(|s| s.to_string());
-                                Some(crate::admin::RecipeParameter { name, default })
-                            } else {
-                                None
-                            }
-                        }).collect()
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
                     });
-                
-                let dependencies = parameters.get("dependencies")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
-                    });
-                
+
                 let params = crate::admin::CreateRecipeParams {
                     watch_name,
                     recipe_name: recipe_name.to_string(),
@@ -301,23 +340,32 @@ impl DynamicToolHandler {
                     parameters: parameters_array,
                     dependencies,
                 };
-                
+
                 let result = admin_tools.create_recipe(params).await?;
                 ExecutionResult {
                     success: true,
                     exit_code: Some(0),
-                    stdout: format!("Recipe '{}' created in {} (backup: {})", 
-                                  result.recipe_name, result.justfile_path, result.backup_path),
+                    stdout: format!(
+                        "Recipe '{}' created in {} (backup: {})",
+                        result.recipe_name, result.justfile_path, result.backup_path
+                    ),
                     stderr: String::new(),
                     error: None,
                 }
             }
             _ => {
-                return Err(crate::error::Error::Other(format!("Unknown admin tool: {}", tool_name)));
+                return Err(crate::error::Error::Other(format!(
+                    "Unknown admin tool: {}",
+                    tool_name
+                )));
             }
         };
-        
-        tracing::info!("Admin tool execution completed: {} - success: {}", tool_name, result.success);
+
+        tracing::info!(
+            "Admin tool execution completed: {} - success: {}",
+            tool_name,
+            result.success
+        );
         Ok(result)
     }
 
@@ -337,7 +385,7 @@ impl DynamicToolHandler {
 
         // Calculate detailed diff with current tools
         let diff = self.calculate_tool_diff(&registry_tools).await;
-        
+
         if diff.is_empty() {
             tracing::debug!("No tool changes detected, skipping framework update");
             return Ok(());
@@ -368,38 +416,46 @@ impl DynamicToolHandler {
     /// Calculate efficient tool diff between current and new tool sets
     async fn calculate_tool_diff(&self, new_tools: &[ToolDefinition]) -> ToolDiff {
         let tools = self.tools.read().await;
-        
-        let current_tools: HashMap<String, &ToolDefinition> = 
-            tools.iter().map(|(name, tool)| (name.clone(), tool)).collect();
-        let new_tools_map: HashMap<String, &ToolDefinition> = 
-            new_tools.iter().map(|tool| (tool.name.clone(), tool)).collect();
+
+        let current_tools: HashMap<String, &ToolDefinition> = tools
+            .iter()
+            .map(|(name, tool)| (name.clone(), tool))
+            .collect();
+        let new_tools_map: HashMap<String, &ToolDefinition> = new_tools
+            .iter()
+            .map(|tool| (tool.name.clone(), tool))
+            .collect();
 
         let current_names: std::collections::HashSet<_> = current_tools.keys().cloned().collect();
         let new_names: std::collections::HashSet<_> = new_tools_map.keys().cloned().collect();
 
         // Find added tools
-        let added: Vec<_> = new_names.difference(&current_names)
+        let added: Vec<_> = new_names
+            .difference(&current_names)
             .filter_map(|name| new_tools_map.get(name))
             .map(|&tool| tool.clone())
             .collect();
 
-        // Find removed tools  
-        let removed: Vec<_> = current_names.difference(&new_names)
+        // Find removed tools
+        let removed: Vec<_> = current_names
+            .difference(&new_names)
             .filter_map(|name| current_tools.get(name))
             .map(|&tool| tool.clone())
             .collect();
 
         // Find modified tools (same name, different content)
-        let modified: Vec<_> = current_names.intersection(&new_names)
+        let modified: Vec<_> = current_names
+            .intersection(&new_names)
             .filter_map(|name| {
                 let current = current_tools.get(name)?;
                 let new = new_tools_map.get(name)?;
-                
+
                 // Compare relevant fields for changes
-                if current.description != new.description ||
-                   current.input_schema != new.input_schema ||
-                   current.source_hash != new.source_hash ||
-                   current.dependencies != new.dependencies {
+                if current.description != new.description
+                    || current.input_schema != new.input_schema
+                    || current.source_hash != new.source_hash
+                    || current.dependencies != new.dependencies
+                {
                     Some((*new).clone())
                 } else {
                     None
@@ -407,7 +463,11 @@ impl DynamicToolHandler {
             })
             .collect();
 
-        ToolDiff { added, removed, modified }
+        ToolDiff {
+            added,
+            removed,
+            modified,
+        }
     }
 
     /// Notify the framework of tool changes with batching
@@ -419,29 +479,32 @@ impl DynamicToolHandler {
         {
             if let Some(handle) = &self.framework_handle {
                 tracing::debug!(
-                    "Notifying framework of {} tool changes", 
+                    "Notifying framework of {} tool changes",
                     diff.total_changes()
                 );
-                
+
                 // Convert tools to framework format
                 let tools = self.tools.read().await;
-                let framework_tools: Vec<_> = tools.values()
+                let framework_tools: Vec<_> = tools
+                    .values()
                     .map(|tool| self.convert_to_framework_tool(tool))
                     .collect::<Result<Vec<_>>>()?;
-                
+
                 // Attempt to update framework state
-                match self.update_framework_tools(handle, framework_tools, &diff).await {
+                match self
+                    .update_framework_tools(handle, framework_tools, &diff)
+                    .await
+                {
                     Ok(()) => {
-                        tracing::info!(
-                            "Successfully updated framework with {} tools", 
-                            tools.len()
-                        );
+                        tracing::info!("Successfully updated framework with {} tools", tools.len());
                     }
                     Err(e) => {
                         tracing::error!("Failed to update framework tools: {}", e);
                         // Don't propagate the error - log and continue
                         // This ensures file watching continues even if framework updates fail
-                        tracing::warn!("Tool updates will continue despite framework update failure");
+                        tracing::warn!(
+                            "Tool updates will continue despite framework update failure"
+                        );
                     }
                 }
             } else {
@@ -470,7 +533,7 @@ impl DynamicToolHandler {
         diff: &ToolDiff,
     ) -> Result<()> {
         tracing::debug!("Updating framework with {} tools", framework_tools.len());
-        
+
         // Strategy: Since the framework uses static registration, we can't directly
         // update tools at runtime. Instead, we maintain our tool state internally
         // and ensure that any framework tool handler delegates to our dynamic state.
@@ -479,25 +542,34 @@ impl DynamicToolHandler {
         // 1. Storing tools in our internal state (already done)
         // 2. Implementing a tool handler that reads from our state
         // 3. Notifying the framework of list changes (tools/list_changed notification)
-        
+
         // Send tools/list_changed notification if there are actual changes
         if diff.total_changes() > 0 {
             handle.notify_tool_list_changed().await?;
         }
-        
+
         tracing::debug!("Framework tool update completed successfully");
-        
+
         // Log detailed change information for debugging
         if !diff.added.is_empty() {
-            tracing::debug!("Added tools: {:?}", diff.added.iter().map(|t| &t.name).collect::<Vec<_>>());
+            tracing::debug!(
+                "Added tools: {:?}",
+                diff.added.iter().map(|t| &t.name).collect::<Vec<_>>()
+            );
         }
         if !diff.removed.is_empty() {
-            tracing::debug!("Removed tools: {:?}", diff.removed.iter().map(|t| &t.name).collect::<Vec<_>>());
+            tracing::debug!(
+                "Removed tools: {:?}",
+                diff.removed.iter().map(|t| &t.name).collect::<Vec<_>>()
+            );
         }
         if !diff.modified.is_empty() {
-            tracing::debug!("Modified tools: {:?}", diff.modified.iter().map(|t| &t.name).collect::<Vec<_>>());
+            tracing::debug!(
+                "Modified tools: {:?}",
+                diff.modified.iter().map(|t| &t.name).collect::<Vec<_>>()
+            );
         }
-        
+
         Ok(())
     }
 
@@ -511,7 +583,7 @@ impl DynamicToolHandler {
             removed: vec![],
             modified: all_tools,
         };
-        
+
         self.notify_framework_of_changes_batched(diff).await
     }
 
@@ -558,24 +630,25 @@ impl DynamicToolHandler {
 
     /// Register this dynamic handler with the framework server
     ///
-    /// This method integrates our dynamic tool system with the framework's 
+    /// This method integrates our dynamic tool system with the framework's
     /// tool handling mechanism, enabling tool execution through the framework.
     #[cfg(feature = "ultrafast-framework")]
     pub async fn register_with_framework(&self, framework_handle: &FrameworkHandle) -> Result<()> {
         tracing::info!("Registering dynamic tool handler with framework");
-        
+
         // Get current tools for registration
         let tools = self.get_tool_definitions().await;
         tracing::info!("Registering {} tools with framework", tools.len());
-        
+
         // Convert to framework format and register
-        let framework_tools: Vec<_> = tools.iter()
+        let framework_tools: Vec<_> = tools
+            .iter()
             .map(|tool| self.convert_to_framework_tool(tool))
             .collect::<Result<Vec<_>>>()?;
-        
+
         // Register tools with framework
         framework_handle.register_tools(framework_tools).await?;
-        
+
         tracing::info!("Dynamic tool handler successfully registered with framework");
         Ok(())
     }
@@ -630,9 +703,15 @@ pub struct McpResourceRef {
 #[cfg(feature = "ultrafast-framework")]
 impl FrameworkToolHandler {
     /// Handle a tool call by delegating to the dynamic handler
-    pub async fn handle_tool_call(&self, tool_name: &str, parameters: serde_json::Value) -> Result<crate::types::ExecutionResult> {
+    pub async fn handle_tool_call(
+        &self,
+        tool_name: &str,
+        parameters: serde_json::Value,
+    ) -> Result<crate::types::ExecutionResult> {
         tracing::debug!("Framework tool handler executing: {}", tool_name);
-        self.dynamic_handler.execute_tool(tool_name, parameters).await
+        self.dynamic_handler
+            .execute_tool(tool_name, parameters)
+            .await
     }
 
     /// Handle an MCP tool call and return MCP-compatible result
@@ -642,7 +721,7 @@ impl FrameworkToolHandler {
     /// It uses the ErrorAdapter to ensure proper framework-compatible error handling.
     pub async fn handle_mcp_tool_call(&self, call: McpToolCall) -> Result<McpToolResult> {
         tracing::info!("Framework handling MCP tool call: {}", call.name);
-        
+
         // Execute the tool using our existing execution pipeline
         match self.handle_tool_call(&call.name, call.arguments).await {
             Ok(execution_result) => {
@@ -655,7 +734,10 @@ impl FrameworkToolHandler {
                 } else {
                     // Execution returned failure - convert to enhanced MCP format with error details
                     let mcp_result = self.convert_failed_execution_to_mcp(execution_result)?;
-                    tracing::warn!("MCP tool call completed with execution failure: {}", call.name);
+                    tracing::warn!(
+                        "MCP tool call completed with execution failure: {}",
+                        call.name
+                    );
                     Ok(mcp_result)
                 }
             }
@@ -664,15 +746,15 @@ impl FrameworkToolHandler {
                 let error_info = ErrorAdapter::extract_error_info(&error);
                 tracing::error!(
                     "MCP tool call failed: {} - {} (category: {:?}, retryable: {})",
-                    call.name, 
+                    call.name,
                     error_info.user_message,
                     ErrorAdapter::categorize_error(&error),
                     error_info.is_retryable
                 );
-                
+
                 // Log technical details for debugging
                 tracing::debug!("Technical error details: {}", error_info.technical_details);
-                
+
                 // Return error (framework will handle conversion)
                 Err(error)
             }
@@ -683,35 +765,41 @@ impl FrameworkToolHandler {
     ///
     /// This method specifically handles failed executions, providing rich error information
     /// while maintaining MCP protocol compatibility.
-    pub fn convert_failed_execution_to_mcp(&self, result: crate::types::ExecutionResult) -> Result<McpToolResult> {
+    pub fn convert_failed_execution_to_mcp(
+        &self,
+        result: crate::types::ExecutionResult,
+    ) -> Result<McpToolResult> {
         let mut content = Vec::new();
-        
+
         // Add failure summary
         content.push(McpContent::Text {
-            text: format!("Tool execution failed with exit code {:?}", result.exit_code),
+            text: format!(
+                "Tool execution failed with exit code {:?}",
+                result.exit_code
+            ),
         });
-        
+
         // Add stderr if available (most important for debugging)
         if !result.stderr.is_empty() {
             content.push(McpContent::Text {
                 text: format!("Error output: {}", result.stderr),
             });
         }
-        
+
         // Add stdout if available (might contain useful context)
         if !result.stdout.is_empty() {
             content.push(McpContent::Text {
                 text: format!("Standard output: {}", result.stdout),
             });
         }
-        
+
         // Add specific error message if available
         if let Some(error) = &result.error {
             content.push(McpContent::Text {
                 text: format!("Error details: {}", error),
             });
         }
-        
+
         // Add troubleshooting hint based on error characteristics
         let troubleshooting_hint = if result.exit_code == Some(127) {
             "This usually indicates a command not found error. Check if the required tool is installed."
@@ -722,11 +810,11 @@ impl FrameworkToolHandler {
         } else {
             "Check the justfile syntax, task dependencies, and system environment."
         };
-        
+
         content.push(McpContent::Text {
             text: format!("Troubleshooting: {}", troubleshooting_hint),
         });
-        
+
         Ok(McpToolResult {
             content,
             is_error: Some(true),
@@ -737,35 +825,41 @@ impl FrameworkToolHandler {
     ///
     /// This preserves all execution information while making it compatible
     /// with the MCP protocol that the framework expects.
-    fn convert_execution_result_to_mcp(&self, result: crate::types::ExecutionResult) -> Result<McpToolResult> {
+    fn convert_execution_result_to_mcp(
+        &self,
+        result: crate::types::ExecutionResult,
+    ) -> Result<McpToolResult> {
         let mut content = Vec::new();
-        
+
         // Add success indicator
         content.push(McpContent::Text {
-            text: format!("✓ Tool execution completed successfully (exit code: {:?})", result.exit_code),
+            text: format!(
+                "✓ Tool execution completed successfully (exit code: {:?})",
+                result.exit_code
+            ),
         });
-        
+
         // Add stdout as primary output if available
         if !result.stdout.is_empty() {
             content.push(McpContent::Text {
                 text: format!("Output:\n{}", result.stdout),
             });
         }
-        
+
         // For successful executions, stderr might contain warnings or non-fatal information
         if !result.stderr.is_empty() {
             content.push(McpContent::Text {
                 text: format!("Warnings/Info:\n{}", result.stderr),
             });
         }
-        
+
         // If we have no stdout but execution succeeded, provide helpful feedback
         if result.stdout.is_empty() && result.stderr.is_empty() {
             content.push(McpContent::Text {
                 text: "The task completed successfully with no output. This is normal for many tasks like cleanup, setup, or silent operations.".to_string(),
             });
         }
-        
+
         Ok(McpToolResult {
             content,
             is_error: Some(false), // Explicitly mark as successful
@@ -798,9 +892,7 @@ impl FrameworkToolHandler {
 impl FrameworkHandle {
     /// Create a new framework handle
     pub fn new(sequential_server: Arc<SequentialThinkingServer>) -> Self {
-        Self {
-            sequential_server,
-        }
+        Self { sequential_server }
     }
 
     /// Get the sequential thinking server reference
@@ -814,11 +906,11 @@ impl FrameworkHandle {
     /// when the tool list has been updated dynamically.
     pub async fn notify_tool_list_changed(&self) -> Result<()> {
         tracing::debug!("Sending tools/list_changed notification to framework clients");
-        
+
         // In a real implementation, this would send the MCP tools/list_changed notification
         // For now, we log the intention since we're working with a framework limitation
         tracing::info!("Framework notified of tool list changes");
-        
+
         Ok(())
     }
 
@@ -828,25 +920,28 @@ impl FrameworkHandle {
     /// with the framework's tool system.
     pub async fn register_tools(&self, tools: Vec<FrameworkTool>) -> Result<()> {
         tracing::debug!("Registering {} tools with framework server", tools.len());
-        
+
         // TODO: Implement actual framework tool registration
         // For now, this is a placeholder that logs the registration attempt
         for tool in &tools {
             tracing::debug!("Would register tool: {} - {}", tool.name, tool.description);
         }
-        
+
         // In a complete implementation, this would:
         // 1. Update the framework's internal tool registry
         // 2. Notify connected clients of tool availability
         // 3. Set up tool execution routing
-        
+
         tracing::info!("Framework tool registration completed");
         Ok(())
     }
 
     /// Get framework server information
     pub fn server_info(&self) -> String {
-        format!("SequentialThinkingServer({:p})", self.sequential_server.as_ref())
+        format!(
+            "SequentialThinkingServer({:p})",
+            self.sequential_server.as_ref()
+        )
     }
 
     /// Check if the framework handle is valid
@@ -861,8 +956,8 @@ mod tests {
     use super::*;
     use crate::types::ToolDefinition;
     use serde_json::json;
-    use std::time::SystemTime;
     use std::sync::Arc;
+    use std::time::SystemTime;
 
     fn create_test_tool(name: &str) -> ToolDefinition {
         ToolDefinition {
@@ -1000,7 +1095,7 @@ mod tests {
         tool1.description = "Updated description".to_string();
         tool1.source_hash = "new_hash".to_string();
         let diff = handler.calculate_tool_diff(&[tool1.clone()]).await;
-        
+
         assert_eq!(diff.added.len(), 0);
         assert_eq!(diff.removed.len(), 0);
         assert_eq!(diff.modified.len(), 1);
@@ -1091,7 +1186,7 @@ mod tests {
             // This tests the execution path without requiring a real justfile
             internal_name: Some("echo_test_/tmp/nonexistent/justfile".to_string()),
         };
-        
+
         {
             let mut reg = registry.lock().await;
             reg.add_tool(test_tool).unwrap();
@@ -1112,44 +1207,54 @@ mod tests {
 
         // Execute the tool call
         let result = framework_handler.handle_mcp_tool_call(mcp_call).await;
-        
+
         // Debug the result
         match &result {
             Ok(mcp_result) => {
                 println!("Tool execution succeeded with MCP result: {:?}", mcp_result);
-                
+
                 // The execution should succeed in returning an MCP result
                 // even if the underlying tool execution failed
-                assert!(!mcp_result.content.is_empty(), "MCP result should have content");
-                
+                assert!(
+                    !mcp_result.content.is_empty(),
+                    "MCP result should have content"
+                );
+
                 // Should indicate failure due to missing justfile/directory
-                assert_eq!(mcp_result.is_error, Some(true), "Should indicate execution failure");
-                
+                assert_eq!(
+                    mcp_result.is_error,
+                    Some(true),
+                    "Should indicate execution failure"
+                );
+
                 // Check that error information is properly formatted
                 let has_error_content = mcp_result.content.iter().any(|content| {
                     if let McpContent::Text { text } = content {
-                        text.contains("ERROR") || text.contains("not found") || text.contains("No such file")
+                        text.contains("ERROR")
+                            || text.contains("not found")
+                            || text.contains("No such file")
                     } else {
                         false
                     }
                 });
                 assert!(has_error_content, "Expected error content in MCP result");
-                
+
                 println!("✓ Framework tool execution integration working correctly");
             }
             Err(e) => {
                 // If we get an error at this level, it means the MCP conversion failed
                 // This is still valid behavior, but different from what we expected
                 println!("Tool execution failed at MCP level: {}", e);
-                
+
                 // Verify it's a reasonable error (path validation, etc.)
                 assert!(
-                    e.to_string().contains("No such file") || 
-                    e.to_string().contains("not found") ||
-                    e.to_string().contains("Invalid parent path"),
-                    "Error should be related to missing files/paths: {}", e
+                    e.to_string().contains("No such file")
+                        || e.to_string().contains("not found")
+                        || e.to_string().contains("Invalid parent path"),
+                    "Error should be related to missing files/paths: {}",
+                    e
                 );
-                
+
                 println!("✓ Framework tool execution correctly validates paths and fails safely");
             }
         }
@@ -1158,16 +1263,16 @@ mod tests {
     #[tokio::test]
     async fn test_execution_result_to_mcp_conversion() {
         use crate::types::ExecutionResult;
-        
+
         let registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
         let executor = Arc::new(tokio::sync::Mutex::new(TaskExecutor::new()));
         let handler = DynamicToolHandler::new(registry, executor);
-        
+
         #[cfg(feature = "ultrafast-framework")]
         {
             let handler_arc = Arc::new(handler);
             let framework_handler = handler_arc.create_framework_tool_handler();
-            
+
             // Test successful execution result
             let success_result = ExecutionResult {
                 success: true,
@@ -1176,11 +1281,13 @@ mod tests {
                 stderr: String::new(),
                 error: None,
             };
-            
-            let mcp_result = framework_handler.convert_execution_result_to_mcp(success_result).unwrap();
+
+            let mcp_result = framework_handler
+                .convert_execution_result_to_mcp(success_result)
+                .unwrap();
             assert_eq!(mcp_result.is_error, Some(false));
             assert!(!mcp_result.content.is_empty());
-            
+
             // Check for stdout content
             let has_stdout = mcp_result.content.iter().any(|content| {
                 if let McpContent::Text { text } = content {
@@ -1190,7 +1297,7 @@ mod tests {
                 }
             });
             assert!(has_stdout);
-            
+
             // Test failed execution result
             let error_result = ExecutionResult {
                 success: false,
@@ -1199,12 +1306,16 @@ mod tests {
                 stderr: "Command failed".to_string(),
                 error: Some("Tool execution failed".to_string()),
             };
-            
-            let mcp_error_result = framework_handler.convert_failed_execution_to_mcp(error_result).unwrap();
+
+            let mcp_error_result = framework_handler
+                .convert_failed_execution_to_mcp(error_result)
+                .unwrap();
             assert_eq!(mcp_error_result.is_error, Some(true));
-            
+
             // Check for stderr and error content
-            let content_strings: Vec<String> = mcp_error_result.content.iter()
+            let content_strings: Vec<String> = mcp_error_result
+                .content
+                .iter()
                 .filter_map(|content| {
                     if let McpContent::Text { text } = content {
                         Some(text.clone())
@@ -1213,7 +1324,7 @@ mod tests {
                     }
                 })
                 .collect();
-            
+
             let all_content = content_strings.join(" ");
             assert!(all_content.contains("Command failed"));
             assert!(all_content.contains("Tool execution failed"));
@@ -1235,14 +1346,14 @@ mod tests {
         // Test tool that doesn't exist - should be caught by validation
         let result = handler.execute_tool("nonexistent_tool", json!({})).await;
         assert!(result.is_err());
-        
+
         match result {
             Err(crate::error::Error::TaskNotFound(name)) => {
                 assert_eq!(name, "nonexistent_tool");
             }
             _ => panic!("Expected TaskNotFound error"),
         }
-        
+
         // Add a tool and test execution (will fail due to missing justfile but tests path)
         let test_tool = ToolDefinition {
             name: "valid_tool".to_string(),
@@ -1257,41 +1368,42 @@ mod tests {
             last_modified: SystemTime::now(),
             internal_name: Some("valid_tool_/tmp/test/justfile".to_string()),
         };
-        
+
         {
             let mut reg = registry.lock().await;
             reg.add_tool(test_tool).unwrap();
         }
         handler.sync_tools_from_registry().await.unwrap();
-        
+
         // Now the tool exists, so execution should proceed (and fail at justfile parsing)
         let result = handler.execute_tool("valid_tool", json!({})).await;
-        
+
         // Debug the actual result
         match &result {
             Ok(_) => println!("Execution succeeded (with tool failure expected)"),
             Err(e) => println!("Execution failed: {}", e),
         }
-        
+
         // The execution might fail at the security validation level
         // If the path validation fails, that's still a valid security outcome
         if result.is_err() {
             // Check if it's a path validation error (expected)
             let error_message = format!("{}", result.as_ref().unwrap_err());
             assert!(
-                error_message.contains("path") || 
-                error_message.contains("directory") ||
-                error_message.contains("No such file") ||
-                error_message.contains("Invalid parent path"),
-                "Expected path-related error but got: {}", error_message
+                error_message.contains("path")
+                    || error_message.contains("directory")
+                    || error_message.contains("No such file")
+                    || error_message.contains("Invalid parent path"),
+                "Expected path-related error but got: {}",
+                error_message
             );
             println!("✓ Security validation correctly prevented execution of invalid path");
             return; // Test passes - security worked correctly
         }
-        
+
         // If execution succeeded, verify it failed at the tool execution level
         assert!(result.is_ok()); // Should return Ok with execution failure
-        
+
         let exec_result = result.unwrap();
         assert!(!exec_result.success); // Should fail due to missing justfile
         assert!(exec_result.error.is_some());
@@ -1327,7 +1439,7 @@ mod tests {
             last_modified: SystemTime::now(),
             internal_name: Some("build_task_/tmp/project/justfile".to_string()),
         };
-        
+
         {
             let mut reg = registry.lock().await;
             reg.add_tool(test_tool).unwrap();
@@ -1338,38 +1450,39 @@ mod tests {
         let parameters = json!({
             "target": "debug"
         });
-        
+
         let result = handler.execute_tool("build_task", parameters).await;
-        
+
         // Debug the actual result
         match &result {
             Ok(_) => println!("Build task execution succeeded (with tool failure expected)"),
             Err(e) => println!("Build task execution failed: {}", e),
         }
-        
+
         // Similar to the security test, the execution might fail at security validation
         if result.is_err() {
             // Check if it's a security/path validation error (expected)
             let error_message = format!("{}", result.as_ref().unwrap_err());
             assert!(
-                error_message.contains("path") || 
-                error_message.contains("directory") ||
-                error_message.contains("No such file") ||
-                error_message.contains("Invalid parent path"),
-                "Expected path-related error but got: {}", error_message
+                error_message.contains("path")
+                    || error_message.contains("directory")
+                    || error_message.contains("No such file")
+                    || error_message.contains("Invalid parent path"),
+                "Expected path-related error but got: {}",
+                error_message
             );
             println!("✓ Security validation correctly prevented execution (preserving existing patterns)");
             return; // Test passes - security worked correctly
         }
-        
+
         // If execution succeeded at the framework level, verify it failed at tool execution
         assert!(result.is_ok());
-        
+
         // The execution will fail due to missing justfile, but the important thing
         // is that it went through all the security validation and parameter processing
         let exec_result = result.unwrap();
         assert!(!exec_result.success);
-        
+
         // Verify error contains information about the missing justfile
         // This confirms that we reached the TaskExecutor.execute method
         if let Some(error) = &exec_result.error {

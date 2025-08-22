@@ -7,22 +7,20 @@
 //! rewriting them, as they already provide comprehensive justfile metadata
 //! and configuration data.
 
-use crate::error::Result;
 use crate::embedded_content::resources::ResourceProvider;
+use crate::error::Result;
 use std::sync::Arc;
 
 #[cfg(feature = "ultrafast-framework")]
 use ultrafast_mcp::{
-    ResourceHandler,
-    ListResourcesRequest, ListResourcesResponse, ReadResourceRequest, ReadResourceResponse,
-    Resource, ResourceContent,
-    MCPResult, MCPError
+    ListResourcesRequest, ListResourcesResponse, MCPError, MCPResult, ReadResourceRequest,
+    ReadResourceResponse, Resource, ResourceContent, ResourceHandler,
 };
 
 #[cfg(feature = "ultrafast-framework")]
 use ultrafast_mcp::types::{
+    roots::{Root as FrameworkRoot, RootOperation},
     ListResourceTemplatesRequest, ListResourceTemplatesResponse, ResourceTemplate,
-    roots::{Root as FrameworkRoot, RootOperation}
 };
 
 /// Framework-compatible resource provider wrapper
@@ -36,9 +34,7 @@ pub struct FrameworkResourceProvider {
 
 impl FrameworkResourceProvider {
     /// Create a new framework resource provider
-    pub fn new(
-        combined_provider: Arc<crate::config_resource::CombinedResourceProvider>,
-    ) -> Self {
+    pub fn new(combined_provider: Arc<crate::config_resource::CombinedResourceProvider>) -> Self {
         Self { combined_provider }
     }
 
@@ -54,9 +50,10 @@ impl FrameworkResourceProvider {
     /// List available resources
     pub async fn list_resources(&self) -> Result<Vec<String>> {
         // Use existing resource provider logic
-        let resources = self.combined_provider.list_resources().await.map_err(|e| {
-            crate::error::Error::Other(format!("Resource listing failed: {}", e))
-        })?;
+        let resources =
+            self.combined_provider.list_resources().await.map_err(|e| {
+                crate::error::Error::Other(format!("Resource listing failed: {}", e))
+            })?;
         Ok(resources.into_iter().map(|r| r.uri).collect())
     }
 }
@@ -82,7 +79,9 @@ impl ResourceHandler for FrameworkResourceProvider {
                     ResourceContent::Blob {
                         uri: request.uri.clone(),
                         blob,
-                        mime_type: resource_content.mime_type.unwrap_or_else(|| "application/octet-stream".to_string()),
+                        mime_type: resource_content
+                            .mime_type
+                            .unwrap_or_else(|| "application/octet-stream".to_string()),
                     }
                 } else {
                     // Default to empty text content
@@ -96,61 +95,85 @@ impl ResourceHandler for FrameworkResourceProvider {
                     contents: vec![content],
                 })
             }
-            Err(e) => Err(MCPError::internal_error(format!("Resource read failed: {}", e))),
+            Err(e) => Err(MCPError::internal_error(format!(
+                "Resource read failed: {}",
+                e
+            ))),
         }
     }
 
     /// List available resources
-    async fn list_resources(&self, _request: ListResourcesRequest) -> MCPResult<ListResourcesResponse> {
+    async fn list_resources(
+        &self,
+        _request: ListResourcesRequest,
+    ) -> MCPResult<ListResourcesResponse> {
         match self.combined_provider.list_resources().await {
             Ok(resources) => {
-                let framework_resources = resources.into_iter().map(|r| Resource {
-                    uri: r.uri,
-                    name: r.name,
-                    description: r.description,
-                    mime_type: r.mime_type,
-                }).collect();
+                let framework_resources = resources
+                    .into_iter()
+                    .map(|r| Resource {
+                        uri: r.uri,
+                        name: r.name,
+                        description: r.description,
+                        mime_type: r.mime_type,
+                    })
+                    .collect();
                 Ok(ListResourcesResponse {
                     resources: framework_resources,
                     next_cursor: None,
                 })
             }
-            Err(e) => Err(MCPError::internal_error(format!("Resource listing failed: {}", e))),
+            Err(e) => Err(MCPError::internal_error(format!(
+                "Resource listing failed: {}",
+                e
+            ))),
         }
     }
 
     /// List available resource templates
-    async fn list_resource_templates(&self, _request: ListResourceTemplatesRequest) -> MCPResult<ListResourceTemplatesResponse> {
+    async fn list_resource_templates(
+        &self,
+        _request: ListResourceTemplatesRequest,
+    ) -> MCPResult<ListResourceTemplatesResponse> {
         match self.combined_provider.list_resource_templates().await {
             Ok(templates) => {
-                let framework_templates = templates.into_iter().map(|t| ResourceTemplate {
-                    uri_template: t.uri_template,
-                    name: t.name,
-                    description: t.description,
-                    mime_type: t.mime_type,
-                }).collect();
+                let framework_templates = templates
+                    .into_iter()
+                    .map(|t| ResourceTemplate {
+                        uri_template: t.uri_template,
+                        name: t.name,
+                        description: t.description,
+                        mime_type: t.mime_type,
+                    })
+                    .collect();
                 Ok(ListResourceTemplatesResponse {
                     resource_templates: framework_templates,
                     next_cursor: None,
                 })
             }
-            Err(e) => Err(MCPError::internal_error(format!("Resource template listing failed: {}", e))),
+            Err(e) => Err(MCPError::internal_error(format!(
+                "Resource template listing failed: {}",
+                e
+            ))),
         }
     }
 
     /// Validate resource access (required by ResourceHandler trait)
     async fn validate_resource_access(
-        &self, 
-        uri: &str, 
+        &self,
+        uri: &str,
         _operation: RootOperation,
-        _roots: &[FrameworkRoot]
+        _roots: &[FrameworkRoot],
     ) -> MCPResult<()> {
         // For now, allow access to all resources that our existing provider supports
         // This preserves the existing security model
         if uri.starts_with("file:///docs/guides/") || uri.starts_with("just://") {
             Ok(())
         } else {
-            Err(MCPError::invalid_params(format!("Access denied for URI: {}", uri)))
+            Err(MCPError::invalid_params(format!(
+                "Access denied for URI: {}",
+                uri
+            )))
         }
     }
 }
@@ -205,13 +228,8 @@ mod tests {
     #[tokio::test]
     async fn test_framework_resource_provider_creation() {
         let tool_registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
-        
-        let provider = create_framework_resource_provider(
-            None,
-            None,
-            None,
-            tool_registry,
-        ).await;
+
+        let provider = create_framework_resource_provider(None, None, None, tool_registry).await;
 
         assert!(provider.is_ok());
     }
@@ -219,13 +237,10 @@ mod tests {
     #[tokio::test]
     async fn test_resource_listing() {
         let tool_registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
-        
-        let provider = create_framework_resource_provider(
-            None,
-            None,
-            None,
-            tool_registry,
-        ).await.unwrap();
+
+        let provider = create_framework_resource_provider(None, None, None, tool_registry)
+            .await
+            .unwrap();
 
         let resources = provider.list_resources().await.unwrap();
         // Should have at least embedded resources
@@ -235,13 +250,10 @@ mod tests {
     #[tokio::test]
     async fn test_resource_retrieval() {
         let tool_registry = Arc::new(tokio::sync::Mutex::new(ToolRegistry::new()));
-        
-        let provider = create_framework_resource_provider(
-            None,
-            None,
-            None,
-            tool_registry,
-        ).await.unwrap();
+
+        let provider = create_framework_resource_provider(None, None, None, tool_registry)
+            .await
+            .unwrap();
 
         // Try to get a known embedded resource
         let resources = provider.list_resources().await.unwrap();

@@ -21,9 +21,8 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Serve) | None => {
             // Check if we should use custom server (legacy mode) or framework server (default)
-            let use_legacy = args.use_legacy 
-                || std::env::var("JUST_MCP_USE_LEGACY").is_ok();
-            
+            let use_legacy = args.use_legacy || std::env::var("JUST_MCP_USE_LEGACY").is_ok();
+
             if use_legacy {
                 // Legacy mode: use custom MCP server
                 start_mcp_server(&args).await?;
@@ -135,7 +134,11 @@ async fn start_mcp_server(args: &Args) -> Result<()> {
 async fn start_framework_server(args: &Args) -> Result<()> {
     #[cfg(feature = "ultrafast-framework")]
     {
-        tracing::info!("Starting {} v{} with ultrafast-mcp framework", just_mcp::PKG_NAME, just_mcp::VERSION);
+        tracing::info!(
+            "Starting {} v{} with ultrafast-mcp framework",
+            just_mcp::PKG_NAME,
+            just_mcp::VERSION
+        );
 
         // Parse watch directories with optional names (same logic as custom server)
         let mut watch_configs = Vec::new();
