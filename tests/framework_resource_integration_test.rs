@@ -47,11 +47,9 @@ mod framework_tests {
         let result = handler.list_resources(request).await;
 
         assert!(result.is_ok(), "Should be able to list resources");
-        let response = result.unwrap();
-        assert!(
-            response.resources.len() >= 0,
-            "Should return a valid resource list"
-        );
+        let _response = result.unwrap();
+        // Resources list should be valid (non-null)
+        // Length comparison >= 0 removed as it's always true for usize
     }
 
     #[tokio::test]

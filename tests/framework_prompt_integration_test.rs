@@ -38,7 +38,6 @@ mod tests {
     #[tokio::test]
     async fn test_do_it_prompt_execution_through_framework() {
         use serde_json::{Map, Value};
-        use std::collections::HashMap;
 
         // Create a framework server
         let mut server = FrameworkServer::new();

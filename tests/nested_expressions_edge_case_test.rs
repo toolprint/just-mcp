@@ -8,7 +8,7 @@
 mod nested_expressions_edge_cases {
     use just_mcp::parser::ast::queries::{
         ArgumentType, ConditionalExpressionInfo, ConditionalType, ExpressionEvaluator,
-        FunctionArgument, FunctionCallInfo, QueryResultProcessor,
+        FunctionCallInfo,
     };
     use std::collections::HashMap;
 

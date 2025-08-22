@@ -1,4 +1,4 @@
-use just_mcp::parser::ast::{ASTJustParser, ImportInfo};
+use just_mcp::parser::ast::ASTJustParser;
 use std::fs;
 use tempfile::TempDir;
 

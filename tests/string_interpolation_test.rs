@@ -6,9 +6,7 @@
 #[cfg(feature = "ast-parser")]
 mod string_interpolation_tests {
     use just_mcp::parser::ast::queries::{
-        ExpressionEvaluator, ExpressionInfo, ExpressionType, InterpolationContext,
-        InterpolationInfo, InterpolationType, NestedInterpolationProcessor, QueryExecutor,
-        QueryPatterns, QueryResultProcessor, StringInfo, StringType,
+        ExpressionEvaluator, InterpolationType, NestedInterpolationProcessor,
     };
     use std::collections::HashMap;
     use tree_sitter::Parser;

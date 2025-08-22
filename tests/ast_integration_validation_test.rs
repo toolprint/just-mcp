@@ -4,7 +4,7 @@
 //! all existing project recipes and ensures consistency with the regex parser.
 
 use anyhow::Result;
-use just_mcp::parser::{EnhancedJustfileParser, JustfileParser};
+use just_mcp::parser::{EnhancedJustfileParser, JustfileParser, ParserPreference};
 #[cfg(feature = "ast-parser")]
 use just_mcp::types::JustTask;
 #[cfg(feature = "ast-parser")]
@@ -98,8 +98,7 @@ fn test_justfile_parsing(path: &PathBuf) -> Result<ParsingTestResult> {
 
     // Test AST parser
     let ast_start = Instant::now();
-    let mut enhanced_parser = EnhancedJustfileParser::new()?;
-    enhanced_parser.set_ast_parser_only();
+    let enhanced_parser = EnhancedJustfileParser::new_with_preference(ParserPreference::Ast)?;
 
     match enhanced_parser.parse_file(path) {
         Ok(tasks) => {
@@ -427,12 +426,11 @@ fn test_enhanced_parser_fallback_behavior() -> Result<()> {
     println!("{}", enhanced_parser.get_diagnostics());
 
     // Test different parser configurations
-    let mut ast_only_parser = EnhancedJustfileParser::new()?;
-    ast_only_parser.set_ast_parser_only();
+    let ast_only_parser = EnhancedJustfileParser::new_with_preference(ParserPreference::Ast)?;
     let ast_only_tasks = ast_only_parser.parse_file(test_file)?;
 
-    let mut regex_only_parser = EnhancedJustfileParser::new()?;
-    regex_only_parser.set_legacy_parser_only();
+    #[allow(deprecated)]
+    let regex_only_parser = EnhancedJustfileParser::new_with_preference(ParserPreference::Regex)?;
     let regex_only_tasks = regex_only_parser.parse_file(test_file)?;
 
     println!("Enhanced parser: {} tasks", tasks.len());

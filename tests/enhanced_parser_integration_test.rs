@@ -1,4 +1,4 @@
-use just_mcp::parser::EnhancedJustfileParser;
+use just_mcp::parser::{EnhancedJustfileParser, ParserPreference};
 use std::fs;
 use tempfile::TempDir;
 
@@ -138,7 +138,8 @@ fn test_enhanced_parser_fallback_behavior() {
     let mut parser = EnhancedJustfileParser::new().unwrap();
 
     // Force legacy mode
-    parser.set_legacy_parser_only();
+    #[allow(deprecated)]
+    parser.set_parser_preference(ParserPreference::Regex);
 
     let content = r#"
 # Simple task
@@ -429,9 +430,11 @@ fn test_parsing_metrics_and_diagnostics() {
     // AST parser can be extremely fast (sub-millisecond) for small content,
     // so total_parse_time_ms might be 0 due to rounding. Just verify the
     // timing mechanism is working by checking that attempts were made.
+    // Note: total_parse_time_ms >= 0 is always true for u64, so we check attempts instead
+    let total_parsing_attempts = final_metrics.ast_attempts + final_metrics.command_attempts + final_metrics.regex_attempts;
     assert!(
-        final_metrics.total_parse_time_ms >= 0,
-        "Should have recorded parse time (even if 0 for very fast parsing)"
+        total_parsing_attempts > 0,
+        "Should have made parsing attempts"
     );
 
     // Test diagnostics output
@@ -453,22 +456,23 @@ hello:
     echo "world"
 "#;
 
-    // Test with AST parsing disabled
-    parser.set_ast_parsing_enabled(false);
+    // Test with CLI parsing only
+    parser.set_parser_preference(ParserPreference::Cli);
     let tasks1 = parser
         .parse_content(test_content)
         .expect("Should parse with AST disabled");
     assert!(!tasks1.is_empty());
 
-    // Test with command parsing disabled
-    parser.set_command_parsing_enabled(false);
+    // Test with AST parsing only
+    parser.set_parser_preference(ParserPreference::Ast);
     let tasks2 = parser
         .parse_content(test_content)
         .expect("Should parse with command disabled");
     assert!(!tasks2.is_empty());
 
     // Test with only regex parsing (legacy mode)
-    parser.set_legacy_parser_only();
+    #[allow(deprecated)]
+    parser.set_parser_preference(ParserPreference::Regex);
     let tasks3 = parser
         .parse_content(test_content)
         .expect("Should parse with regex only");
