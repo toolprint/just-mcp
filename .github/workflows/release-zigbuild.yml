@@ -71,7 +71,7 @@ jobs:
           # Enable assertions for C code (required by tree-sitter-just)
           export CFLAGS="-UNDEBUG"
           export CXXFLAGS="-UNDEBUG"
-          cargo zigbuild --release --target ${{ matrix.target }}
+          cargo zigbuild --release --features dev-tools --target ${{ matrix.target }}
 
       - name: Prepare artifacts
         run: |
@@ -81,13 +81,12 @@ jobs:
           # Create artifact directory
           mkdir -p artifacts
 
-          # Copy binary
-          if [ "$TARGET" = "universal2-apple-darwin" ]; then
-            # For universal binary, zigbuild creates it in the universal2 target dir
-            cp target/$TARGET/release/just-mcp artifacts/
-          else
-            cp target/$TARGET/release/just-mcp artifacts/
-          fi
+          # Copy all built binaries (main + dev tools)
+          for bin in just-mcp perf-analysis memory_profiler; do
+            if [ -f "target/$TARGET/release/$bin" ]; then
+              cp "target/$TARGET/release/$bin" artifacts/
+            fi
+          done
 
           # Copy additional files
           cp README.md LICENSE artifacts/
