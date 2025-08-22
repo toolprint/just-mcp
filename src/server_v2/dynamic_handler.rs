@@ -10,6 +10,7 @@ use crate::error::Result;
 use crate::registry::ToolRegistry;
 use crate::types::{ToolDefinition, ExecutionRequest, ExecutionResult};
 use crate::executor::TaskExecutor;
+use crate::admin::AdminTools;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -32,6 +33,9 @@ pub struct DynamicToolHandler {
     
     /// Task executor for tool execution
     executor: Arc<tokio::sync::Mutex<TaskExecutor>>,
+    
+    /// Admin tools for admin command execution
+    admin_tools: Option<Arc<AdminTools>>,
     
     /// Handle to the framework for notifying of tool changes
     #[cfg(feature = "ultrafast-framework")]
@@ -84,6 +88,7 @@ impl DynamicToolHandler {
             tools: Arc::new(RwLock::new(HashMap::new())),
             registry,
             executor,
+            admin_tools: None,
             #[cfg(feature = "ultrafast-framework")]
             framework_handle: None,
         }
@@ -95,18 +100,34 @@ impl DynamicToolHandler {
         self.framework_handle = Some(handle);
         self
     }
+    
+    /// Set admin tools for admin command execution
+    pub fn with_admin_tools(mut self, admin_tools: Arc<AdminTools>) -> Self {
+        self.admin_tools = Some(admin_tools);
+        self
+    }
+    
+    /// Check if admin tools are available
+    pub fn has_admin_tools(&self) -> bool {
+        self.admin_tools.is_some()
+    }
 
-    /// Execute a tool using the existing TaskExecutor
+    /// Execute a tool using either TaskExecutor (for justfile tasks) or AdminTools (for admin functions)
     ///
     /// This method is the core bridge between framework tool calls and our
-    /// TaskExecutor, preserving all existing security validation, resource
-    /// limits, and execution patterns.
+    /// execution systems, preserving all existing security validation, resource
+    /// limits, and execution patterns. Admin tools are handled specially.
     pub async fn execute_tool(&self, tool_name: &str, parameters: serde_json::Value) -> Result<ExecutionResult> {
         tracing::info!(
             "DynamicToolHandler executing tool: {} with parameters: {}", 
             tool_name, 
             serde_json::to_string(&parameters).unwrap_or_else(|_| "<unparseable>".to_string())
         );
+        
+        // Check if this is an admin tool
+        if tool_name.starts_with("_admin_") {
+            return self.execute_admin_tool(tool_name, parameters).await;
+        }
         
         // Get the tool definition to find the internal name
         let tools = self.tools.read().await;
@@ -169,6 +190,132 @@ impl DynamicToolHandler {
         }
         
         result
+    }
+
+    /// Execute an admin tool using AdminTools
+    ///
+    /// This method handles special admin commands like sync, parser_doctor, etc.
+    /// using the AdminTools class instead of the regular TaskExecutor.
+    async fn execute_admin_tool(&self, tool_name: &str, parameters: serde_json::Value) -> Result<ExecutionResult> {
+        tracing::info!("Executing admin tool: {}", tool_name);
+        
+        let admin_tools = self.admin_tools.as_ref()
+            .ok_or_else(|| crate::error::Error::Other("Admin tools not available".to_string()))?;
+        
+        // Convert parameters to appropriate types and execute based on tool name
+        let result = match tool_name {
+            "_admin_sync" => {
+                let sync_result = admin_tools.sync().await?;
+                ExecutionResult {
+                    success: true,
+                    exit_code: Some(0),
+                    stdout: format!("Sync completed: {} files scanned, {} recipes found in {} ms", 
+                                  sync_result.scanned_files, sync_result.found_recipes, sync_result.duration_ms),
+                    stderr: if sync_result.errors.is_empty() { 
+                        String::new() 
+                    } else { 
+                        sync_result.errors.join("; ") 
+                    },
+                    error: None,
+                }
+            }
+            "_admin_parser_doctor" => {
+                let verbose = parameters.get("verbose")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                
+                let report = admin_tools.parser_doctor(verbose).await?;
+                ExecutionResult {
+                    success: true,
+                    exit_code: Some(0),
+                    stdout: report,
+                    stderr: String::new(),
+                    error: None,
+                }
+            }
+            "_admin_set_watch_directory" => {
+                let path = parameters.get("path")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| crate::error::Error::Other("Missing 'path' parameter".to_string()))?;
+                
+                let params = crate::admin::SetWatchDirectoryParams {
+                    path: path.to_string(),
+                };
+                
+                let result = admin_tools.set_watch_directory(params).await?;
+                ExecutionResult {
+                    success: true,
+                    exit_code: Some(0),
+                    stdout: format!("Watch directory set to: {} (justfile detected: {})", 
+                                  result.absolute_path, result.justfile_detected),
+                    stderr: String::new(),
+                    error: None,
+                }
+            }
+            "_admin_create_recipe" => {
+                // Extract parameters for create_recipe
+                let recipe_name = parameters.get("recipe_name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| crate::error::Error::Other("Missing 'recipe_name' parameter".to_string()))?;
+                
+                let recipe = parameters.get("recipe")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| crate::error::Error::Other("Missing 'recipe' parameter".to_string()))?;
+                
+                let watch_name = parameters.get("watch_name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                
+                let description = parameters.get("description")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                
+                let parameters_array = parameters.get("parameters")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter().filter_map(|item| {
+                            if let Some(obj) = item.as_object() {
+                                let name = obj.get("name")?.as_str()?.to_string();
+                                let default = obj.get("default").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                Some(crate::admin::RecipeParameter { name, default })
+                            } else {
+                                None
+                            }
+                        }).collect()
+                    });
+                
+                let dependencies = parameters.get("dependencies")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                    });
+                
+                let params = crate::admin::CreateRecipeParams {
+                    watch_name,
+                    recipe_name: recipe_name.to_string(),
+                    description,
+                    recipe: recipe.to_string(),
+                    parameters: parameters_array,
+                    dependencies,
+                };
+                
+                let result = admin_tools.create_recipe(params).await?;
+                ExecutionResult {
+                    success: true,
+                    exit_code: Some(0),
+                    stdout: format!("Recipe '{}' created in {} (backup: {})", 
+                                  result.recipe_name, result.justfile_path, result.backup_path),
+                    stderr: String::new(),
+                    error: None,
+                }
+            }
+            _ => {
+                return Err(crate::error::Error::Other(format!("Unknown admin tool: {}", tool_name)));
+            }
+        };
+        
+        tracing::info!("Admin tool execution completed: {} - success: {}", tool_name, result.success);
+        Ok(result)
     }
 
     /// Update tools based on registry changes

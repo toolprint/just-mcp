@@ -13,6 +13,7 @@ use crate::error::Result;
 use crate::registry::ToolRegistry;
 use crate::executor::TaskExecutor;
 use crate::watcher::JustfileWatcher;
+use crate::admin::AdminTools;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -43,6 +44,7 @@ pub struct FrameworkServer {
     registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
     executor: Arc<tokio::sync::Mutex<TaskExecutor>>,
     watcher: Option<Arc<JustfileWatcher>>,
+    admin_tools: Option<Arc<AdminTools>>,
 }
 
 impl FrameworkServer {
@@ -66,6 +68,7 @@ impl FrameworkServer {
             registry,
             executor,
             watcher: None,
+            admin_tools: None,
         }
     }
 
@@ -99,21 +102,7 @@ impl FrameworkServer {
         let sequential_server = SequentialThinkingServer::new();
         let sequential_server_arc = Arc::new(sequential_server);
 
-        // Create dynamic tool handler
-        let dynamic_handler = dynamic_handler::DynamicToolHandler::new(
-            self.registry.clone(),
-            self.executor.clone(),
-        );
-
-        // Create framework handle and connect to dynamic handler
-        let framework_handle = dynamic_handler::FrameworkHandle::new(sequential_server_arc.clone());
-        let dynamic_handler = dynamic_handler.with_framework_handle(framework_handle);
-        let dynamic_handler_arc = Arc::new(dynamic_handler);
-        
-        // Create framework tool handler for MCP integration
-        let framework_tool_handler = dynamic_handler_arc.clone().create_framework_tool_handler();
-
-        // Create watcher and set up integration with dynamic handler
+        // Create watcher first (needed for admin tools)
         let mut watcher = JustfileWatcher::new(self.registry.clone());
         
         // Configure the watcher before putting it in an Arc
@@ -121,6 +110,46 @@ impl FrameworkServer {
         watcher.set_multiple_dirs(self.watch_configs.len() > 1);
         
         self.watcher = Some(Arc::new(watcher));
+
+        // Initialize admin tools (only if admin flag is enabled)
+        if self.admin_enabled {
+            tracing::info!("Admin tools enabled for framework server");
+            let admin_tools = Arc::new(AdminTools::new(
+                self.registry.clone(),
+                self.watcher.as_ref().unwrap().clone(),
+                self.watch_paths.clone(),
+                self.watch_configs.clone(),
+            ));
+
+            // Register admin tools in the registry
+            admin_tools.register_admin_tools().await?;
+
+            self.admin_tools = Some(admin_tools.clone());
+            tracing::info!("Admin tools registered successfully");
+        } else {
+            tracing::info!("Admin tools disabled for framework server");
+        }
+
+        // Now create dynamic tool handler with admin tools
+        let mut dynamic_handler = dynamic_handler::DynamicToolHandler::new(
+            self.registry.clone(),
+            self.executor.clone(),
+        );
+
+        // Create framework handle and connect to dynamic handler
+        let framework_handle = dynamic_handler::FrameworkHandle::new(sequential_server_arc.clone());
+        dynamic_handler = dynamic_handler.with_framework_handle(framework_handle);
+        
+        // Add admin tools if available
+        if let Some(ref admin_tools) = self.admin_tools {
+            dynamic_handler = dynamic_handler.with_admin_tools(admin_tools.clone());
+            tracing::info!("Admin tools connected to dynamic handler");
+        }
+        
+        let dynamic_handler_arc = Arc::new(dynamic_handler);
+        
+        // Create framework tool handler for MCP integration
+        let framework_tool_handler = dynamic_handler_arc.clone().create_framework_tool_handler();
 
         // Initialize resource provider
         let resource_provider = resources::create_framework_resource_provider(
@@ -649,6 +678,88 @@ mod tests {
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name, "test_build");
         assert_eq!(tools[0].description, "Build the project");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "ultrafast-framework")]
+    async fn test_admin_tools_integration_with_framework() {
+        use std::fs;
+        use tempfile::TempDir;
+        
+        // Create a temporary directory with a justfile
+        let temp_dir = TempDir::new().unwrap();
+        let justfile_path = temp_dir.path().join("justfile");
+        
+        let initial_content = r#"
+# Test task
+test:
+    echo "Running tests"
+"#;
+        fs::write(&justfile_path, initial_content).unwrap();
+        
+        // Create server with admin enabled
+        let mut server = FrameworkServer::new()
+            .with_watch_paths(vec![temp_dir.path().to_path_buf()])
+            .with_watch_names(vec![(temp_dir.path().to_path_buf(), Some("test".to_string()))])
+            .with_admin_enabled(true);
+        
+        // Initialize the server
+        let result = server.initialize().await;
+        assert!(result.is_ok());
+        
+        // Verify admin tools were created
+        assert!(server.admin_tools.is_some());
+        
+        // Verify dynamic handler has admin tools
+        let dynamic_handler = server.dynamic_tool_handler().unwrap();
+        assert!(dynamic_handler.has_admin_tools());
+        
+        // Sync tools to make sure admin tools are available
+        dynamic_handler.sync_tools_from_registry().await.unwrap();
+        
+        // Test that admin tools appear in the dynamic handler
+        let tool_count = dynamic_handler.tool_count().await;
+        assert!(tool_count >= 4, "Should have at least 4 admin tools"); // 4 admin tools: sync, parser_doctor, set_watch_directory, create_recipe
+        
+        // Test that we can execute admin tools through the dynamic handler
+        let sync_params = serde_json::json!({});
+        let result = dynamic_handler.execute_tool("_admin_sync", sync_params).await;
+        assert!(result.is_ok());
+        
+        let execution_result = result.unwrap();
+        assert!(execution_result.success);
+        assert!(execution_result.stdout.contains("Sync completed"));
+        
+        // Test parser doctor with verbose = false
+        let parser_doctor_params = serde_json::json!({"verbose": false});
+        let result = dynamic_handler.execute_tool("_admin_parser_doctor", parser_doctor_params).await;
+        
+        // Parser doctor might fail if `just` command is not available, so we check both success and failure
+        match result {
+            Ok(execution_result) => {
+                assert!(execution_result.stdout.contains("Parser Diagnostic Report"));
+            }
+            Err(e) => {
+                // This is acceptable if `just` command is not available in the test environment
+                assert!(e.to_string().contains("just --summary") || e.to_string().contains("just") || e.to_string().contains("command not found"));
+            }
+        }
+        
+        // Test set watch directory
+        let set_watch_params = serde_json::json!({
+            "path": temp_dir.path().to_string_lossy()
+        });
+        let result = dynamic_handler.execute_tool("_admin_set_watch_directory", set_watch_params).await;
+        assert!(result.is_ok());
+        
+        let execution_result = result.unwrap();
+        assert!(execution_result.success);
+        assert!(execution_result.stdout.contains("Watch directory set to"));
+        
+        // Test admin tool validation for unknown tool
+        let result = dynamic_handler.execute_tool("_admin_unknown", serde_json::json!({})).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown admin tool"));
     }
 
     #[tokio::test]
