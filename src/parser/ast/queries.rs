@@ -5019,7 +5019,7 @@ mod tests {
         assert_eq!(error.offset, 42);
         assert!(error.message.contains("Invalid node type"));
 
-        let error_str = format!("{}", error);
+        let error_str = format!("{error}");
         assert!(error_str.contains("offset 42"));
     }
 
@@ -5215,7 +5215,7 @@ mod tests {
             "test pattern".to_string(),
         );
 
-        let display_str = format!("{}", error);
+        let display_str = format!("{error}");
         assert!(display_str.contains("offset 25"));
         assert!(display_str.contains("Invalid syntax"));
     }

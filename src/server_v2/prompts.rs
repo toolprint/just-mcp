@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 #[cfg(feature = "ultrafast-framework")]
 use ultrafast_mcp::{
-    GetPromptRequest, GetPromptResponse, ListPromptsRequest, ListPromptsResponse,
-    MCPResult, Prompt as FrameworkPrompt, PromptArgument as FrameworkPromptArgument, PromptHandler,
+    GetPromptRequest, GetPromptResponse, ListPromptsRequest, ListPromptsResponse, MCPResult,
+    Prompt as FrameworkPrompt, PromptArgument as FrameworkPromptArgument, PromptHandler,
 };
 
 #[cfg(feature = "ultrafast-framework")]
@@ -138,20 +138,16 @@ impl PromptHandler for FrameworkPromptProvider {
                 let user_message_template = "{{request}}";
 
                 // Create proper PromptMessage objects
-                let messages = vec![
-                    FrameworkPromptMessage {
-                        role: PromptRole::System,
-                        content: PromptContent::Text {
-                            text: system_message,
-                        },
+                // MCP protocol only supports "user" and "assistant" roles, not "system"
+                let combined_user_message =
+                    format!("{system_message}\n\nRequest: {user_message_template}");
+
+                let messages = vec![FrameworkPromptMessage {
+                    role: PromptRole::User,
+                    content: PromptContent::Text {
+                        text: combined_user_message,
                     },
-                    FrameworkPromptMessage {
-                        role: PromptRole::User,
-                        content: PromptContent::Text {
-                            text: user_message_template.to_string(),
-                        },
-                    },
-                ];
+                }];
 
                 Ok(GetPromptResponse {
                     description: Some(def.description),

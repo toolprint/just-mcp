@@ -31,28 +31,24 @@ impl ErrorAdapter {
             // Tool and task-related errors
             JustMcpError::TaskNotFound(task_name) => {
                 MCPError::invalid_request(format!(
-                    "Task '{}' not found. Use 'just --list' to see available tasks.",
-                    task_name
+                    "Task '{task_name}' not found. Use 'just --list' to see available tasks."
                 ))
             }
             JustMcpError::ToolNotFound(tool_name) => {
                 MCPError::invalid_request(format!(
-                    "Tool '{}' is not available. Check tool registration or refresh tool list.",
-                    tool_name
+                    "Tool '{tool_name}' is not available. Check tool registration or refresh tool list."
                 ))
             }
             JustMcpError::InvalidToolName(tool_name) => {
                 MCPError::invalid_request(format!(
-                    "Invalid tool name '{}'. Tool names must follow the format 'task_/path/to/justfile'.",
-                    tool_name
+                    "Invalid tool name '{tool_name}'. Tool names must follow the format 'task_/path/to/justfile'."
                 ))
             }
 
             // Parameter validation errors
             JustMcpError::InvalidParameter(msg) => {
                 MCPError::invalid_params(format!(
-                    "Invalid parameter: {}. Please check parameter types and constraints.",
-                    msg
+                    "Invalid parameter: {msg}. Please check parameter types and constraints."
                 ))
             }
 
@@ -60,13 +56,11 @@ impl ErrorAdapter {
             JustMcpError::Execution { command, exit_code, stderr } => {
                 let error_msg = if stderr.is_empty() {
                     format!(
-                        "Command '{}' failed with exit code {:?}. No additional error information available.",
-                        command, exit_code
+                        "Command '{command}' failed with exit code {exit_code:?}. No additional error information available."
                     )
                 } else {
                     format!(
-                        "Command '{}' failed with exit code {:?}: {}",
-                        command, exit_code, stderr
+                        "Command '{command}' failed with exit code {exit_code:?}: {stderr}"
                     )
                 };
                 MCPError::internal_error(error_msg)
@@ -75,88 +69,77 @@ impl ErrorAdapter {
             // Just command errors
             JustMcpError::JustCommand(msg) => {
                 MCPError::internal_error(format!(
-                    "Just command error: {}. Verify justfile syntax and task definitions.",
-                    msg
+                    "Just command error: {msg}. Verify justfile syntax and task definitions."
                 ))
             }
 
             // Parse errors with location information
             JustMcpError::Parse { message, line, column } => {
                 MCPError::invalid_request(format!(
-                    "Justfile parse error at line {}, column {}: {}. Check justfile syntax.",
-                    line, column, message
+                    "Justfile parse error at line {line}, column {column}: {message}. Check justfile syntax."
                 ))
             }
 
             // Registry errors
             JustMcpError::Registry(msg) => {
                 MCPError::internal_error(format!(
-                    "Tool registry error: {}. This may indicate a configuration issue.",
-                    msg
+                    "Tool registry error: {msg}. This may indicate a configuration issue."
                 ))
             }
 
             // Server errors
             JustMcpError::Server(msg) => {
                 MCPError::internal_error(format!(
-                    "Server error: {}. Check server configuration and logs.",
-                    msg
+                    "Server error: {msg}. Check server configuration and logs."
                 ))
             }
 
             // Timeout errors
             JustMcpError::Timeout(msg) => {
                 MCPError::internal_error(format!(
-                    "Operation timed out: {}. Consider increasing timeout limits or checking system performance.",
-                    msg
+                    "Operation timed out: {msg}. Consider increasing timeout limits or checking system performance."
                 ))
             }
 
             // IO errors with context
             JustMcpError::Io(io_error) => {
                 MCPError::internal_error(format!(
-                    "File system error: {}. Check file permissions and disk space.",
-                    io_error
+                    "File system error: {io_error}. Check file permissions and disk space."
                 ))
             }
 
             // JSON errors
             JustMcpError::Json(json_error) => {
                 MCPError::invalid_request(format!(
-                    "JSON parsing error: {}. Check input format and structure.",
-                    json_error
+                    "JSON parsing error: {json_error}. Check input format and structure."
                 ))
             }
 
             // File watching errors
             JustMcpError::Watch(watch_error) => {
                 MCPError::internal_error(format!(
-                    "File watching error: {}. File monitoring may be temporarily unavailable.",
-                    watch_error
+                    "File watching error: {watch_error}. File monitoring may be temporarily unavailable."
                 ))
             }
 
             // Regex errors
             JustMcpError::Regex(regex_error) => {
                 MCPError::internal_error(format!(
-                    "Pattern matching error: {}. This indicates a configuration issue.",
-                    regex_error
+                    "Pattern matching error: {regex_error}. This indicates a configuration issue."
                 ))
             }
 
             // Internal errors
             JustMcpError::Internal(msg) => {
                 MCPError::internal_error(format!(
-                    "Internal error: {}. Please report this issue with context.",
-                    msg
+                    "Internal error: {msg}. Please report this issue with context."
                 ))
             }
 
             // Generic other errors
             JustMcpError::Other(msg) => {
                 MCPError::internal_error(format!(
-                    "Unexpected error: {}. Please check logs for additional details.",
-                    msg
+                    "Unexpected error: {msg}. Please check logs for additional details."
                 ))
             }
         }
@@ -183,7 +166,7 @@ impl ErrorAdapter {
         } else {
             // Failed execution - convert to appropriate error
             let error_msg = if let Some(ref error) = result.error {
-                format!("Tool execution failed: {}", error)
+                format!("Tool execution failed: {error}")
             } else if !result.stderr.is_empty() {
                 format!("Tool execution failed with stderr: {}", result.stderr)
             } else {
@@ -219,22 +202,22 @@ impl ErrorAdapter {
         match error {
             JustMcpError::TaskNotFound(task_name) => ErrorInfo {
                 error_type: "task_not_found".to_string(),
-                user_message: format!("Task '{}' not found", task_name),
-                technical_details: format!("TaskNotFound: {}", task_name),
+                user_message: format!("Task '{task_name}' not found"),
+                technical_details: format!("TaskNotFound: {task_name}"),
                 is_user_error: true,
                 is_retryable: false,
             },
             JustMcpError::ToolNotFound(tool_name) => ErrorInfo {
                 error_type: "tool_not_found".to_string(),
-                user_message: format!("Tool '{}' is not available", tool_name),
-                technical_details: format!("ToolNotFound: {}", tool_name),
+                user_message: format!("Tool '{tool_name}' is not available"),
+                technical_details: format!("ToolNotFound: {tool_name}"),
                 is_user_error: true,
                 is_retryable: true, // User might retry after tool refresh
             },
             JustMcpError::InvalidParameter(msg) => ErrorInfo {
                 error_type: "invalid_parameter".to_string(),
-                user_message: format!("Invalid parameter: {}", msg),
-                technical_details: format!("InvalidParameter: {}", msg),
+                user_message: format!("Invalid parameter: {msg}"),
+                technical_details: format!("InvalidParameter: {msg}"),
                 is_user_error: true,
                 is_retryable: false,
             },
@@ -245,13 +228,12 @@ impl ErrorAdapter {
             } => ErrorInfo {
                 error_type: "execution_failure".to_string(),
                 user_message: if stderr.is_empty() {
-                    format!("Command failed with exit code {:?}", exit_code)
+                    format!("Command failed with exit code {exit_code:?}")
                 } else {
-                    format!("Command failed: {}", stderr)
+                    format!("Command failed: {stderr}")
                 },
                 technical_details: format!(
-                    "Execution: command='{}', exit_code={:?}, stderr='{}'",
-                    command, exit_code, stderr
+                    "Execution: command='{command}', exit_code={exit_code:?}, stderr='{stderr}'"
                 ),
                 is_user_error: false, // Could be system or justfile issue
                 is_retryable: true,
@@ -262,32 +244,29 @@ impl ErrorAdapter {
                 column,
             } => ErrorInfo {
                 error_type: "parse_error".to_string(),
-                user_message: format!(
-                    "Syntax error at line {}, column {}: {}",
-                    line, column, message
-                ),
-                technical_details: format!("Parse error: {}:{}:{}", line, column, message),
+                user_message: format!("Syntax error at line {line}, column {column}: {message}"),
+                technical_details: format!("Parse error: {line}:{column}:{message}"),
                 is_user_error: true, // User needs to fix justfile
                 is_retryable: false,
             },
             JustMcpError::Timeout(msg) => ErrorInfo {
                 error_type: "timeout".to_string(),
                 user_message: "Operation timed out".to_string(),
-                technical_details: format!("Timeout: {}", msg),
+                technical_details: format!("Timeout: {msg}"),
                 is_user_error: false,
                 is_retryable: true,
             },
             JustMcpError::Io(io_error) => ErrorInfo {
                 error_type: "io_error".to_string(),
                 user_message: "File system error occurred".to_string(),
-                technical_details: format!("IO: {}", io_error),
+                technical_details: format!("IO: {io_error}"),
                 is_user_error: false,
                 is_retryable: true,
             },
             _ => ErrorInfo {
                 error_type: "internal_error".to_string(),
                 user_message: "An internal error occurred".to_string(),
-                technical_details: format!("{:?}", error),
+                technical_details: format!("{error:?}"),
                 is_user_error: false,
                 is_retryable: false,
             },
@@ -299,27 +278,27 @@ impl ErrorAdapter {
     /// This helps determine whether error messages should suggest user action
     /// or indicate system/configuration issues.
     pub fn is_user_correctable(error: &JustMcpError) -> bool {
-        match error {
+        matches!(
+            error,
             JustMcpError::TaskNotFound(_)
-            | JustMcpError::InvalidParameter(_)
-            | JustMcpError::Parse { .. }
-            | JustMcpError::InvalidToolName(_) => true,
-            _ => false,
-        }
+                | JustMcpError::InvalidParameter(_)
+                | JustMcpError::Parse { .. }
+                | JustMcpError::InvalidToolName(_)
+        )
     }
 
     /// Check if an error is likely transient and worth retrying
     ///
     /// This helps clients determine retry strategies.
     pub fn is_retryable(error: &JustMcpError) -> bool {
-        match error {
+        matches!(
+            error,
             JustMcpError::Timeout(_)
-            | JustMcpError::Io(_)
-            | JustMcpError::Watch(_)
-            | JustMcpError::Execution { .. }
-            | JustMcpError::ToolNotFound(_) => true,
-            _ => false,
-        }
+                | JustMcpError::Io(_)
+                | JustMcpError::Watch(_)
+                | JustMcpError::Execution { .. }
+                | JustMcpError::ToolNotFound(_)
+        )
     }
 }
 
@@ -491,7 +470,7 @@ mod tests {
         let mcp_error = ErrorAdapter::to_mcp_error(error);
 
         // Verify the error message contains helpful information
-        let error_msg = format!("{}", mcp_error);
+        let error_msg = format!("{mcp_error}");
         assert!(error_msg.contains("build"));
         assert!(error_msg.contains("not found"));
     }
@@ -510,7 +489,7 @@ mod tests {
 
         let mcp_result = ErrorAdapter::execution_result_to_mcp_result(success_result.clone());
         assert!(mcp_result.is_ok());
-        assert_eq!(mcp_result.unwrap().success, true);
+        assert!(mcp_result.unwrap().success);
 
         // Test failed execution result
         let error_result = ExecutionResult {
@@ -597,23 +576,20 @@ mod tests {
 
         for (error, _expected_type, expected_content) in test_cases {
             let mcp_error = ErrorAdapter::to_mcp_error(error);
-            let error_msg = format!("{}", mcp_error);
+            let error_msg = format!("{mcp_error}");
 
             // Verify error message contains expected content
             for content in expected_content {
                 assert!(
                     error_msg.contains(content),
-                    "Error message '{}' should contain '{}'",
-                    error_msg,
-                    content
+                    "Error message '{error_msg}' should contain '{content}'"
                 );
             }
 
             // Verify error message is helpful and actionable
             assert!(
                 error_msg.len() > 20,
-                "Error message should be substantial: '{}'",
-                error_msg
+                "Error message should be substantial: '{error_msg}'"
             );
         }
     }

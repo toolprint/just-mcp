@@ -313,7 +313,7 @@ mod tests {
     #[test]
     fn test_error_display() {
         let error = ASTError::recipe_extraction("build", "missing dependencies");
-        let error_str = format!("{}", error);
+        let error_str = format!("{error}");
         assert!(error_str.contains("build"));
         assert!(error_str.contains("missing dependencies"));
     }

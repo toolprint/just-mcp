@@ -49,7 +49,7 @@ test:
 
     // Should find recipes from both main and imported files
     let recipe_names: Vec<&String> = all_recipes.iter().map(|r| &r.name).collect();
-    println!("Found recipes: {:?}", recipe_names);
+    println!("Found recipes: {recipe_names:?}");
 
     // Should have main (1) + build (1) + test (1) = 3 recipes
     assert!(
@@ -97,8 +97,7 @@ task_b:
     let error = result.err().unwrap().to_string();
     assert!(
         error.contains("Circular import detected"),
-        "Error should mention circular import: {}",
-        error
+        "Error should mention circular import: {error}"
     );
 }
 

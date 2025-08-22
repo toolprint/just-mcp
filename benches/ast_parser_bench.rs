@@ -114,8 +114,7 @@ task-{i} param{i}="default{i}":
     sleep 0.1
     echo "Task {i} complete"
 
-"#,
-            i = i
+"#
         ));
     }
 
@@ -199,8 +198,7 @@ recipe-{i} param="val{i}":
     
 test-{i}: recipe-{i}
     cargo test test_{i}
-"#,
-                i = i
+"#
             )
         })
         .collect();
@@ -307,7 +305,7 @@ fn bench_query_cache(c: &mut Criterion) {
 
     // Get cache stats for reporting
     if let Ok(stats) = parser.cache_stats() {
-        println!("Cache stats: {}", stats);
+        println!("Cache stats: {stats}");
     }
 
     group.finish();

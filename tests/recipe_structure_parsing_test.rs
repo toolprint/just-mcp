@@ -44,10 +44,7 @@ mod ast_parser_tests {
             let recipes = parser.extract_recipes(&tree).unwrap();
 
             let actual_names: Vec<&String> = recipes.iter().map(|r| &r.name).collect();
-            println!(
-                "Test '{}': expected {:?}, got {:?}",
-                name, expected_names, actual_names
-            );
+            println!("Test '{name}': expected {expected_names:?}, got {actual_names:?}");
 
             // Check that we extracted the expected number of recipes
             assert_eq!(
@@ -63,9 +60,7 @@ mod ast_parser_tests {
             for expected_name in &expected_names {
                 assert!(
                     recipes.iter().any(|r| &r.name == expected_name),
-                    "Test '{}': expected recipe '{}' not found",
-                    name,
-                    expected_name
+                    "Test '{name}': expected recipe '{expected_name}' not found"
                 );
             }
         }
@@ -349,9 +344,9 @@ build target="debug":
         for expected in &expected_recipes {
             let found = recipes.iter().any(|r| r.name == *expected);
             if found {
-                println!("✓ Found expected recipe: {}", expected);
+                println!("✓ Found expected recipe: {expected}");
             } else {
-                println!("✗ Missing expected recipe: {}", expected);
+                println!("✗ Missing expected recipe: {expected}");
             }
         }
 
@@ -374,7 +369,7 @@ build target="debug":
         let recipes = match tree_result {
             Ok(tree) => parser.extract_recipes(&tree),
             Err(e) => {
-                println!("Invalid content failed to parse as expected: {}", e);
+                println!("Invalid content failed to parse as expected: {e}");
                 assert!(e.is_recoverable(), "Error should be recoverable");
                 return; // Exit early, test passed
             }
@@ -386,7 +381,7 @@ build target="debug":
                 println!("Invalid content parsed with {} recipes", recipes.len());
             }
             Err(e) => {
-                println!("Invalid content failed as expected: {}", e);
+                println!("Invalid content failed as expected: {e}");
                 assert!(e.is_recoverable(), "Error should be recoverable");
             }
         }

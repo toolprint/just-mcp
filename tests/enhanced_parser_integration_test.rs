@@ -107,7 +107,7 @@ test: clean
             // Check if imported tasks are found (this depends on Just CLI availability)
             if EnhancedJustfileParser::is_just_available() {
                 println!("Just CLI available - should resolve imports");
-                println!("Found tasks: {:?}", task_names);
+                println!("Found tasks: {task_names:?}");
                 for task in &tasks {
                     println!(
                         "  Task: '{}' with {} deps: {:?}",
@@ -127,7 +127,7 @@ test: clean
             }
         }
         Err(e) => {
-            println!("Parser failed (expected if Just CLI not available): {}", e);
+            println!("Parser failed (expected if Just CLI not available): {e}");
         }
     }
 }
@@ -155,7 +155,7 @@ simple:
 #[test]
 fn test_just_availability_detection() {
     let available = EnhancedJustfileParser::is_just_available();
-    println!("Just CLI available: {}", available);
+    println!("Just CLI available: {available}");
 
     // This test documents the environment state
     // Don't assert as it depends on system setup
@@ -273,9 +273,7 @@ _helper:
     for expected in &expected_tasks {
         assert!(
             task_names.contains(expected),
-            "Should find task '{}', found: {:?}",
-            expected,
-            task_names
+            "Should find task '{expected}', found: {task_names:?}"
         );
     }
 
@@ -321,7 +319,7 @@ deploy: test
 
     // Verify specific tasks exist
     let task_names: Vec<&str> = tasks.iter().map(|t| t.name.as_str()).collect();
-    println!("Extracted task names: {:?}", task_names);
+    println!("Extracted task names: {task_names:?}");
 
     // Check that parsing was successful (not minimal task creation)
     let metrics = parser.get_metrics();
@@ -431,7 +429,8 @@ fn test_parsing_metrics_and_diagnostics() {
     // so total_parse_time_ms might be 0 due to rounding. Just verify the
     // timing mechanism is working by checking that attempts were made.
     // Note: total_parse_time_ms >= 0 is always true for u64, so we check attempts instead
-    let total_parsing_attempts = final_metrics.ast_attempts + final_metrics.command_attempts + final_metrics.regex_attempts;
+    let total_parsing_attempts =
+        final_metrics.ast_attempts + final_metrics.command_attempts + final_metrics.regex_attempts;
     assert!(
         total_parsing_attempts > 0,
         "Should have made parsing attempts"
@@ -443,7 +442,7 @@ fn test_parsing_metrics_and_diagnostics() {
     assert!(diagnostics.contains("success rate"));
     assert!(diagnostics.contains("%"));
 
-    println!("Parsing diagnostics:\n{}", diagnostics);
+    println!("Parsing diagnostics:\n{diagnostics}");
 }
 
 /// Test parser configuration and method selection

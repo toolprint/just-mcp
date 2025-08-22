@@ -14,7 +14,7 @@ mod tests {
 
         // Initialize the server (which should set up prompts)
         let result = server.initialize().await;
-        assert!(result.is_ok(), "Server initialization failed: {:?}", result);
+        assert!(result.is_ok(), "Server initialization failed: {result:?}");
 
         // Verify prompt provider was created
         let prompt_provider = server.prompt_provider();
@@ -61,13 +61,12 @@ mod tests {
             .await;
 
         // Should succeed (even if no tasks match in mock provider)
-        assert!(result.is_ok(), "Prompt execution failed: {:?}", result);
+        assert!(result.is_ok(), "Prompt execution failed: {result:?}");
 
         let response = result.unwrap();
         assert!(
             response.contains("executed successfully"),
-            "Unexpected response: {}",
-            response
+            "Unexpected response: {response}"
         );
     }
 
@@ -89,8 +88,7 @@ mod tests {
             PromptHandler::list_prompts(prompt_provider.as_ref(), list_request).await;
         assert!(
             list_response.is_ok(),
-            "ListPrompts failed: {:?}",
-            list_response
+            "ListPrompts failed: {list_response:?}"
         );
 
         let prompts = list_response.unwrap().prompts;
@@ -115,7 +113,7 @@ mod tests {
             arguments: None,
         };
         let get_response = prompt_provider.get_prompt(get_request).await;
-        assert!(get_response.is_ok(), "GetPrompt failed: {:?}", get_response);
+        assert!(get_response.is_ok(), "GetPrompt failed: {get_response:?}");
 
         let prompt_detail = get_response.unwrap();
         assert!(prompt_detail.description.is_some());
@@ -123,33 +121,27 @@ mod tests {
 
         // Verify message structure
         let messages = &prompt_detail.messages;
-        assert!(messages.len() >= 2, "Expected system and user messages");
+        assert!(messages.len() >= 1, "Expected at least one message");
 
-        // Check system message
-        let system_msg = &messages[0];
-        match &system_msg.role {
-            ultrafast_mcp::types::PromptRole::System => {}
-            _ => panic!("Expected system role"),
+        // Check first message (combined system and user due to MCP protocol limitations)
+        let first_msg = &messages[0];
+        match &first_msg.role {
+            ultrafast_mcp::types::PromptRole::User => {}
+            _ => panic!("Expected user role (MCP protocol limitation)"),
         }
-        match &system_msg.content {
+        match &first_msg.content {
             ultrafast_mcp::types::PromptContent::Text { text } => {
                 assert!(text.contains("justfile task execution"));
+                assert!(
+                    text.contains("{{request}}"),
+                    "Message should contain request template"
+                );
             }
             _ => panic!("Expected text content"),
         }
 
-        // Check user message template
-        let user_msg = &messages[1];
-        match &user_msg.role {
-            ultrafast_mcp::types::PromptRole::User => {}
-            _ => panic!("Expected user role"),
-        }
-        match &user_msg.content {
-            ultrafast_mcp::types::PromptContent::Text { text } => {
-                assert!(text.contains("{{request}}"));
-            }
-            _ => panic!("Expected text content"),
-        }
+        // Since MCP protocol combines system and user messages, we only expect one message
+        // No separate user message to check
     }
 
     #[tokio::test]

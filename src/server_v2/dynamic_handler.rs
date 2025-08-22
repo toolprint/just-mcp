@@ -18,7 +18,10 @@ use tokio::sync::RwLock;
 use tracing;
 
 #[cfg(feature = "ultrafast-framework")]
-use ultrafast_mcp::{ToolHandler, ToolCall, ToolResult, MCPError, ListToolsRequest, ListToolsResponse, Tool, ToolContent, MCPResult};
+use ultrafast_mcp::{
+    ListToolsRequest, ListToolsResponse, MCPError, MCPResult, Tool, ToolCall, ToolContent,
+    ToolHandler, ToolResult,
+};
 
 /// Dynamic tool management wrapper for the ultrafast-mcp framework
 ///
@@ -354,8 +357,7 @@ impl DynamicToolHandler {
             }
             _ => {
                 return Err(crate::error::Error::Other(format!(
-                    "Unknown admin tool: {}",
-                    tool_name
+                    "Unknown admin tool: {tool_name}"
                 )));
             }
         };
@@ -573,6 +575,7 @@ impl DynamicToolHandler {
     }
 
     /// Notify the framework of tool changes (legacy method)
+    #[allow(dead_code)]
     async fn notify_framework_of_changes(&self) -> Result<()> {
         // Create a diff that treats all current tools as "modified"
         let tools = self.tools.read().await;
@@ -795,7 +798,7 @@ impl FrameworkToolHandler {
         // Add specific error message if available
         if let Some(error) = &result.error {
             content.push(McpContent::Text {
-                text: format!("Error details: {}", error),
+                text: format!("Error details: {error}"),
             });
         }
 
@@ -811,7 +814,7 @@ impl FrameworkToolHandler {
         };
 
         content.push(McpContent::Text {
-            text: format!("Troubleshooting: {}", troubleshooting_hint),
+            text: format!("Troubleshooting: {troubleshooting_hint}"),
         });
 
         Ok(McpToolResult {
@@ -888,6 +891,12 @@ impl FrameworkToolHandler {
 }
 
 #[cfg(feature = "ultrafast-framework")]
+impl Default for FrameworkHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FrameworkHandle {
     /// Create a new framework handle
     pub fn new() -> Self {
@@ -932,7 +941,7 @@ impl FrameworkHandle {
 
     /// Get framework server information
     pub fn server_info(&self) -> String {
-        "FrameworkHandle".to_string()
+        "SequentialThinkingServer - Framework Handle".to_string()
     }
 
     /// Check if the framework handle is valid
@@ -948,7 +957,7 @@ impl FrameworkHandle {
 impl ToolHandler for DynamicToolHandler {
     async fn list_tools(&self, _request: ListToolsRequest) -> MCPResult<ListToolsResponse> {
         tracing::debug!("ToolHandler::list_tools called");
-        
+
         let tools = self.tools.read().await;
         let framework_tools: Vec<Tool> = tools
             .values()
@@ -960,18 +969,21 @@ impl ToolHandler for DynamicToolHandler {
                 annotations: None,
             })
             .collect();
-        
+
         tracing::debug!("ToolHandler returning {} tools", framework_tools.len());
         Ok(ListToolsResponse {
             tools: framework_tools,
             next_cursor: None,
         })
     }
-    
+
     async fn handle_tool_call(&self, call: ToolCall) -> MCPResult<ToolResult> {
         tracing::info!("ToolHandler::handle_tool_call: {}", call.name);
-        
-        match self.execute_tool(&call.name, call.arguments.unwrap_or_default()).await {
+
+        match self
+            .execute_tool(&call.name, call.arguments.unwrap_or_default())
+            .await
+        {
             Ok(execution_result) => {
                 if execution_result.success {
                     Ok(ToolResult {
@@ -1009,14 +1021,14 @@ mod tests {
     fn create_test_tool(name: &str) -> ToolDefinition {
         ToolDefinition {
             name: name.to_string(),
-            description: format!("Test tool: {}", name),
+            description: format!("Test tool: {name}"),
             input_schema: json!({
                 "type": "object",
                 "properties": {},
                 "required": []
             }),
             dependencies: vec![],
-            source_hash: format!("hash_{}", name),
+            source_hash: format!("hash_{name}"),
             last_modified: SystemTime::now(),
             internal_name: None,
         }
@@ -1255,7 +1267,7 @@ mod tests {
         // Debug the result
         match &result {
             Ok(mcp_result) => {
-                println!("Tool execution succeeded with MCP result: {:?}", mcp_result);
+                println!("Tool execution succeeded with MCP result: {mcp_result:?}");
 
                 // The execution should succeed in returning an MCP result
                 // even if the underlying tool execution failed
@@ -1288,15 +1300,14 @@ mod tests {
             Err(e) => {
                 // If we get an error at this level, it means the MCP conversion failed
                 // This is still valid behavior, but different from what we expected
-                println!("Tool execution failed at MCP level: {}", e);
+                println!("Tool execution failed at MCP level: {e}");
 
                 // Verify it's a reasonable error (path validation, etc.)
                 assert!(
                     e.to_string().contains("No such file")
                         || e.to_string().contains("not found")
                         || e.to_string().contains("Invalid parent path"),
-                    "Error should be related to missing files/paths: {}",
-                    e
+                    "Error should be related to missing files/paths: {e}"
                 );
 
                 println!("✓ Framework tool execution correctly validates paths and fails safely");
@@ -1425,7 +1436,7 @@ mod tests {
         // Debug the actual result
         match &result {
             Ok(_) => println!("Execution succeeded (with tool failure expected)"),
-            Err(e) => println!("Execution failed: {}", e),
+            Err(e) => println!("Execution failed: {e}"),
         }
 
         // The execution might fail at the security validation level
@@ -1438,8 +1449,7 @@ mod tests {
                     || error_message.contains("directory")
                     || error_message.contains("No such file")
                     || error_message.contains("Invalid parent path"),
-                "Expected path-related error but got: {}",
-                error_message
+                "Expected path-related error but got: {error_message}"
             );
             println!("✓ Security validation correctly prevented execution of invalid path");
             return; // Test passes - security worked correctly
@@ -1500,7 +1510,7 @@ mod tests {
         // Debug the actual result
         match &result {
             Ok(_) => println!("Build task execution succeeded (with tool failure expected)"),
-            Err(e) => println!("Build task execution failed: {}", e),
+            Err(e) => println!("Build task execution failed: {e}"),
         }
 
         // Similar to the security test, the execution might fail at security validation
@@ -1512,8 +1522,7 @@ mod tests {
                     || error_message.contains("directory")
                     || error_message.contains("No such file")
                     || error_message.contains("Invalid parent path"),
-                "Expected path-related error but got: {}",
-                error_message
+                "Expected path-related error but got: {error_message}"
             );
             println!("✓ Security validation correctly prevented execution (preserving existing patterns)");
             return; // Test passes - security worked correctly

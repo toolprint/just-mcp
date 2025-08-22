@@ -50,10 +50,11 @@ impl FrameworkResourceProvider {
     /// List available resources
     pub async fn list_resources(&self) -> Result<Vec<String>> {
         // Use existing resource provider logic
-        let resources =
-            self.combined_provider.list_resources().await.map_err(|e| {
-                crate::error::Error::Other(format!("Resource listing failed: {}", e))
-            })?;
+        let resources = self
+            .combined_provider
+            .list_resources()
+            .await
+            .map_err(|e| crate::error::Error::Other(format!("Resource listing failed: {e}")))?;
         Ok(resources.into_iter().map(|r| r.uri).collect())
     }
 }
@@ -96,8 +97,7 @@ impl ResourceHandler for FrameworkResourceProvider {
                 })
             }
             Err(e) => Err(MCPError::internal_error(format!(
-                "Resource read failed: {}",
-                e
+                "Resource read failed: {e}"
             ))),
         }
     }
@@ -124,8 +124,7 @@ impl ResourceHandler for FrameworkResourceProvider {
                 })
             }
             Err(e) => Err(MCPError::internal_error(format!(
-                "Resource listing failed: {}",
-                e
+                "Resource listing failed: {e}"
             ))),
         }
     }
@@ -152,8 +151,7 @@ impl ResourceHandler for FrameworkResourceProvider {
                 })
             }
             Err(e) => Err(MCPError::internal_error(format!(
-                "Resource template listing failed: {}",
-                e
+                "Resource template listing failed: {e}"
             ))),
         }
     }
@@ -171,8 +169,7 @@ impl ResourceHandler for FrameworkResourceProvider {
             Ok(())
         } else {
             Err(MCPError::invalid_params(format!(
-                "Access denied for URI: {}",
-                uri
+                "Access denied for URI: {uri}"
             )))
         }
     }

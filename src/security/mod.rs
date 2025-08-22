@@ -366,7 +366,7 @@ mod tests {
 
         // Test with too many parameters
         for i in 0..100 {
-            params.insert(format!("param{}", i), serde_json::json!("value"));
+            params.insert(format!("param{i}"), serde_json::json!("value"));
         }
         assert!(validator.validate_parameters(&params).is_err());
     }

@@ -563,7 +563,7 @@ mod non_vector_tests {
 
         // Registry should still work
         assert!(!registry.is_empty());
-        assert!(registry.len() > 0);
+        assert!(!registry.is_empty());
 
         // Create indexer without vector search
         let indexer = EmbeddedContentIndexer::new(registry.clone());
@@ -616,7 +616,7 @@ mod universal_tests {
 
         // Basic consistency checks
         assert!(!registry.is_empty());
-        assert!(registry.len() > 0);
+        assert!(!registry.is_empty());
 
         let documents = registry.get_all_documents();
         assert_eq!(documents.len(), registry.len());

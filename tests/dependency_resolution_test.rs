@@ -392,11 +392,11 @@ setup: deploy
         // This scenario should not have circular dependencies or missing dependencies
         // since all referenced recipes exist in the same file
         for cycle in &validation_result.circular_dependencies {
-            println!("  Circular dependency detected: {:?}", cycle);
+            println!("  Circular dependency detected: {cycle:?}");
         }
 
         for missing in &validation_result.missing_dependencies {
-            println!("  Missing dependency: {}", missing);
+            println!("  Missing dependency: {missing}");
         }
     }
 
@@ -418,7 +418,7 @@ setup: deploy
         // Test extremely long dependency chain
         let long_chain: Vec<RecipeInfo> = (0..100)
             .map(|i| RecipeInfo {
-                name: format!("recipe_{}", i),
+                name: format!("recipe_{i}"),
                 line_number: i + 1,
                 has_parameters: false,
                 has_dependencies: i > 0,

@@ -26,7 +26,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-
 /// Start the framework-based MCP server with the given arguments
 async fn start_framework_server(args: &Args) -> Result<()> {
     #[cfg(feature = "ultrafast-framework")]

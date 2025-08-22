@@ -109,7 +109,7 @@ test:
     let result = executor.execute(request).await;
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    eprintln!("Error message: {}", err_msg);
+    eprintln!("Error message: {err_msg}");
     assert!(err_msg.contains("forbidden pattern") || err_msg.to_lowercase().contains("invalid"));
 }
 
@@ -150,7 +150,7 @@ test name:
     let result = executor.execute(request).await;
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    eprintln!("Error message: {}", err_msg);
+    eprintln!("Error message: {err_msg}");
     assert!(err_msg.contains("forbidden pattern") || err_msg.to_lowercase().contains("invalid"));
 }
 

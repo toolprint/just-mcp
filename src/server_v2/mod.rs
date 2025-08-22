@@ -25,7 +25,10 @@ pub mod resources;
 
 // Import ultrafast-mcp framework components
 #[cfg(feature = "ultrafast-framework")]
-use ultrafast_mcp::{UltraFastServer, ServerInfo, ServerCapabilities, ToolsCapability, ResourcesCapability, PromptsCapability};
+use ultrafast_mcp::{
+    PromptsCapability, ResourcesCapability, ServerCapabilities, ServerInfo, ToolsCapability,
+    UltraFastServer,
+};
 
 /// Framework-based MCP server implementation
 ///
@@ -299,7 +302,7 @@ impl FrameworkServer {
                     Err(e) => {
                         // Create a framework error and analyze it
                         let framework_error =
-                            crate::error::Error::Other(format!("Framework server error: {}", e));
+                            crate::error::Error::Other(format!("Framework server error: {e}"));
                         let error_info = ErrorAdapter::extract_error_info(&framework_error);
                         let error_category = ErrorAdapter::categorize_error(&framework_error);
 
@@ -372,12 +375,12 @@ impl FrameworkServer {
         self.prompt_provider.as_ref()
     }
 
-
     /// Integrate our tools with the framework server (placeholder)
     ///
     /// This method is a placeholder for future framework integration.
     /// The exact API depends on the ultrafast-mcp framework capabilities.
     #[cfg(feature = "ultrafast-framework")]
+    #[allow(dead_code)]
     async fn prepare_tool_integration(
         &self,
         framework_tool_handler: Arc<dynamic_handler::FrameworkToolHandler>,
@@ -496,7 +499,7 @@ impl FrameworkServer {
 
         // Periodically sync tools from registry to dynamic handler
         let mut sync_interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
-        
+
         loop {
             tokio::select! {
                 _ = sync_interval.tick() => {
@@ -607,7 +610,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Create a task to test server startup (but don't let it run forever)
-        if let Some(_) = &server.mcp_server {
+        if server.mcp_server.is_some() {
             // Test that the run method doesn't panic on startup
             // We'll use a timeout to prevent the test from hanging
             let server_task = tokio::spawn(async move {

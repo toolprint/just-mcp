@@ -574,7 +574,7 @@ mod tests {
             compilation_time_us: 500,
         };
 
-        let display = format!("{}", stats);
+        let display = format!("{stats}");
         assert!(display.contains("10 hits"));
         assert!(display.contains("2 misses"));
         assert!(display.contains("83.3% hit rate"));
