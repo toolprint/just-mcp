@@ -138,3 +138,7 @@ release-artifacts/
 
 # Build output directory
 build/
+
+# Zigbuild Release
+.intentionally-empty-file.o
+
