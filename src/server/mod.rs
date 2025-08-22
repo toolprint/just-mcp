@@ -601,32 +601,21 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "ultrafast-framework")]
     async fn test_framework_server_can_handle_mcp_protocol() {
-        use std::time::Duration;
-
         let mut server = FrameworkServer::new();
 
         // Initialize the server
         let result = server.initialize().await;
         assert!(result.is_ok());
 
-        // Create a task to test server startup (but don't let it run forever)
-        if server.mcp_server.is_some() {
-            // Test that the run method doesn't panic on startup
-            // We'll use a timeout to prevent the test from hanging
-            let server_task = tokio::spawn(async move {
-                // This would normally run forever, but we'll cancel it
-                server.run().await
-            });
+        // Verify that the MCP server was created successfully
+        assert!(
+            server.mcp_server.is_some(),
+            "MCP server should be created after initialization"
+        );
 
-            // Give it a moment to start
-            tokio::time::sleep(Duration::from_millis(100)).await;
-
-            // Cancel the task
-            server_task.abort();
-
-            // If we get here without panicking, the basic startup works
-            assert!(true, "Framework server startup completed without errors");
-        }
+        // We can't actually run the server in tests because it reads from stdin,
+        // which would block. But we've verified it initializes correctly.
+        // The actual run() method is tested in integration tests or manually.
     }
 
     #[tokio::test]

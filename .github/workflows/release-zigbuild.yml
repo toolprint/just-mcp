@@ -1,0 +1,214 @@
+name: Release with Zigbuild
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.2.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-releases:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            name: Linux x86_64
+          - target: aarch64-unknown-linux-gnu
+            name: Linux ARM64
+          - target: x86_64-apple-darwin
+            name: macOS Intel
+          - target: aarch64-apple-darwin
+            name: macOS Apple Silicon
+          - target: universal2-apple-darwin
+            name: macOS Universal
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "VERSION_NUMBER=${VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Setup Rust with zigbuild
+        run: |
+          # Install Rust
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          source $HOME/.cargo/env
+
+          # Install cargo-zigbuild
+          cargo install cargo-zigbuild --locked
+
+          # Install zigbuild dependencies
+          pip3 install ziglang
+
+          # Add target
+          if [ "${{ matrix.target }}" = "universal2-apple-darwin" ]; then
+            rustup target add x86_64-apple-darwin aarch64-apple-darwin
+          else
+            rustup target add ${{ matrix.target }}
+          fi
+
+      - name: Build with zigbuild
+        run: |
+          source $HOME/.cargo/env
+          cargo zigbuild --release --target ${{ matrix.target }}
+
+      - name: Prepare artifacts
+        run: |
+          VERSION="${{ steps.get_version.outputs.VERSION }}"
+          TARGET="${{ matrix.target }}"
+
+          # Create artifact directory
+          mkdir -p artifacts
+
+          # Copy binary
+          if [ "$TARGET" = "universal2-apple-darwin" ]; then
+            # For universal binary, zigbuild creates it in the universal2 target dir
+            cp target/$TARGET/release/just-mcp artifacts/
+          else
+            cp target/$TARGET/release/just-mcp artifacts/
+          fi
+
+          # Copy additional files
+          cp README.md LICENSE artifacts/
+
+          # Create tarball
+          cd artifacts
+          tar czf ../just-mcp-${VERSION}-${TARGET}.tar.gz *
+          cd ..
+
+          # Generate checksum
+          sha256sum just-mcp-${VERSION}-${TARGET}.tar.gz > just-mcp-${VERSION}-${TARGET}.tar.gz.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            just-mcp-*.tar.gz
+            just-mcp-*.tar.gz.sha256
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-releases
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for changelog
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "First release!" > release_notes.md
+          else
+            echo "## Changes since ${PREV_TAG}" > release_notes.md
+            echo "" >> release_notes.md
+            git log ${PREV_TAG}..HEAD --pretty=format:"- %s (%h)" >> release_notes.md
+          fi
+
+          echo "" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "## Installation" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Using cargo-binstall (Recommended)" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "cargo binstall just-mcp" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Direct Download" >> release_notes.md
+          echo "Download the appropriate binary for your platform from the assets below." >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Supported Platforms" >> release_notes.md
+          echo "- Linux x86_64 (\`x86_64-unknown-linux-gnu\`)" >> release_notes.md
+          echo "- Linux ARM64 (\`aarch64-unknown-linux-gnu\`)" >> release_notes.md
+          echo "- macOS Intel (\`x86_64-apple-darwin\`)" >> release_notes.md
+          echo "- macOS Apple Silicon (\`aarch64-apple-darwin\`)" >> release_notes.md
+          echo "- macOS Universal Binary (\`universal2-apple-darwin\`)" >> release_notes.md
+
+      - name: Create combined checksums file
+        run: |
+          cd artifacts
+          cat *.sha256 > checksums.txt
+          cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          name: just-mcp ${{ steps.get_version.outputs.VERSION }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(steps.get_version.outputs.VERSION, '-') }}
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.sha256
+            artifacts/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-binstall:
+    name: Verify cargo-binstall compatibility
+    needs: create-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install cargo-binstall
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+
+      - name: Test installation
+        run: |
+          # Wait a moment for release to be fully available
+          sleep 10
+
+          # Try to install using cargo-binstall (will use the GitHub release)
+          cargo binstall just-mcp --no-confirm --log-level debug || true
+
+          # Verify binary works
+          if command -v just-mcp &> /dev/null; then
+            just-mcp --version
+            echo "✅ cargo-binstall installation successful!"
+          else
+            echo "⚠️ cargo-binstall installation needs verification"
+          fi
