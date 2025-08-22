@@ -12,6 +12,7 @@
 use crate::error::Result;
 use crate::registry::ToolRegistry;
 use crate::executor::TaskExecutor;
+use crate::watcher::JustfileWatcher;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -37,6 +38,7 @@ pub struct FrameworkServer {
     dynamic_tool_handler: Option<Arc<dynamic_handler::DynamicToolHandler>>,
     registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
     executor: Arc<tokio::sync::Mutex<TaskExecutor>>,
+    watcher: Option<Arc<JustfileWatcher>>,
 }
 
 impl FrameworkServer {
@@ -55,6 +57,7 @@ impl FrameworkServer {
             dynamic_tool_handler: None,
             registry,
             executor,
+            watcher: None,
         }
     }
 
@@ -99,6 +102,15 @@ impl FrameworkServer {
         let dynamic_handler = dynamic_handler.with_framework_handle(framework_handle);
         let dynamic_handler_arc = Arc::new(dynamic_handler);
 
+        // Create watcher and set up integration with dynamic handler
+        let mut watcher = JustfileWatcher::new(self.registry.clone());
+        
+        // Configure the watcher before putting it in an Arc
+        watcher.configure_names(&self.watch_configs).await;
+        watcher.set_multiple_dirs(self.watch_configs.len() > 1);
+        
+        self.watcher = Some(Arc::new(watcher));
+
         // Store references
         self.sequential_thinking_server = Some((*sequential_server_arc).clone());
         self.dynamic_tool_handler = Some(dynamic_handler_arc);
@@ -129,6 +141,14 @@ impl FrameworkServer {
         #[cfg(feature = "ultrafast-framework")]
         {
             if let Some(sequential_server) = &self.sequential_thinking_server {
+                // Start the watcher before starting the framework server
+                if let (Some(watcher), Some(dynamic_handler)) = (&self.watcher, &self.dynamic_tool_handler) {
+                    self.start_watcher_with_dynamic_integration(
+                        watcher.clone(),
+                        dynamic_handler.clone(),
+                    ).await?;
+                }
+                
                 tracing::info!("Starting ultrafast-mcp sequential thinking server");
                 
                 // Create an MCP server from the sequential thinking server
@@ -169,6 +189,137 @@ impl FrameworkServer {
     #[cfg(feature = "ultrafast-framework")]
     pub fn dynamic_tool_handler(&self) -> Option<&Arc<dynamic_handler::DynamicToolHandler>> {
         self.dynamic_tool_handler.as_ref()
+    }
+
+    /// Start the watcher with dynamic tool handler integration
+    ///
+    /// This method sets up the file watcher to monitor justfiles and automatically
+    /// sync changes to the dynamic tool handler, which then notifies the framework.
+    async fn start_watcher_with_dynamic_integration(
+        &self,
+        watcher: Arc<JustfileWatcher>,
+        dynamic_handler: Arc<dynamic_handler::DynamicToolHandler>,
+    ) -> Result<()> {
+        tracing::info!("Starting watcher with dynamic tool handler integration");
+
+        // Do an initial scan of justfiles and sync to dynamic handler
+        for path in &self.watch_paths {
+            if path.exists() && path.is_dir() {
+                // Scan for existing justfiles in directory
+                let justfile_path = path.join("justfile");
+                if justfile_path.exists() {
+                    tracing::info!("Found justfile: {}", justfile_path.display());
+                    if let Err(e) = watcher.parse_and_update_justfile(&justfile_path).await {
+                        tracing::warn!("Error parsing justfile: {}", e);
+                    }
+                }
+
+                // Also check for capitalized Justfile
+                let justfile_cap = path.join("Justfile");
+                if justfile_cap.exists() {
+                    tracing::info!("Found Justfile: {}", justfile_cap.display());
+                    if let Err(e) = watcher.parse_and_update_justfile(&justfile_cap).await {
+                        tracing::warn!("Error parsing Justfile: {}", e);
+                    }
+                }
+            }
+        }
+
+        // Sync initial tools to dynamic handler
+        if let Err(e) = dynamic_handler.sync_tools_from_registry().await {
+            tracing::warn!("Failed to sync initial tools to dynamic handler: {}", e);
+        } else {
+            tracing::info!("Initial tools synced to dynamic handler");
+        }
+
+        // Start the watcher in the background with dynamic handler integration
+        let watch_paths = self.watch_paths.clone();
+        let watcher_for_task = watcher.clone();
+        let dynamic_handler_for_task = dynamic_handler.clone();
+
+        tokio::spawn(async move {
+            // Create a custom watcher loop that integrates with dynamic handler
+            if let Err(e) = Self::run_watcher_with_dynamic_sync(
+                watcher_for_task,
+                dynamic_handler_for_task,
+                watch_paths,
+            ).await {
+                tracing::error!("Watcher with dynamic sync error: {}", e);
+            }
+        });
+
+        tracing::info!("Watcher with dynamic integration started successfully");
+        Ok(())
+    }
+
+    /// Run the watcher with dynamic handler synchronization
+    ///
+    /// This method implements a custom watcher loop that preserves all existing
+    /// watcher behavior (debouncing, file hash checking, error handling) while
+    /// adding integration with the dynamic tool handler.
+    async fn run_watcher_with_dynamic_sync(
+        watcher: Arc<JustfileWatcher>,
+        dynamic_handler: Arc<dynamic_handler::DynamicToolHandler>,
+        watch_paths: Vec<PathBuf>,
+    ) -> Result<()> {
+        use crate::notification;
+
+        tracing::info!("Starting enhanced watcher loop with dynamic handler sync");
+
+        // Create a notification channel for watcher events
+        let (notification_sender, mut notification_receiver) = notification::channel();
+        
+        // Set up the watcher with notification sender
+        let watcher_with_notifications = {
+            // We need to reconstruct the watcher with the notification sender
+            // since with_notification_sender takes ownership
+            Arc::try_unwrap(watcher)
+                .map_err(|_| crate::error::Error::Other("Failed to take watcher ownership".into()))?
+                .with_notification_sender(notification_sender)
+        };
+
+        // Start the standard watcher in a separate task
+        let watcher_for_watching = Arc::new(watcher_with_notifications);
+        let watch_paths_clone = watch_paths.clone();
+        let watcher_task = tokio::spawn(async move {
+            if let Err(e) = watcher_for_watching.watch_paths(watch_paths_clone).await {
+                tracing::error!("File watcher error: {}", e);
+            }
+        });
+
+        // Listen for notifications and sync to dynamic handler
+        loop {
+            tokio::select! {
+                notification = notification_receiver.recv() => {
+                    match notification {
+                        Some(notification::Notification::ToolsListChanged) => {
+                            tracing::debug!("Received tools list changed notification, syncing to dynamic handler");
+                            
+                            // Sync the registry changes to the dynamic handler
+                            if let Err(e) = dynamic_handler.sync_tools_from_registry().await {
+                                tracing::error!("Failed to sync tools to dynamic handler: {}", e);
+                            } else {
+                                tracing::debug!("Successfully synced tools to dynamic handler");
+                            }
+                        }
+                        None => {
+                            tracing::info!("Notification channel closed, stopping watcher sync");
+                            break;
+                        }
+                    }
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    tracing::info!("Received shutdown signal, stopping watcher");
+                    break;
+                }
+            }
+        }
+
+        // Clean up
+        watcher_task.abort();
+        tracing::info!("Watcher with dynamic sync stopped");
+        
+        Ok(())
     }
 }
 
@@ -335,5 +486,86 @@ mod tests {
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].name, "test_build");
         assert_eq!(tools[0].description, "Build the project");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "ultrafast-framework")]
+    async fn test_watcher_integration_with_dynamic_handler() {
+        use std::fs;
+        use tempfile::TempDir;
+        
+        // Create a temporary directory with a justfile
+        let temp_dir = TempDir::new().unwrap();
+        let justfile_path = temp_dir.path().join("justfile");
+        
+        let initial_content = r#"
+# Test task
+test:
+    echo "Running tests"
+"#;
+        fs::write(&justfile_path, initial_content).unwrap();
+        
+        // Create server with the temp directory
+        let mut server = FrameworkServer::new()
+            .with_watch_paths(vec![temp_dir.path().to_path_buf()])
+            .with_watch_names(vec![(temp_dir.path().to_path_buf(), Some("test".to_string()))]);
+        
+        // Initialize the server
+        let result = server.initialize().await;
+        assert!(result.is_ok());
+        
+        // Verify watcher and dynamic handler were created
+        assert!(server.watcher.is_some());
+        assert!(server.dynamic_tool_handler().is_some());
+        
+        let watcher = server.watcher.as_ref().unwrap();
+        let dynamic_handler = server.dynamic_tool_handler().unwrap();
+        
+        // Test initial scan - watcher should parse the justfile
+        watcher.parse_and_update_justfile(&justfile_path).await.unwrap();
+        
+        // Sync to dynamic handler
+        dynamic_handler.sync_tools_from_registry().await.unwrap();
+        
+        // Verify tool was found and synced
+        assert_eq!(dynamic_handler.tool_count().await, 1);
+        assert!(dynamic_handler.has_tool("test@test").await || dynamic_handler.has_tool("test").await);
+        
+        // Test tool definition
+        let tools = dynamic_handler.get_tool_definitions().await;
+        assert_eq!(tools.len(), 1);
+        assert!(tools[0].name == "test@test" || tools[0].name == "test");
+        assert!(tools[0].description.contains("test"));
+        
+        // Test dynamic update - modify the justfile
+        let updated_content = r#"
+# Test task
+test:
+    echo "Running tests"
+
+# New build task  
+build:
+    echo "Building project"
+"#;
+        fs::write(&justfile_path, updated_content).unwrap();
+        
+        // Parse the updated justfile
+        watcher.parse_and_update_justfile(&justfile_path).await.unwrap();
+        
+        // Sync to dynamic handler
+        dynamic_handler.sync_tools_from_registry().await.unwrap();
+        
+        // Should now have 2 tools
+        assert_eq!(dynamic_handler.tool_count().await, 2);
+        assert!(dynamic_handler.has_tool("test@test").await || dynamic_handler.has_tool("test").await);
+        assert!(dynamic_handler.has_tool("build@test").await || dynamic_handler.has_tool("build").await);
+        
+        let updated_tools = dynamic_handler.get_tool_definitions().await;
+        assert_eq!(updated_tools.len(), 2);
+        
+        // Verify both tools are present
+        let tool_names: Vec<&str> = updated_tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(tool_names.contains(&"test@test") || tool_names.contains(&"test"));
+        assert!(tool_names.contains(&"build@test") || tool_names.contains(&"build"));
     }
 }
