@@ -483,24 +483,10 @@ impl FrameworkServer {
         dynamic_handler: Arc<dynamic_handler::DynamicToolHandler>,
         watch_paths: Vec<PathBuf>,
     ) -> Result<()> {
-        use crate::notification;
+        tracing::info!("Starting simplified watcher loop with dynamic handler sync");
 
-        tracing::info!("Starting enhanced watcher loop with dynamic handler sync");
-
-        // Create a notification channel for watcher events
-        let (notification_sender, mut notification_receiver) = notification::channel();
-
-        // Set up the watcher with notification sender
-        let watcher_with_notifications = {
-            // We need to reconstruct the watcher with the notification sender
-            // since with_notification_sender takes ownership
-            Arc::try_unwrap(watcher)
-                .map_err(|_| crate::error::Error::Other("Failed to take watcher ownership".into()))?
-                .with_notification_sender(notification_sender)
-        };
-
-        // Start the standard watcher in a separate task
-        let watcher_for_watching = Arc::new(watcher_with_notifications);
+        // Use a simpler approach: start the watcher and periodically sync
+        let watcher_for_watching = watcher.clone();
         let watch_paths_clone = watch_paths.clone();
         let watcher_task = tokio::spawn(async move {
             if let Err(e) = watcher_for_watching.watch_paths(watch_paths_clone).await {
@@ -508,25 +494,15 @@ impl FrameworkServer {
             }
         });
 
-        // Listen for notifications and sync to dynamic handler
+        // Periodically sync tools from registry to dynamic handler
+        let mut sync_interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
+        
         loop {
             tokio::select! {
-                notification = notification_receiver.recv() => {
-                    match notification {
-                        Some(notification::Notification::ToolsListChanged) => {
-                            tracing::debug!("Received tools list changed notification, syncing to dynamic handler");
-
-                            // Sync the registry changes to the dynamic handler
-                            if let Err(e) = dynamic_handler.sync_tools_from_registry().await {
-                                tracing::error!("Failed to sync tools to dynamic handler: {}", e);
-                            } else {
-                                tracing::debug!("Successfully synced tools to dynamic handler");
-                            }
-                        }
-                        None => {
-                            tracing::info!("Notification channel closed, stopping watcher sync");
-                            break;
-                        }
+                _ = sync_interval.tick() => {
+                    // Periodically sync tools from registry to dynamic handler
+                    if let Err(e) = dynamic_handler.sync_tools_from_registry().await {
+                        tracing::debug!("Failed to sync tools to dynamic handler: {}", e);
                     }
                 }
                 _ = tokio::signal::ctrl_c() => {
