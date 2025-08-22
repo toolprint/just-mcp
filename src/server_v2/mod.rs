@@ -25,7 +25,7 @@ pub mod resources;
 
 // Import ultrafast-mcp framework components
 #[cfg(feature = "ultrafast-framework")]
-use ultrafast_mcp::{McpServer, ServerCapabilities, ToolHandler, ResourceHandler, PromptHandler};
+use ultrafast_mcp::{UltraFastServer, ServerInfo, ServerCapabilities, ToolsCapability, ResourcesCapability, PromptsCapability};
 
 /// Framework-based MCP server implementation
 ///
@@ -36,7 +36,7 @@ pub struct FrameworkServer {
     watch_configs: Vec<(PathBuf, Option<String>)>,
     admin_enabled: bool,
     #[cfg(feature = "ultrafast-framework")]
-    mcp_server: Option<McpServer>,
+    mcp_server: Option<UltraFastServer>,
     #[cfg(feature = "ultrafast-framework")]
     dynamic_tool_handler: Option<Arc<dynamic_handler::DynamicToolHandler>>,
     #[cfg(feature = "ultrafast-framework")]
@@ -102,24 +102,29 @@ impl FrameworkServer {
 
         // Create MCP server with our capabilities
         let capabilities = ServerCapabilities {
-            tools: Some(ultrafast_mcp::ToolCapabilities {
+            tools: Some(ToolsCapability {
                 list_changed: Some(true),
             }),
-            resources: Some(ultrafast_mcp::ResourceCapabilities {
+            resources: Some(ResourcesCapability {
                 subscribe: Some(false),
                 list_changed: Some(false),
             }),
-            prompts: Some(ultrafast_mcp::PromptCapabilities {
+            prompts: Some(PromptsCapability {
                 list_changed: Some(false),
             }),
+            completion: None,
+            logging: None,
         };
 
-        let server_info = ultrafast_mcp::ServerInfo {
+        let server_info = ServerInfo {
             name: "just-mcp".to_string(),
             version: crate::VERSION.to_string(),
+            description: Some("A Model Context Protocol server that transforms justfiles into AI-accessible automation tools".to_string()),
+            authors: Some(vec!["Just MCP Team".to_string()]),
+            homepage: Some("https://github.com/toolprint/just-mcp".to_string()),
+            license: Some("MIT".to_string()),
+            repository: Some("https://github.com/toolprint/just-mcp".to_string()),
         };
-
-        let mcp_server = McpServer::new(server_info, capabilities);
 
         // Create watcher first (needed for admin tools)
         let mut watcher = JustfileWatcher::new(self.registry.clone());
@@ -162,7 +167,7 @@ impl FrameworkServer {
         let dynamic_handler_arc = Arc::new(dynamic_handler);
 
         // Create framework tool handler for MCP integration
-        let framework_tool_handler = dynamic_handler_arc.clone().create_framework_tool_handler();
+        let _framework_tool_handler = dynamic_handler_arc.clone().create_framework_tool_handler();
 
         // Initialize resource provider
         let resource_provider = resources::create_framework_resource_provider(
@@ -182,42 +187,19 @@ impl FrameworkServer {
         .await?;
         let prompt_provider_arc = Arc::new(prompt_provider);
 
+        // Create the UltraFastServer with our handlers
+        let mcp_server = UltraFastServer::new(server_info, capabilities)
+            .with_tool_handler(dynamic_handler_arc.clone())
+            .with_resource_handler(resource_provider_arc.clone())
+            .with_prompt_handler(prompt_provider_arc.clone());
+
         // Store references
         self.mcp_server = Some(mcp_server);
         self.dynamic_tool_handler = Some(dynamic_handler_arc.clone());
         self.resource_provider = Some(resource_provider_arc.clone());
         self.prompt_provider = Some(prompt_provider_arc.clone());
 
-        // Register our tool handler with the framework
-        // This is the key integration that enables tool execution through the framework
-        if let Err(e) = self
-            .register_tool_handler_with_framework(&sequential_server_arc, framework_tool_handler)
-            .await
-        {
-            let error_info = ErrorAdapter::extract_error_info(&e);
-            let error_category = ErrorAdapter::categorize_error(&e);
-
-            tracing::warn!(
-                "Failed to register tool handler with framework: {} (category: {:?}, retryable: {})", 
-                error_info.user_message, error_category, error_info.is_retryable
-            );
-            tracing::debug!("Technical error details: {}", error_info.technical_details);
-
-            // Continue anyway if it's not a critical error
-            match error_category {
-                ErrorCategory::SystemError | ErrorCategory::ExternalError => {
-                    tracing::info!("Continuing without full framework integration - tool execution will still work");
-                }
-                ErrorCategory::InternalError => {
-                    tracing::error!(
-                        "Internal error during framework setup - this may affect functionality"
-                    );
-                }
-                ErrorCategory::UserError => {
-                    tracing::warn!("Configuration error during framework setup - check settings");
-                }
-            }
-        }
+        // Handlers are now registered with the UltraFastServer during creation
 
         tracing::info!("Framework server initialized successfully");
         Ok(())
@@ -390,36 +372,6 @@ impl FrameworkServer {
         self.prompt_provider.as_ref()
     }
 
-    /// Register our tool handler with the framework
-    ///
-    /// This method integrates our DynamicToolHandler with the framework's
-    /// tool execution system, enabling MCP tool calls to route to our TaskExecutor.
-    #[cfg(feature = "ultrafast-framework")]
-    async fn register_tool_handler_with_framework(
-        &self,
-        _sequential_server: &Arc<SequentialThinkingServer>,
-        framework_tool_handler: Arc<dynamic_handler::FrameworkToolHandler>,
-    ) -> Result<()> {
-        tracing::info!("Registering tool handler with ultrafast-mcp framework");
-
-        // Get the tools that need to be registered
-        let tools = framework_tool_handler.list_tools().await?;
-        tracing::info!("Registering {} tools with framework", tools.len());
-
-        // TODO: The actual registration mechanism depends on the ultrafast-mcp framework API
-        // For now, we establish the connection and log the registration
-        // In a complete implementation, this would:
-        // 1. Register our handler as the tool execution provider
-        // 2. Update the framework's tool registry with our tools
-        // 3. Set up the routing from MCP tool calls to our handler
-
-        tracing::debug!("Tool handler registration completed with framework");
-
-        // Store a reference for later use
-        // In practice, the framework would hold this reference and use it for tool execution
-
-        Ok(())
-    }
 
     /// Integrate our tools with the framework server (placeholder)
     ///
@@ -639,7 +591,7 @@ mod tests {
             assert!(result.is_ok());
 
             // Verify server was initialized
-            assert!(server.sequential_thinking_server.is_some());
+            assert!(server.mcp_server.is_some());
         }
 
         #[cfg(not(feature = "ultrafast-framework"))]
@@ -660,19 +612,10 @@ mod tests {
         assert!(result.is_ok());
 
         // Test basic server capabilities
-        if let Some(sequential_server) = &server.sequential_thinking_server {
-            // Test server info
-            let info = sequential_server.info();
-            assert!(info.name.contains("sequential-thinking"));
-
-            // Test capabilities
-            let capabilities = sequential_server.capabilities();
-            assert!(capabilities.tools.is_some());
-
-            // Test that we can create an MCP server from it
-            let framework_server = sequential_server.clone().create_mcp_server();
-            // The fact that this doesn't panic indicates basic functionality works
-            drop(framework_server);
+        if let Some(_mcp_server) = &server.mcp_server {
+            // Test that the server was created successfully
+            // Note: UltraFastServer doesn't expose public info/capabilities methods
+            // so we just verify it exists
         }
     }
 
@@ -688,7 +631,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Create a task to test server startup (but don't let it run forever)
-        if let Some(_) = &server.sequential_thinking_server {
+        if let Some(_) = &server.mcp_server {
             // Test that the run method doesn't panic on startup
             // We'll use a timeout to prevent the test from hanging
             let server_task = tokio::spawn(async move {

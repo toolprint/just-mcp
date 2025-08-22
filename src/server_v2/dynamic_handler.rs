@@ -18,7 +18,7 @@ use tokio::sync::RwLock;
 use tracing;
 
 #[cfg(feature = "ultrafast-framework")]
-use ultrafast_mcp::{ToolHandler, CallToolRequest, CallToolResult};
+use ultrafast_mcp::{ToolHandler, ToolCall, ToolResult, MCPError, ListToolsRequest, ListToolsResponse, Tool, ToolContent, MCPResult};
 
 /// Dynamic tool management wrapper for the ultrafast-mcp framework
 ///
@@ -46,7 +46,7 @@ pub struct DynamicToolHandler {
 /// Handle to the ultrafast-mcp framework for tool updates
 #[cfg(feature = "ultrafast-framework")]
 pub struct FrameworkHandle {
-    // Simplified framework handle without sequential thinking server dependency
+    // Simplified framework handle for tool change notifications
 }
 
 /// Framework-compatible tool representation
@@ -890,13 +890,8 @@ impl FrameworkToolHandler {
 #[cfg(feature = "ultrafast-framework")]
 impl FrameworkHandle {
     /// Create a new framework handle
-    pub fn new(sequential_server: Arc<SequentialThinkingServer>) -> Self {
-        Self { sequential_server }
-    }
-
-    /// Get the sequential thinking server reference
-    pub fn sequential_server(&self) -> &Arc<SequentialThinkingServer> {
-        &self.sequential_server
+    pub fn new() -> Self {
+        Self {}
     }
 
     /// Notify the framework of tool list changes
@@ -937,10 +932,7 @@ impl FrameworkHandle {
 
     /// Get framework server information
     pub fn server_info(&self) -> String {
-        format!(
-            "SequentialThinkingServer({:p})",
-            self.sequential_server.as_ref()
-        )
+        "FrameworkHandle".to_string()
     }
 
     /// Check if the framework handle is valid
@@ -954,57 +946,53 @@ impl FrameworkHandle {
 #[cfg(feature = "ultrafast-framework")]
 #[async_trait::async_trait]
 impl ToolHandler for DynamicToolHandler {
-    async fn list_tools(&self) -> Result<Vec<ultrafast_mcp::Tool>, ultrafast_mcp::McpError> {
+    async fn list_tools(&self, _request: ListToolsRequest) -> MCPResult<ListToolsResponse> {
         tracing::debug!("ToolHandler::list_tools called");
         
         let tools = self.tools.read().await;
-        let framework_tools: Vec<ultrafast_mcp::Tool> = tools
+        let framework_tools: Vec<Tool> = tools
             .values()
-            .map(|tool| ultrafast_mcp::Tool {
+            .map(|tool| Tool {
                 name: tool.name.clone(),
-                description: Some(tool.description.clone()),
+                description: tool.description.clone(),
                 input_schema: tool.input_schema.clone(),
+                output_schema: None,
+                annotations: None,
             })
             .collect();
         
         tracing::debug!("ToolHandler returning {} tools", framework_tools.len());
-        Ok(framework_tools)
+        Ok(ListToolsResponse {
+            tools: framework_tools,
+            next_cursor: None,
+        })
     }
     
-    async fn call_tool(
-        &self,
-        request: ultrafast_mcp::CallToolRequest,
-    ) -> Result<ultrafast_mcp::CallToolResult, ultrafast_mcp::McpError> {
-        tracing::info!("ToolHandler::call_tool: {}", request.name);
+    async fn handle_tool_call(&self, call: ToolCall) -> MCPResult<ToolResult> {
+        tracing::info!("ToolHandler::handle_tool_call: {}", call.name);
         
-        match self.execute_tool(&request.name, request.arguments.unwrap_or_default()).await {
+        match self.execute_tool(&call.name, call.arguments.unwrap_or_default()).await {
             Ok(execution_result) => {
                 if execution_result.success {
-                    Ok(ultrafast_mcp::CallToolResult {
-                        content: vec![ultrafast_mcp::types::TextContent {
-                            type_: "text".to_string(),
-                            text: execution_result.stdout,
-                        }],
+                    Ok(ToolResult {
+                        content: vec![ToolContent::text(execution_result.stdout)],
                         is_error: Some(false),
                     })
                 } else {
-                    Ok(ultrafast_mcp::CallToolResult {
-                        content: vec![ultrafast_mcp::types::TextContent {
-                            type_: "text".to_string(),
-                            text: format!(
-                                "Tool execution failed:\nstdout: {}\nstderr: {}\nexit_code: {:?}",
-                                execution_result.stdout,
-                                execution_result.stderr,
-                                execution_result.exit_code
-                            ),
-                        }],
+                    Ok(ToolResult {
+                        content: vec![ToolContent::text(format!(
+                            "Tool execution failed:\nstdout: {}\nstderr: {}\nexit_code: {:?}",
+                            execution_result.stdout,
+                            execution_result.stderr,
+                            execution_result.exit_code
+                        ))],
                         is_error: Some(true),
                     })
                 }
             }
             Err(e) => {
                 tracing::error!("Tool execution error: {}", e);
-                Err(ultrafast_mcp::McpError::InternalError(e.to_string()))
+                Err(MCPError::internal_error(e.to_string()))
             }
         }
     }
@@ -1196,10 +1184,7 @@ mod tests {
     #[cfg(feature = "ultrafast-framework")]
     #[tokio::test]
     async fn test_framework_handle_operations() {
-        use ultrafast_mcp_sequential_thinking::SequentialThinkingServer;
-
-        let sequential_server = Arc::new(SequentialThinkingServer::new());
-        let handle = FrameworkHandle::new(sequential_server);
+        let handle = FrameworkHandle::new();
 
         // Test handle validity
         assert!(handle.is_valid());
