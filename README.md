@@ -12,6 +12,8 @@
 
 This enables AI assistants to understand, explore, and execute a project's common development workflows similar to how a human would.
 
+<img width="676" height="331" alt="just-mcp" src="https://github.com/user-attachments/assets/c1222e9b-e440-4e7e-ab8c-629e727d1849" />
+
 ## Quick Start
 
 1. Install [just](https://github.com/casey/just?tab=readme-ov-file#packages) - `cargo install just`
