@@ -20,8 +20,17 @@ async fn main() -> Result<()> {
             just_mcp::cli::handle_search_command(search_command).await?;
         }
         Some(Commands::Serve) | None => {
-            // Default behavior: start MCP server
-            start_mcp_server(&args).await?;
+            // Check if we should use framework server or custom implementation
+            let use_framework = args.use_framework 
+                || std::env::var("JUST_MCP_USE_FRAMEWORK").is_ok();
+            
+            if use_framework {
+                // Use ultrafast-mcp framework server
+                start_framework_server(&args).await?;
+            } else {
+                // Default behavior: start custom MCP server
+                start_mcp_server(&args).await?;
+            }
         }
     }
 
@@ -120,6 +129,86 @@ async fn start_mcp_server(args: &Args) -> Result<()> {
     server.run().await?;
 
     Ok(())
+}
+
+/// Start the framework-based MCP server with the given arguments
+async fn start_framework_server(args: &Args) -> Result<()> {
+    #[cfg(feature = "ultrafast-framework")]
+    {
+        tracing::info!("Starting {} v{} with ultrafast-mcp framework", just_mcp::PKG_NAME, just_mcp::VERSION);
+
+        // Parse watch directories with optional names (same logic as custom server)
+        let mut watch_configs = Vec::new();
+
+        if args.watch_dir.is_empty() {
+            // Default to current working directory with no name
+            let cwd = std::env::current_dir()?;
+            tracing::info!(
+                "No --watch-dir specified, using current directory: {}",
+                cwd.display()
+            );
+            watch_configs.push((cwd, None));
+        } else {
+            for dir_spec in &args.watch_dir {
+                if let Some(colon_pos) = dir_spec.find(':') {
+                    // Format: path:name
+                    let path = std::path::PathBuf::from(&dir_spec[..colon_pos]);
+                    let name = Some(dir_spec[colon_pos + 1..].to_string());
+                    watch_configs.push((path, name));
+                } else {
+                    // Just a path, no name
+                    watch_configs.push((std::path::PathBuf::from(dir_spec), None));
+                }
+            }
+        }
+
+        // Convert all paths to absolute paths
+        let mut absolute_configs = Vec::new();
+        for (path, name) in watch_configs {
+            let abs_path = if path.is_absolute() {
+                path
+            } else {
+                std::env::current_dir()?.join(path)
+            };
+            absolute_configs.push((abs_path, name));
+        }
+
+        // Extract just the paths for the server
+        let watch_paths: Vec<std::path::PathBuf> = absolute_configs
+            .iter()
+            .map(|(path, _)| path.clone())
+            .collect();
+
+        // Log the absolute paths being watched
+        tracing::info!("Watch directories (framework server):");
+        for (path, name) in &absolute_configs {
+            if let Some(n) = name {
+                tracing::info!("  {} (name: {})", path.display(), n);
+            } else {
+                tracing::info!("  {}", path.display());
+            }
+        }
+
+        // Create and configure the framework server
+        let mut framework_server = just_mcp::server_v2::FrameworkServer::new()
+            .with_watch_paths(watch_paths)
+            .with_watch_names(absolute_configs)
+            .with_admin_enabled(args.admin);
+
+        // Run the framework server
+        framework_server.run().await?;
+        Ok(())
+    }
+
+    #[cfg(not(feature = "ultrafast-framework"))]
+    {
+        let _ = args; // Suppress unused variable warning
+        Err(anyhow::anyhow!(
+            "Framework server requested but ultrafast-framework feature not enabled.\n\
+             Build with: cargo build --features ultrafast-framework\n\
+             Or remove --use-framework flag and JUST_MCP_USE_FRAMEWORK environment variable."
+        ))
+    }
 }
 
 fn init_logging(args: &Args) -> Result<()> {

@@ -26,7 +26,25 @@ use crate::vector_search::LocalEmbeddingProvider;
 #[derive(Parser, Debug, Clone)]
 #[command(name = "just-mcp")]
 #[command(version = crate::VERSION)]
-#[command(about = "Model Context Protocol server for justfile integration", long_about = None)]
+#[command(about = "Model Context Protocol server for justfile integration")]
+#[command(long_about = "
+Model Context Protocol server for justfile integration
+
+FEATURES:
+  - Custom MCP server (default): Full-featured implementation with justfile monitoring
+  - Framework server: Uses ultrafast-mcp framework for enhanced protocol compliance
+  
+SWITCHING MODES:
+  --use-framework          Use framework server instead of custom implementation
+  JUST_MCP_USE_FRAMEWORK   Environment variable alternative to --use-framework
+  
+EXAMPLES:
+  just-mcp                                    # Start custom server in current directory
+  just-mcp --watch-dir ./project              # Monitor specific directory
+  just-mcp --use-framework                    # Use framework server
+  JUST_MCP_USE_FRAMEWORK=1 just-mcp          # Use framework server via env var
+  just-mcp search query --query 'build app'   # Search indexed justfiles
+")]
 pub struct Args {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -57,6 +75,12 @@ pub struct Args {
         help = "Parser to use: auto (AST→CLI fallback), ast (AST only), cli (CLI only), regex (deprecated)"
     )]
     pub parser: String,
+
+    #[arg(
+        long = "use-framework",
+        help = "Use ultrafast-mcp framework server instead of custom implementation (requires ultrafast-framework feature)"
+    )]
+    pub use_framework: bool,
 }
 
 /// Available CLI commands
