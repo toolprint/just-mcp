@@ -11,24 +11,19 @@ use crate::error::Result;
 use crate::embedded_content::resources::ResourceProvider;
 use std::sync::Arc;
 
-// Note: Exact API structure will be determined during Task 173
-// Placeholder types for framework resources until actual API is confirmed
 #[cfg(feature = "ultrafast-framework")]
-mod framework_types {
-    pub struct Resource {
-        pub uri: String,
-        pub name: String,
-        pub description: String,
-        pub mimeType: String,
-        pub text: Option<String>,
-    }
+use ultrafast_mcp::{
+    ResourceHandler,
+    ListResourcesRequest, ListResourcesResponse, ReadResourceRequest, ReadResourceResponse,
+    Resource, ResourceContent,
+    MCPResult, MCPError
+};
 
-    pub trait ResourceProvider {
-        type Error;
-        async fn get_resource(&self, uri: &str) -> std::result::Result<Resource, Self::Error>;
-        async fn list_resources(&self) -> std::result::Result<Vec<String>, Self::Error>;
-    }
-}
+#[cfg(feature = "ultrafast-framework")]
+use ultrafast_mcp::types::{
+    ListResourceTemplatesRequest, ListResourceTemplatesResponse, ResourceTemplate,
+    roots::{Root as FrameworkRoot, RootOperation}
+};
 
 /// Framework-compatible resource provider wrapper
 ///
@@ -66,28 +61,97 @@ impl FrameworkResourceProvider {
     }
 }
 
+/// Framework ResourceHandler implementation
+///
+/// This implements the ultrafast-mcp ResourceHandler trait to bridge
+/// our existing resource providers with the framework's resource system.
 #[cfg(feature = "ultrafast-framework")]
-impl framework_types::ResourceProvider for FrameworkResourceProvider {
-    type Error = crate::error::Error;
-
-    async fn get_resource(&self, uri: &str) -> std::result::Result<framework_types::Resource, Self::Error> {
-        match self.combined_provider.read_resource(uri).await {
-            Ok(resource_content) => Ok(framework_types::Resource {
-                uri: uri.to_string(),
-                name: resource_content.uri.clone(),
-                description: resource_content.uri.clone(),
-                mimeType: resource_content.mime_type.unwrap_or_else(|| "text/plain".to_string()),
-                text: resource_content.text,
-            }),
-            Err(e) => Err(crate::error::Error::Other(format!("Resource read failed: {}", e))),
+#[async_trait::async_trait]
+impl ResourceHandler for FrameworkResourceProvider {
+    /// Read resource content by URI
+    async fn read_resource(&self, request: ReadResourceRequest) -> MCPResult<ReadResourceResponse> {
+        match self.combined_provider.read_resource(&request.uri).await {
+            Ok(resource_content) => {
+                let content = if let Some(text) = resource_content.text {
+                    ResourceContent::Text {
+                        uri: request.uri.clone(),
+                        text,
+                        mime_type: resource_content.mime_type,
+                    }
+                } else if let Some(blob) = resource_content.blob {
+                    ResourceContent::Blob {
+                        uri: request.uri.clone(),
+                        blob,
+                        mime_type: resource_content.mime_type.unwrap_or_else(|| "application/octet-stream".to_string()),
+                    }
+                } else {
+                    // Default to empty text content
+                    ResourceContent::Text {
+                        uri: request.uri.clone(),
+                        text: String::new(),
+                        mime_type: resource_content.mime_type,
+                    }
+                };
+                Ok(ReadResourceResponse {
+                    contents: vec![content],
+                })
+            }
+            Err(e) => Err(MCPError::internal_error(format!("Resource read failed: {}", e))),
         }
     }
 
-    async fn list_resources(&self) -> std::result::Result<Vec<String>, Self::Error> {
-        let resources = self.combined_provider.list_resources().await.map_err(|e| {
-            crate::error::Error::Other(format!("Resource listing failed: {}", e))
-        })?;
-        Ok(resources.into_iter().map(|r| r.uri).collect())
+    /// List available resources
+    async fn list_resources(&self, _request: ListResourcesRequest) -> MCPResult<ListResourcesResponse> {
+        match self.combined_provider.list_resources().await {
+            Ok(resources) => {
+                let framework_resources = resources.into_iter().map(|r| Resource {
+                    uri: r.uri,
+                    name: r.name,
+                    description: r.description,
+                    mime_type: r.mime_type,
+                }).collect();
+                Ok(ListResourcesResponse {
+                    resources: framework_resources,
+                    next_cursor: None,
+                })
+            }
+            Err(e) => Err(MCPError::internal_error(format!("Resource listing failed: {}", e))),
+        }
+    }
+
+    /// List available resource templates
+    async fn list_resource_templates(&self, _request: ListResourceTemplatesRequest) -> MCPResult<ListResourceTemplatesResponse> {
+        match self.combined_provider.list_resource_templates().await {
+            Ok(templates) => {
+                let framework_templates = templates.into_iter().map(|t| ResourceTemplate {
+                    uri_template: t.uri_template,
+                    name: t.name,
+                    description: t.description,
+                    mime_type: t.mime_type,
+                }).collect();
+                Ok(ListResourceTemplatesResponse {
+                    resource_templates: framework_templates,
+                    next_cursor: None,
+                })
+            }
+            Err(e) => Err(MCPError::internal_error(format!("Resource template listing failed: {}", e))),
+        }
+    }
+
+    /// Validate resource access (required by ResourceHandler trait)
+    async fn validate_resource_access(
+        &self, 
+        uri: &str, 
+        _operation: RootOperation,
+        _roots: &[FrameworkRoot]
+    ) -> MCPResult<()> {
+        // For now, allow access to all resources that our existing provider supports
+        // This preserves the existing security model
+        if uri.starts_with("file:///docs/guides/") || uri.starts_with("just://") {
+            Ok(())
+        } else {
+            Err(MCPError::invalid_params(format!("Access denied for URI: {}", uri)))
+        }
     }
 }
 

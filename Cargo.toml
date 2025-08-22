@@ -80,6 +80,7 @@ streaming-iterator = { version = "0.1", optional = true }
 
 # ultrafast-mcp integration for framework-based MCP server
 ultrafast-mcp-sequential-thinking = { version = "0.1.0", optional = true }
+ultrafast-mcp = { version = "202506018.1.0", optional = true }
 
 [dev-dependencies]
 mockall = "0.13"
@@ -97,7 +98,7 @@ http = ["axum", "tower", "hyper"]
 vector-search = ["libsql", "rusqlite", "ndarray", "sqlite-vss", "reqwest"]
 local-embeddings = ["candle-core", "candle-nn", "candle-transformers", "hf-hub", "tokenizers"]
 ast-parser = ["tree-sitter", "tree-sitter-just", "streaming-iterator"]
-ultrafast-framework = ["ultrafast-mcp-sequential-thinking"]
+ultrafast-framework = ["ultrafast-mcp-sequential-thinking", "ultrafast-mcp"]
 all = ["stdio", "http", "vector-search", "local-embeddings", "ast-parser", "ultrafast-framework"]
 
 [[bin]]

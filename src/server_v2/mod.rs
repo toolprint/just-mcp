@@ -36,6 +36,8 @@ pub struct FrameworkServer {
     sequential_thinking_server: Option<SequentialThinkingServer>,
     #[cfg(feature = "ultrafast-framework")]
     dynamic_tool_handler: Option<Arc<dynamic_handler::DynamicToolHandler>>,
+    #[cfg(feature = "ultrafast-framework")]
+    resource_provider: Option<Arc<resources::FrameworkResourceProvider>>,
     registry: Arc<tokio::sync::Mutex<ToolRegistry>>,
     executor: Arc<tokio::sync::Mutex<TaskExecutor>>,
     watcher: Option<Arc<JustfileWatcher>>,
@@ -55,6 +57,8 @@ impl FrameworkServer {
             sequential_thinking_server: None,
             #[cfg(feature = "ultrafast-framework")]
             dynamic_tool_handler: None,
+            #[cfg(feature = "ultrafast-framework")]
+            resource_provider: None,
             registry,
             executor,
             watcher: None,
@@ -114,9 +118,19 @@ impl FrameworkServer {
         
         self.watcher = Some(Arc::new(watcher));
 
+        // Initialize resource provider
+        let resource_provider = resources::create_framework_resource_provider(
+            None, // args
+            None, // security_config  
+            None, // resource_limits
+            self.registry.clone()
+        ).await?;
+        let resource_provider_arc = Arc::new(resource_provider);
+        
         // Store references
         self.sequential_thinking_server = Some((*sequential_server_arc).clone());
         self.dynamic_tool_handler = Some(dynamic_handler_arc.clone());
+        self.resource_provider = Some(resource_provider_arc.clone());
         
         // Register our tool handler with the framework
         // This is the key integration that enables tool execution through the framework
@@ -164,8 +178,18 @@ impl FrameworkServer {
                 
                 tracing::info!("Starting ultrafast-mcp sequential thinking server");
                 
-                // Create an MCP server from the sequential thinking server
-                let framework_server = sequential_server.clone().create_mcp_server();
+                // Create an MCP server from the sequential thinking server first
+                let mut framework_server = sequential_server.clone().create_mcp_server();
+                
+                // Add resource provider if available
+                if let Some(resource_provider) = &self.resource_provider {
+                    tracing::info!("Registering resource provider with framework server");
+                    framework_server = framework_server.with_resource_handler(resource_provider.clone());
+                    
+                    // Update server capabilities to include resources
+                    // Note: We may need to create a new server instance with updated capabilities
+                    // For now, the framework will handle capability reporting automatically
+                }
                 
                 // TODO: Integrate our dynamic tool handler with the framework server
                 // The exact API for tool handler registration depends on the framework
