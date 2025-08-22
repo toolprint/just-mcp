@@ -80,7 +80,7 @@ The fastest way to install just-mcp is using [cargo-binstall](https://github.com
 # Install cargo-binstall if you haven't already
 cargo install cargo-binstall
 
-# Install just-mcp from GitHub releases (not on crates.io)
+# Install just-mcp from GitHub releases
 cargo binstall --git https://github.com/toolprint/just-mcp just-mcp
 ```
 

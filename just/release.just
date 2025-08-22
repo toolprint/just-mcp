@@ -120,15 +120,15 @@ zigbuild-release version="v0.1.0":
             echo "📦 Adding Rust targets..." && \
             rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-apple-darwin aarch64-apple-darwin && \
             echo "🔨 Building Linux x86_64..." && \
-            cargo zigbuild --release --features dev-tools --target x86_64-unknown-linux-gnu && \
+            cargo zigbuild --release --target x86_64-unknown-linux-gnu && \
             echo "🔨 Building Linux ARM64..." && \
-            cargo zigbuild --release --features dev-tools --target aarch64-unknown-linux-gnu && \
+            cargo zigbuild --release --target aarch64-unknown-linux-gnu && \
             echo "🔨 Building macOS x86_64..." && \
-            cargo zigbuild --release --features dev-tools --target x86_64-apple-darwin && \
+            cargo zigbuild --release --target x86_64-apple-darwin && \
             echo "🔨 Building macOS ARM64..." && \
-            cargo zigbuild --release --features dev-tools --target aarch64-apple-darwin && \
+            cargo zigbuild --release --target aarch64-apple-darwin && \
             echo "🔨 Building macOS Universal Binary..." && \
-            cargo zigbuild --release --features dev-tools --target universal2-apple-darwin
+            cargo zigbuild --release --target universal2-apple-darwin
         '
     
     # Package all builds with consistent naming
@@ -236,16 +236,8 @@ _package_release_artifacts version:
         if [ -f "target/$target/release/just-mcp" ]; then
             echo "📦 Packaging $target..."
             
-            # Include all built binaries (main + dev tools)
-            BINARIES=""
-            for bin in just-mcp just-mcp-perf-analysis just-mcp-memory-profiler; do
-                if [ -f "target/$target/release/$bin" ]; then
-                    BINARIES="$BINARIES $bin"
-                fi
-            done
-            
             tar czf "./release-artifacts/just-mcp-{{version}}-$target.tar.gz" \
-                -C "target/$target/release" $BINARIES \
+                -C "target/$target/release" just-mcp \
                 $(for file in $INCLUDE_FILES; do [ -f "$file" ] && echo "-C $(pwd) $file"; done)
             
             # Create checksum
@@ -266,16 +258,8 @@ _package_single_target target version:
     
     echo "📦 Packaging {{target}} release..."
     
-    # Include all built binaries (main + dev tools)
-    BINARIES=""
-    for bin in just-mcp just-mcp-perf-analysis just-mcp-memory-profiler; do
-        if [ -f "target/{{target}}/release/$bin" ]; then
-            BINARIES="$BINARIES $bin"
-        fi
-    done
-    
     tar czf "./release-artifacts/just-mcp-{{version}}-{{target}}.tar.gz" \
-        -C "target/{{target}}/release" $BINARIES \
+        -C "target/{{target}}/release" just-mcp \
         $(for file in README.md LICENSE; do [ -f "$file" ] && echo "-C $(pwd) $file"; done)
     
     # Create checksum

@@ -71,7 +71,7 @@ jobs:
           # Enable assertions for C code (required by tree-sitter-just)
           export CFLAGS="-UNDEBUG"
           export CXXFLAGS="-UNDEBUG"
-          cargo zigbuild --release --features dev-tools --target ${{ matrix.target }}
+          cargo zigbuild --release --target ${{ matrix.target }}
 
       - name: Prepare artifacts
         run: |
@@ -81,12 +81,8 @@ jobs:
           # Create artifact directory
           mkdir -p artifacts
 
-          # Copy all built binaries (main + dev tools)
-          for bin in just-mcp just-mcp-perf-analysis just-mcp-memory-profiler; do
-            if [ -f "target/$TARGET/release/$bin" ]; then
-              cp "target/$TARGET/release/$bin" artifacts/
-            fi
-          done
+          # Copy main binary
+          cp "target/$TARGET/release/just-mcp" artifacts/
 
           # Copy additional files
           cp README.md LICENSE artifacts/

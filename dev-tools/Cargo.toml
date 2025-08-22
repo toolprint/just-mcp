@@ -1,0 +1,31 @@
+[package]
+name = "just-mcp-dev-tools"
+version = "0.2.0"
+edition = "2021"
+rust-version = "1.88.0"
+description = "Development and profiling tools for just-mcp"
+publish = false
+
+[dependencies]
+# Main just-mcp library
+just-mcp = { path = "..", features = ["ast-parser"] }
+
+# Performance analysis dependencies
+anyhow = "1.0"
+tokio = { version = "1.41", features = ["full"] }
+
+# For memory profiling
+[target.'cfg(feature = "memory-profiling")'.dependencies]
+# Custom allocator dependencies would go here if needed
+
+[[bin]]
+name = "just-mcp-perf-analysis"
+path = "src/perf_analysis.rs"
+
+[[bin]]
+name = "just-mcp-memory-profiler"
+path = "src/memory_profiler.rs"
+
+[features]
+default = []
+memory-profiling = []

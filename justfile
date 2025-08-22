@@ -137,6 +137,13 @@ build mode="debug":
         just build-rust
     fi
 
+# Build development tools (separate workspace member)
+[group('dev')]
+build-dev-tools:
+    @echo "🔧 Building development tools..."
+    @cargo build --manifest-path dev-tools/Cargo.toml
+    @just _success "Development tools built successfully"
+
 # Install tq (TOML query tool) for env support
 [group('dev')]
 install-tq:
