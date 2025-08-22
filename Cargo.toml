@@ -111,12 +111,12 @@ path = "src/main.rs"
 
 # Development-only binaries (not included in default builds)
 [[bin]]
-name = "perf-analysis"
+name = "just-mcp-perf-analysis"
 path = "src/bin/perf_analysis.rs"
 required-features = ["dev-tools"]
 
 [[bin]]
-name = "memory_profiler"
+name = "just-mcp-memory-profiler"
 path = "src/bin/memory_profiler.rs"
 required-features = ["dev-tools"]
 

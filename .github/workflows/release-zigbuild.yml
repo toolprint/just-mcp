@@ -82,7 +82,7 @@ jobs:
           mkdir -p artifacts
 
           # Copy all built binaries (main + dev tools)
-          for bin in just-mcp perf-analysis memory_profiler; do
+          for bin in just-mcp just-mcp-perf-analysis just-mcp-memory-profiler; do
             if [ -f "target/$TARGET/release/$bin" ]; then
               cp "target/$TARGET/release/$bin" artifacts/
             fi

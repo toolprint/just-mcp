@@ -238,7 +238,7 @@ _package_release_artifacts version:
             
             # Include all built binaries (main + dev tools)
             BINARIES=""
-            for bin in just-mcp perf-analysis memory_profiler; do
+            for bin in just-mcp just-mcp-perf-analysis just-mcp-memory-profiler; do
                 if [ -f "target/$target/release/$bin" ]; then
                     BINARIES="$BINARIES $bin"
                 fi
@@ -265,8 +265,17 @@ _package_single_target target version:
     fi
     
     echo "📦 Packaging {{target}} release..."
+    
+    # Include all built binaries (main + dev tools)
+    BINARIES=""
+    for bin in just-mcp just-mcp-perf-analysis just-mcp-memory-profiler; do
+        if [ -f "target/{{target}}/release/$bin" ]; then
+            BINARIES="$BINARIES $bin"
+        fi
+    done
+    
     tar czf "./release-artifacts/just-mcp-{{version}}-{{target}}.tar.gz" \
-        -C "target/{{target}}/release" just-mcp \
+        -C "target/{{target}}/release" $BINARIES \
         $(for file in README.md LICENSE; do [ -f "$file" ] && echo "-C $(pwd) $file"; done)
     
     # Create checksum
